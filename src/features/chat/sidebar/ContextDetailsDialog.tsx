@@ -11,6 +11,11 @@ import {
 import { useMessageStore, messageStore } from '../../../store'
 import { useSessionStats, formatTokens, formatCost } from '../../../hooks'
 import type { Message, TokenUsage } from '../../../types/message'
+import {
+  estimateContextBreakdown,
+  BREAKDOWN_COLORS,
+  BREAKDOWN_LABELS,
+} from '../../../utils/contextBreakdown'
 
 interface ContextDetailsDialogProps {
   isOpen: boolean
@@ -32,7 +37,7 @@ function formatTimestamp(timestamp: number | undefined): string {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-[10px] font-bold text-text-400 uppercase tracking-wider">{label}</div>
+      <div className="text-[11px] font-medium text-text-400">{label}</div>
       <div className="text-sm text-text-200 font-mono truncate" title={value}>
         {value}
       </div>
@@ -74,6 +79,17 @@ export function ContextDetailsDialog({ isOpen, onClose, contextLimit }: ContextD
     return Math.round((total / contextLimit) * 100)
   }, [lastAssistantWithTokens, contextLimit])
 
+  const contextMsg = lastAssistantWithTokens?.msg
+  const contextTokens = contextMsg?.info.role === 'assistant' ? contextMsg.info.tokens : undefined
+  const contextTotal = lastAssistantWithTokens?.total
+
+  // Estimate context breakdown based on content sizes and input tokens
+  const breakdownSegments = useMemo(() => {
+    const inputTokens = contextTokens?.input ?? 0
+    if (!inputTokens || !messages.length) return []
+    return estimateContextBreakdown({ messages, input: inputTokens })
+  }, [messages, contextTokens])
+
   const handleToggleMessage = useCallback(
     async (msg: Message) => {
       const id = msg.info.id
@@ -93,10 +109,6 @@ export function ContextDetailsDialog({ isOpen, onClose, contextLimit }: ContextD
     },
     [expandedId, sessionId]
   )
-
-  const contextMsg = lastAssistantWithTokens?.msg
-  const contextTokens = contextMsg?.info.role === 'assistant' ? contextMsg.info.tokens : undefined
-  const contextTotal = lastAssistantWithTokens?.total
   
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title="Context" width={900} className="w-full">
@@ -106,10 +118,10 @@ export function ContextDetailsDialog({ isOpen, onClose, contextLimit }: ContextD
           <Stat label="Messages" value={`${counts.all} (user ${counts.user}, assistant ${counts.assistant})`} />
           <Stat label="Provider" value={contextMsg?.info.role === 'assistant' ? contextMsg.info.providerID : '—'} />
           <Stat label="Model" value={contextMsg?.info.role === 'assistant' ? contextMsg.info.modelID : '—'} />
-          <Stat label="Context limit" value={formatTokens(contextLimit)} />
-          <Stat label="Total tokens" value={contextTotal ? formatTokens(contextTotal) : '—'} />
+          <Stat label="Context Limit" value={formatTokens(contextLimit)} />
+          <Stat label="Total Tokens" value={contextTotal ? formatTokens(contextTotal) : '—'} />
           <Stat label="Usage" value={contextUsagePercent === null ? '—' : `${contextUsagePercent}%`} />
-          <Stat label="Total cost" value={formatCost(stats.totalCost)} />
+          <Stat label="Total Cost" value={formatCost(stats.totalCost)} />
         </div>
 
         {contextTokens && (
@@ -118,6 +130,30 @@ export function ContextDetailsDialog({ isOpen, onClose, contextLimit }: ContextD
             <Stat label="Output" value={formatTokens(contextTokens.output)} />
             <Stat label="Reasoning" value={formatTokens(contextTokens.reasoning)} />
             <Stat label="Cache (r/w)" value={`${formatTokens(contextTokens.cache.read)} / ${formatTokens(contextTokens.cache.write)}`} />
+          </div>
+        )}
+
+        {breakdownSegments.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <div className="text-[11px] font-medium text-text-400">Context Breakdown</div>
+            <div className="h-3 w-full rounded-full overflow-hidden flex bg-bg-200/30">
+              {breakdownSegments.map((seg) => (
+                <div
+                  key={seg.key}
+                  className={`h-full ${BREAKDOWN_COLORS[seg.key]} transition-all`}
+                  style={{ width: `${seg.width}%` }}
+                  title={`${BREAKDOWN_LABELS[seg.key]} ${seg.percent}%`}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-4 text-[11px] text-text-400 font-mono flex-wrap">
+              {breakdownSegments.map((seg) => (
+                <span key={seg.key} className="flex items-center gap-1.5">
+                  <span className={`inline-block w-2 h-2 rounded-full ${BREAKDOWN_COLORS[seg.key]}`} />
+                  {BREAKDOWN_LABELS[seg.key]} {seg.percent}%
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -133,7 +169,7 @@ export function ContextDetailsDialog({ isOpen, onClose, contextLimit }: ContextD
       </div>
 
       <div className="mt-6">
-        <div className="text-[10px] font-bold text-text-400 uppercase tracking-wider mb-2">Raw messages</div>
+        <div className="text-[11px] font-medium text-text-400 mb-2">Raw Messages</div>
         <div className="space-y-1">
           {messages.map((msg) => {
             const isExpanded = expandedId === msg.info.id
