@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.1.5] - 2026-03-07
+
+- chore: keep tauri config formatted on release (48f6045)
+- fix: sync settings version with app release (b815d18)
+- chore: format release workflow (aef533b)
+- ci: add build validation workflow (491a544)
+- other: add "zed/\*" as ignored file (8f32b7d)
+
 ## [v0.1.4] - 2026-03-07
 
 - fix: split frontend and api slash commands (bdb2e33)
