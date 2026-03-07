@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import {
   getSessions,
   createSession as apiCreateSession,
@@ -9,25 +9,9 @@ import {
 } from '../api'
 import { childSessionStore } from '../store/childSessionStore'
 import { todoStore } from '../store/todoStore'
-import { useDirectory } from './DirectoryContext'
+import { useDirectory } from './useDirectory'
 import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle } from '../utils'
-
-interface SessionContextValue {
-  sessions: ApiSession[]
-  isLoading: boolean
-  isLoadingMore: boolean
-  hasMore: boolean
-  search: string
-  setSearch: (term: string) => void
-  refresh: () => Promise<void>
-  loadMore: () => Promise<void>
-  createSession: (title?: string) => Promise<ApiSession>
-  deleteSession: (id: string) => Promise<void>
-  currentSessionId: string | null
-  setCurrentSessionId: (id: string | null) => void
-}
-
-const SessionContext = createContext<SessionContextValue | null>(null)
+import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { currentDirectory } = useDirectory()
@@ -206,7 +190,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })
 
     return unsubscribe
-  }, [])
+  }, [matchesCurrentDirectory])
 
   // Actions
   const refresh = useCallback(() => fetchSessions(), [fetchSessions])
@@ -286,12 +270,4 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
-}
-
-export function useSessionContext() {
-  const context = useContext(SessionContext)
-  if (!context) {
-    throw new Error('useSessionContext must be used within a SessionProvider')
-  }
-  return context
 }

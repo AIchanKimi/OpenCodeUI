@@ -1,8 +1,8 @@
-import { memo, useState, useEffect, useMemo } from 'react'
+import { memo, useState, useMemo } from 'react'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, MaximizeIcon } from './Icons'
 import { clsx } from 'clsx'
-import { useSyntaxHighlight } from '../hooks/useSyntaxHighlight'
+import { useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 import { detectLanguage } from '../utils/languageUtils'
 import { syntaxErrorHandler } from '../utils'
 import { FullscreenViewer } from './FullscreenViewer'
@@ -88,34 +88,24 @@ function useHighlightedDiff(before: string, after: string, language: string) {
   const { output: oldTokens } = useSyntaxHighlight(before, { lang: language, mode: 'tokens' })
   const { output: newTokens } = useSyntaxHighlight(after, { lang: language, mode: 'tokens' })
 
-  const [result, setResult] = useState<{
-    lines: DiffLine[]
-    stats: { additions: number; deletions: number }
-  } | null>(null)
-
-  useEffect(() => {
-    // If tokens are not ready or reset, reset result
-    if (!oldTokens || !newTokens) {
-      setResult(null)
-      return
-    }
+  return useMemo(() => {
+    if (!oldTokens || !newTokens) return null
 
     try {
-      // 1. Calculate diff on raw text
       const changes = diffLines(before, after, { newlineIsToken: false })
 
-      // 2. Convert tokens to HTML strings per line
-      const tokensToHtmlLines = (tokenLines: any[][]) => {
+      const tokensToHtmlLines = (tokenLines: HighlightTokens) => {
         return tokenLines.map(lineTokens => {
-          if (lineTokens.length === 0) return ' ' // Empty line
-          return lineTokens.map(t => `<span style="color:${t.color}">${escapeHtml(t.content)}</span>`).join('')
+          if (lineTokens.length === 0) return ' '
+          return lineTokens
+            .map(token => `<span style="color:${token.color}">${escapeHtml(token.content)}</span>`)
+            .join('')
         })
       }
 
       const oldLinesHtml = tokensToHtmlLines(oldTokens)
       const newLinesHtml = tokensToHtmlLines(newTokens)
 
-      // 3. Map diff changes to highlighted lines
       const finalLines: DiffLine[] = []
       let oldIndex = 0
       let newIndex = 0
@@ -146,11 +136,10 @@ function useHighlightedDiff(before: string, after: string, language: string) {
           }
           newIndex += count
         } else {
-          // Context (unchanged)
           for (let i = 0; i < count; i++) {
             finalLines.push({
               type: 'context',
-              content: newLinesHtml[newIndex + i] || ' ', // Prefer new version for context
+              content: newLinesHtml[newIndex + i] || ' ',
               oldLineNo: oldIndex + i + 1,
               newLineNo: newIndex + i + 1,
             })
@@ -160,16 +149,15 @@ function useHighlightedDiff(before: string, after: string, language: string) {
         }
       }
 
-      setResult({
+      return {
         lines: finalLines,
         stats: { additions, deletions },
-      })
+      }
     } catch (err) {
       syntaxErrorHandler('diff highlighting', err)
+      return null
     }
   }, [before, after, oldTokens, newTokens])
-
-  return result
 }
 
 export const DiffView = memo(function DiffView({

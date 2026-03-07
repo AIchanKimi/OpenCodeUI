@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ChevronDownIcon, CheckIcon, ClockIcon, CloseIcon, CircleIcon } from '../../../../components/Icons'
-import type { ToolPart } from '../../../../types/message'
 import type { ToolRendererProps } from '../types'
 import { useDelayedRender } from '../../../../hooks'
+import { extractTodos } from './todoUtils'
 
 // ============================================
 // Types
@@ -90,17 +90,6 @@ function TodoList({ todos }: { todos: TodoItem[] }) {
   )
 }
 
-// ============================================
-// Helpers
-// ============================================
-
-function extractTodos(part: ToolPart): TodoItem[] {
-  const { state } = part
-  const metadata = state.metadata as Record<string, unknown> | undefined
-  const inputObj = state.input as Record<string, unknown> | undefined
-  return (metadata?.todos as TodoItem[]) || (inputObj?.todos as TodoItem[]) || []
-}
-
 function getTodoIcon(status: TodoItem['status']) {
   const size = 14
   const cls = {
@@ -120,11 +109,4 @@ function getTodoIcon(status: TodoItem['status']) {
     default:
       return <CircleIcon size={size} className={cls} />
   }
-}
-
-/**
- * 检查是否有 todos 可渲染
- */
-export function hasTodos(part: ToolPart): boolean {
-  return extractTodos(part).length > 0
 }

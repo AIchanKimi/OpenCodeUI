@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { useDelayedRender } from '../../hooks/useDelayedRender'
 
 export function AnimatedPresence({
   show,
@@ -9,21 +10,26 @@ export function AnimatedPresence({
   children: React.ReactNode
   className?: string
 }) {
-  const [shouldRender, setShouldRender] = useState(show)
   const [isVisible, setIsVisible] = useState(false)
+  const shouldRender = useDelayedRender(show, 200)
 
   useEffect(() => {
-    if (show) {
-      setShouldRender(true)
-      requestAnimationFrame(() => {
+    let frameId: number | null = null
+
+    if (shouldRender && show) {
+      frameId = requestAnimationFrame(() => {
         requestAnimationFrame(() => setIsVisible(true))
       })
     } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
     }
-  }, [show])
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
+    }
+  }, [show, shouldRender])
 
   if (!shouldRender) return null
 

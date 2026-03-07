@@ -11,10 +11,11 @@ import { memo, useState, useMemo, useEffect, useRef } from 'react'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
 import { CopyButton } from './ui'
-import { DiffViewer, extractContentFromUnifiedDiff, type ViewMode } from './DiffViewer'
+import { DiffViewer, type ViewMode } from './DiffViewer'
 import { CodePreview } from './FileExplorer'
 import { detectLanguage } from '../utils/languageUtils'
 import { FullscreenViewer } from './FullscreenViewer'
+import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 
 // ============================================
 // Types

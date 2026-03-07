@@ -29,7 +29,10 @@ export function useSessionEvents(
   callbacks: SessionEventsCallbacks,
 ) {
   const callbacksRef = useRef(callbacks)
-  callbacksRef.current = callbacks
+
+  useEffect(() => {
+    callbacksRef.current = callbacks
+  }, [callbacks])
 
   // 节流滚动：使用 rAF 确保每帧最多滚动一次
   const scrollPendingRef = useRef(false)
@@ -175,5 +178,5 @@ export function useSessionEvents(
     })
 
     return () => unsubscribe()
-  }, [])
+  }, [currentSessionIdRef])
 }

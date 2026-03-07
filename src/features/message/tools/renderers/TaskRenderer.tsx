@@ -8,6 +8,8 @@ import { sessionErrorHandler } from '../../../../utils'
 import type { ToolRendererProps } from '../types'
 import type { Message, TextPart, ToolPart } from '../../../../types/message'
 
+const EMPTY_MESSAGES: Message[] = []
+
 // ============================================
 // Task Tool Renderer (子 agent)
 //
@@ -55,7 +57,17 @@ export const TaskRenderer = memo(function TaskRenderer({ part }: ToolRendererPro
 
   // 运行时自动展开
   useEffect(() => {
-    if (isRunning) setExpanded(true)
+    let frameId: number | null = null
+
+    if (isRunning) {
+      frameId = requestAnimationFrame(() => {
+        setExpanded(true)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
+    }
   }, [isRunning])
 
   return (
@@ -239,7 +251,7 @@ const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionVie
   const loadedRef = useRef(false)
 
   const sessionState = useSessionState(sessionId)
-  const messages = sessionState?.messages || []
+  const messages = sessionState?.messages ?? EMPTY_MESSAGES
   const isStreaming = sessionState?.isStreaming || false
   const isLoading = sessionState?.loadState === 'loading'
 

@@ -2,43 +2,15 @@
 // DirectoryContext - 管理当前工作目录
 // ============================================
 
-import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { getPath, type ApiPath, getPendingPermissions, getPendingQuestions } from '../api'
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { getPath, getPendingPermissions, getPendingQuestions, type ApiPath } from '../api'
 import { useRouter } from '../hooks/useRouter'
 import { handleError, normalizeToForwardSlash, getDirectoryName, isSameDirectory, serverStorage } from '../utils'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { activeSessionStore } from '../store/activeSessionStore'
 import { serverStore } from '../store/serverStore'
 import { isTauri } from '../utils/tauri'
-
-export interface SavedDirectory {
-  path: string
-  name: string
-  addedAt: number
-}
-
-export interface DirectoryContextValue {
-  /** 当前工作目录（undefined 表示全部/不筛选） */
-  currentDirectory: string | undefined
-  /** 设置当前工作目录 */
-  setCurrentDirectory: (directory: string | undefined) => void
-  /** 保存的目录列表 */
-  savedDirectories: SavedDirectory[]
-  /** 添加目录 */
-  addDirectory: (path: string) => void
-  /** 移除目录 */
-  removeDirectory: (path: string) => void
-  /** 服务端路径信息 */
-  pathInfo: ApiPath | null
-  /** 侧边栏是否展开（桌面端）- 从 layoutStore 读取 */
-  sidebarExpanded: boolean
-  /** 设置侧边栏展开状态 - 委托给 layoutStore */
-  setSidebarExpanded: (expanded: boolean) => void
-  /** 最近使用的项目时间戳 { [path]: lastUsedAt } */
-  recentProjects: Record<string, number>
-}
-
-const DirectoryContext = createContext<DirectoryContextValue | null>(null)
+import { DirectoryContext, type DirectoryContextValue, type SavedDirectory } from './DirectoryContext.shared'
 
 const STORAGE_KEY_SAVED = 'opencode-saved-directories'
 const STORAGE_KEY_RECENT = 'opencode-recent-projects'
@@ -232,43 +204,4 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   )
 
   return <DirectoryContext.Provider value={value}>{children}</DirectoryContext.Provider>
-}
-
-export function useDirectory(): DirectoryContextValue {
-  const context = useContext(DirectoryContext)
-  if (!context) {
-    throw new Error('useDirectory must be used within a DirectoryProvider')
-  }
-  return context
-}
-
-// ============================================
-// 细粒度 Hooks - 避免不必要的重渲染
-// ============================================
-
-/** 只获取当前目录 */
-export function useCurrentDirectory(): string | undefined {
-  const { currentDirectory } = useDirectory()
-  return currentDirectory
-}
-
-/** 只获取保存的目录列表 */
-export function useSavedDirectories(): SavedDirectory[] {
-  const { savedDirectories } = useDirectory()
-  return savedDirectories
-}
-
-/** 只获取路径信息 */
-export function usePathInfo(): ApiPath | null {
-  const { pathInfo } = useDirectory()
-  return pathInfo
-}
-
-/** 侧边栏状态 - 直接从 layoutStore 读取，更高效 */
-export function useSidebarExpanded(): [boolean, (expanded: boolean) => void] {
-  const { sidebarExpanded } = useLayoutStore()
-  const setSidebarExpanded = useCallback((expanded: boolean) => {
-    layoutStore.setSidebarExpanded(expanded)
-  }, [])
-  return [sidebarExpanded, setSidebarExpanded]
 }

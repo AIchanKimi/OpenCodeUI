@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useMessageStore } from '../store'
 import type { AssistantMessageInfo } from '../types/message'
+export { formatTokens, formatCost } from './sessionStatsUtils'
 
 export interface SessionStats {
   // Token 统计
@@ -78,24 +79,4 @@ export function useSessionStats(contextLimit: number = 200000): SessionStats {
       contextPercent,
     }
   }, [messages, contextLimit])
-}
-
-/**
- * 格式化 token 数量
- */
-export function formatTokens(count: number): string {
-  if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M'
-  if (count >= 1000) return (count / 1000).toFixed(1) + 'k'
-  return count.toString()
-}
-
-/**
- * 格式化费用
- */
-export function formatCost(cost: number): string {
-  if (cost === 0) return '$0'
-  if (cost < 0.001) return '<$0.001'
-  if (cost < 0.01) return '$' + cost.toFixed(3)
-  if (cost < 1) return '$' + cost.toFixed(2)
-  return '$' + cost.toFixed(2)
 }

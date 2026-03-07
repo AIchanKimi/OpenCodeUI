@@ -3,6 +3,15 @@ import { codeToHtml, codeToTokens, type BundledTheme } from 'shiki'
 import { normalizeLanguage } from '../utils/languageUtils'
 import { THEME_SWITCH_DISABLE_MS } from '../constants'
 
+export type HighlightTokens = Awaited<ReturnType<typeof codeToTokens>>['tokens']
+type CodeToHtmlOptions = Parameters<typeof codeToHtml>[1]
+type CodeToTokensOptions = Parameters<typeof codeToTokens>[1]
+
+type IdleWindowApi = {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+  cancelIdleCallback?: (id: number) => void
+}
+
 // ============================================
 // LRU 缓存层 - 避免重复高亮相同代码
 // ============================================
@@ -66,7 +75,7 @@ class LRUCache<T> {
 // 全局缓存实例 - HTML 和 Tokens 分开缓存
 // 控制缓存上限，避免长对话占用过多内存
 const htmlCache = new LRUCache<string>(120)
-const tokensCache = new LRUCache<any[][]>(80)
+const tokensCache = new LRUCache<HighlightTokens>(80)
 
 // 代码长度限制 - 超过此长度跳过高亮
 // 配合虚拟滚动，高亮本身开销不大，放宽限制
@@ -105,7 +114,7 @@ async function highlightWithCache(
   lang: string,
   theme: BundledTheme,
   mode: 'html' | 'tokens',
-): Promise<string | any[][] | null> {
+): Promise<string | HighlightTokens | null> {
   // 主题切换期间短暂跳过高亮，避免大批量重算
   if (typeof document !== 'undefined') {
     const transitioning = document.documentElement.getAttribute('data-theme-transition') === 'off'
@@ -129,7 +138,7 @@ async function highlightWithCache(
       return cached
     }
 
-    const html = await codeToHtml(code, { lang: lang as any, theme })
+    const html = await codeToHtml(code, { lang: lang as CodeToHtmlOptions['lang'], theme })
     htmlCache.set(cacheKey, html)
     return html
   } else {
@@ -138,7 +147,7 @@ async function highlightWithCache(
       return cached
     }
 
-    const result = await codeToTokens(code, { lang: lang as any, theme })
+    const result = await codeToTokens(code, { lang: lang as CodeToTokensOptions['lang'], theme })
     tokensCache.set(cacheKey, result.tokens)
     return result.tokens
   }
@@ -251,7 +260,7 @@ function useIsDarkMode(): boolean {
 
   useEffect(() => {
     return manager.subscribe(setIsDark)
-  }, [])
+  }, [manager])
 
   return isDark
 }
@@ -271,7 +280,7 @@ export function useSyntaxHighlight(
 export function useSyntaxHighlight(
   code: string,
   options: HighlightOptions & { mode: 'tokens' },
-): { output: any[][] | null; isLoading: boolean }
+): { output: HighlightTokens | null; isLoading: boolean }
 
 export function useSyntaxHighlight(code: string, options: HighlightOptions & { mode?: 'html' | 'tokens' } = {}) {
   const { lang = 'text', theme, mode = 'html', enabled = true } = options
@@ -283,7 +292,7 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
   // 如果没有指定主题，则根据 isDark 自动选择
   const selectedTheme = theme || getShikiTheme(isDark)
 
-  const [output, setOutput] = useState<string | any[][] | null>(null)
+  const [output, setOutput] = useState<string | HighlightTokens | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const prevKeyRef = useRef<{ code: string; lang: string; theme: BundledTheme } | null>(null)
 
@@ -336,11 +345,17 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
 
     const schedule = () => {
       if (shouldDefer) {
-        if (typeof (window as any).requestIdleCallback === 'function') {
-          const idleId = (window as any).requestIdleCallback(() => highlight(), {
-            timeout: THEME_SWITCH_DISABLE_MS * 2,
-          })
-          return () => (window as any).cancelIdleCallback?.(idleId)
+        const idleWindow = window as Window & IdleWindowApi
+        if (typeof idleWindow.requestIdleCallback === 'function') {
+          const idleId = idleWindow.requestIdleCallback(
+            () => {
+              void highlight()
+            },
+            {
+              timeout: THEME_SWITCH_DISABLE_MS * 2,
+            },
+          )
+          return () => idleWindow.cancelIdleCallback?.(idleId)
         }
         const timeoutId = window.setTimeout(() => highlight(), THEME_SWITCH_DISABLE_MS)
         return () => clearTimeout(timeoutId)

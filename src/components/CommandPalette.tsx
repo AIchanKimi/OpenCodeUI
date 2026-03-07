@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { SearchIcon } from './Icons'
 import { formatKeybinding, parseKeybinding } from '../store/keybindingStore'
+import { useDelayedRender } from '../hooks/useDelayedRender'
 
 // ============================================
 // Types
@@ -69,29 +70,45 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const [shouldRender, setShouldRender] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const shouldRender = useDelayedRender(isOpen, 150)
 
   // Animation mount/unmount
   useEffect(() => {
+    let frameId: number | null = null
+
     if (isOpen) {
-      setShouldRender(true)
-      setQuery('')
-      setSelectedIndex(0)
-    } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 150)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setQuery('')
+        setSelectedIndex(0)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+      }
     }
   }, [isOpen])
 
   useEffect(() => {
+    let frameId: number | null = null
+
     if (shouldRender && isOpen) {
-      const timer = setTimeout(() => {
+      frameId = requestAnimationFrame(() => {
         setIsVisible(true)
         inputRef.current?.focus()
-      }, 10)
-      return () => clearTimeout(timer)
+      })
+    } else {
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+      }
     }
   }, [shouldRender, isOpen])
 
@@ -118,10 +135,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
       })
   }, [commands, query])
 
-  // Reset selection when filter changes
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [query])
+  const activeIndex = filteredCommands.length === 0 ? 0 : Math.min(selectedIndex, filteredCommands.length - 1)
 
   // Execute command
   const executeCommand = useCallback(
@@ -149,8 +163,8 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
           break
         case 'Enter':
           e.preventDefault()
-          if (filteredCommands[selectedIndex]) {
-            executeCommand(filteredCommands[selectedIndex])
+          if (filteredCommands[activeIndex]) {
+            executeCommand(filteredCommands[activeIndex])
           }
           break
         case 'Escape':
@@ -163,14 +177,14 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })
     return () => document.removeEventListener('keydown', handleKeyDown, { capture: true })
-  }, [isOpen, filteredCommands, selectedIndex, executeCommand, onClose])
+  }, [isOpen, filteredCommands, activeIndex, executeCommand, onClose])
 
   // Scroll selected item into view
   useEffect(() => {
     if (!listRef.current) return
-    const el = listRef.current.querySelector(`[data-index="${selectedIndex}"]`)
+    const el = listRef.current.querySelector(`[data-index="${activeIndex}"]`)
     el?.scrollIntoView({ block: 'nearest' })
-  }, [selectedIndex])
+  }, [activeIndex])
 
   if (!shouldRender) return null
 
@@ -212,7 +226,10 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
             ref={inputRef}
             type="text"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => {
+              setQuery(e.target.value)
+              setSelectedIndex(0)
+            }}
             placeholder="Type a command..."
             className="flex-1 py-3.5 text-sm bg-transparent text-text-100 placeholder:text-text-400 
                        outline-none border-none"
@@ -220,7 +237,13 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
             spellCheck={false}
           />
           {query && (
-            <button onClick={() => setQuery('')} className="text-text-400 hover:text-text-200 text-xs">
+            <button
+              onClick={() => {
+                setQuery('')
+                setSelectedIndex(0)
+              }}
+              className="text-text-400 hover:text-text-200 text-xs"
+            >
               Clear
             </button>
           )}
@@ -240,9 +263,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
                 className={`
                   w-full flex items-center justify-between px-4 py-2.5 text-left
                   transition-colors duration-75
-                  ${
-                    index === selectedIndex ? 'bg-accent-main-100/10 text-text-100' : 'text-text-200 hover:bg-bg-100/50'
-                  }
+                  ${index === activeIndex ? 'bg-accent-main-100/10 text-text-100' : 'text-text-200 hover:bg-bg-100/50'}
                 `}
               >
                 <div className="flex items-center gap-3 min-w-0">

@@ -35,6 +35,7 @@ export const ResizablePanel = memo(function ResizablePanel({
   const contentRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number>(0)
   const currentSizeRef = useRef(size)
+  const isResizingRef = useRef(isResizing)
   // 保存事件处理函数引用，以便在组件卸载时清理
   const mouseHandlersRef = useRef<{
     move: ((e: MouseEvent) => void) | null
@@ -46,17 +47,21 @@ export const ResizablePanel = memo(function ResizablePanel({
   }>({ move: null, end: null })
 
   // 同步 size 到 ref 和 CSS 变量
+  useEffect(() => {
+    isResizingRef.current = isResizing
+  }, [isResizing])
+
   useLayoutEffect(() => {
     if (isMobile || !panelRef.current) return
 
     // 不要在 resize 过程中响应 size prop 变化（虽然通常 resize 时 prop 不会变）
     // 也不要响应 isResizing 的变化（防止 resize 结束时用旧 prop 覆盖新 DOM）
-    if (isResizing) return
+    if (isResizingRef.current) return
 
     const cssVar = position === 'right' ? '--panel-width' : '--panel-height'
     panelRef.current.style.setProperty(cssVar, `${size}px`)
     currentSizeRef.current = size
-  }, [size, isMobile, position]) // 移除 isResizing 依赖
+  }, [size, isMobile, position])
 
   // Desktop Resize 逻辑
   const startResizing = useCallback(

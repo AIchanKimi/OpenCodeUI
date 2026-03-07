@@ -6,7 +6,7 @@
 // 通过 SSE 事件 (todo.updated) 实时更新
 //
 
-import { useSyncExternalStore, useCallback, useMemo } from 'react'
+import { useSyncExternalStore, useCallback } from 'react'
 import type { TodoItem } from '../types/api/event'
 
 // ============================================
@@ -152,7 +152,7 @@ function useStoreSubscription() {
  */
 export function useTodos(sessionId: string | null): TodoItem[] {
   useStoreSubscription()
-  return useMemo(() => (sessionId ? todoStore.getTodos(sessionId) : EMPTY_TODOS), [sessionId, todoStore.getVersion()])
+  return sessionId ? todoStore.getTodos(sessionId) : EMPTY_TODOS
 }
 
 /**
@@ -160,7 +160,7 @@ export function useTodos(sessionId: string | null): TodoItem[] {
  */
 export function useTodoStats(sessionId: string | null): TodoStats {
   useStoreSubscription()
-  return useMemo(() => (sessionId ? todoStore.getStats(sessionId) : EMPTY_STATS), [sessionId, todoStore.getVersion()])
+  return sessionId ? todoStore.getStats(sessionId) : EMPTY_STATS
 }
 
 /**
@@ -168,5 +168,5 @@ export function useTodoStats(sessionId: string | null): TodoStats {
  */
 export function useCurrentTask(sessionId: string | null): TodoItem | null {
   useStoreSubscription()
-  return useMemo(() => (sessionId ? todoStore.getCurrentTask(sessionId) : null), [sessionId, todoStore.getVersion()])
+  return sessionId ? todoStore.getCurrentTask(sessionId) : null
 }

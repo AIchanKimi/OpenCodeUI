@@ -3,7 +3,16 @@
 // 文件/文件夹/Agent 选择菜单
 // ============================================
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+  useMemo,
+} from 'react'
 import { searchFiles, listDirectory, type ApiAgent } from '../../api/client'
 import { fileErrorHandler } from '../../utils'
 import type { MentionType, MentionItem } from './types'
@@ -46,27 +55,34 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
   const [items, setItems] = useState<MentionItem[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [currentPath, setCurrentPath] = useState('.')
 
   const menuRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const searchAbortRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
   // 记住返回上级时应该定位到哪个文件夹
   const restoreFolderRef = useRef<string | null>(null)
   const [dynamicMaxHeight, setDynamicMaxHeight] = useState<number | undefined>(undefined)
+  const currentPath = useMemo(() => {
+    const lastSlashIndex = query.lastIndexOf('/')
+    return lastSlashIndex >= 0 ? query.slice(0, lastSlashIndex) || '.' : '.'
+  }, [query])
 
   // 动态计算菜单最大高度，防止在小屏幕上被 header 遮挡
   useLayoutEffect(() => {
-    if (!isOpen || !menuRef.current) {
-      setDynamicMaxHeight(undefined)
-      return
-    }
+    let frameId: number | null = null
+
     const calculate = () => {
       const el = menuRef.current
-      if (!el) return
+      if (!el) {
+        setDynamicMaxHeight(undefined)
+        return
+      }
       // 菜单的父容器（输入框）的位置
       const parent = el.offsetParent as HTMLElement | null
-      if (!parent) return
+      if (!parent) {
+        setDynamicMaxHeight(undefined)
+        return
+      }
       const parentRect = parent.getBoundingClientRect()
       // 菜单从父容器顶部向上弹出，可用空间 = 父容器顶部 - header高度(56px) - 安全间距(16px) - marginBottom(8px)
       const available = parentRect.top - 56 - 16 - 8
@@ -76,36 +92,23 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
         setDynamicMaxHeight(undefined)
       }
     }
-    calculate()
+
+    if (isOpen) {
+      frameId = requestAnimationFrame(calculate)
+    } else {
+      frameId = requestAnimationFrame(() => setDynamicMaxHeight(undefined))
+    }
+
     // 监听 resize（键盘弹出/收起时触发）
     window.addEventListener('resize', calculate)
     // 也监听 visualViewport 的变化（移动端键盘弹出更可靠）
     window.visualViewport?.addEventListener('resize', calculate)
     return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
       window.removeEventListener('resize', calculate)
       window.visualViewport?.removeEventListener('resize', calculate)
     }
   }, [isOpen])
-
-  // 初始化
-  useEffect(() => {
-    if (isOpen) {
-      // 如果有待恢复的文件夹，不重置 selectedIndex（等 loadDirectory 恢复）
-      if (!restoreFolderRef.current) {
-        setSelectedIndex(0)
-      }
-      // 根据 query 解析目录路径
-      const pathMatch = query.match(/^(.+\/)/)
-      if (pathMatch) {
-        setCurrentPath(pathMatch[1].replace(/\/$/, '') || '.')
-      } else {
-        setCurrentPath('.')
-      }
-    } else {
-      setItems([])
-      setCurrentPath('.')
-    }
-  }, [isOpen, query])
 
   // 滚动选中项到可见区域
   useEffect(() => {
@@ -134,6 +137,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
   // 加载目录内容
   const loadDirectory = useCallback(
     (path: string, filter: string = '') => {
+      const requestId = ++requestIdRef.current
       setLoading(true)
       // 确保 path 不带尾斜杠
       const cleanPath = path.replace(/\/+$/, '') || '.'
@@ -141,6 +145,8 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
       // 传入 rootPath 作为工作目录
       listDirectory(cleanPath, rootPath)
         .then(nodes => {
+          if (requestId !== requestIdRef.current) return
+
           const folders: MentionItem[] = []
           const files: MentionItem[] = []
           const lowerFilter = filter.toLowerCase()
@@ -182,81 +188,85 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           }
         })
         .catch(err => {
+          if (requestId !== requestIdRef.current) return
           fileErrorHandler('list directory', err)
           setItems([])
         })
-        .finally(() => setLoading(false))
+        .finally(() => {
+          if (requestId === requestIdRef.current) {
+            setLoading(false)
+          }
+        })
     },
-    [agents, createItem, rootPath],
+    [agents, createItem, rootPath, excludeValues],
   )
 
   // 搜索逻辑 - 基于 query prop
   useEffect(() => {
     if (!isOpen) return
 
-    // 解析 query：可能是 "src/comp" 这样的路径+过滤
-    // 检测是否包含目录分隔符
-    const lastSlashIndex = query.lastIndexOf('/')
+    const frameId = requestAnimationFrame(() => {
+      const lastSlashIndex = query.lastIndexOf('/')
 
-    if (lastSlashIndex >= 0) {
-      // 有路径：目录部分 + 过滤部分
-      const dirPath = query.slice(0, lastSlashIndex) || '.'
-      const filter = query.slice(lastSlashIndex + 1)
-      setCurrentPath(dirPath)
-      loadDirectory(dirPath, filter)
-    } else {
-      // 无路径：根目录 + 过滤
-      setCurrentPath('.')
+      if (lastSlashIndex >= 0) {
+        const dirPath = query.slice(0, lastSlashIndex) || '.'
+        const filter = query.slice(lastSlashIndex + 1)
+        loadDirectory(dirPath, filter)
+        return
+      }
 
-      // 如果 query 为空，加载根目录
       if (query === '') {
         loadDirectory('.', '')
-      } else {
-        // 有搜索词，使用全局搜索
-        searchAbortRef.current?.abort()
-        searchAbortRef.current = new AbortController()
+        return
+      }
 
-        setLoading(true)
+      const requestId = ++requestIdRef.current
+      setLoading(true)
 
-        searchFiles(query, { limit: 20, directory: rootPath })
-          .then(paths => {
-            const folders: MentionItem[] = []
-            const fileItems: MentionItem[] = []
+      searchFiles(query, { limit: 20, directory: rootPath })
+        .then(paths => {
+          if (requestId !== requestIdRef.current) return
 
-            paths.forEach(path => {
-              const normalized = normalizePath(path)
-              const name = getFileName(normalized)
-              const isDir = !name.includes('.') || path.endsWith('/')
+          const folders: MentionItem[] = []
+          const fileItems: MentionItem[] = []
 
-              if (isDir) {
-                folders.push(createItem('folder', name, normalized))
-              } else {
-                fileItems.push(createItem('file', name, normalized))
-              }
-            })
+          paths.forEach(path => {
+            const normalized = normalizePath(path)
+            const name = getFileName(normalized)
+            const isDir = !name.includes('.') || path.endsWith('/')
 
-            // Agent 也一起搜索
-            const lowerQuery = query.toLowerCase()
-            const agentItems = agents
-              .filter(a => !a.hidden && a.mode === 'subagent')
-              .filter(a => a.name.toLowerCase().includes(lowerQuery))
-              .map(a => createItem('agent', a.name, a.name, a.description))
-
-            const allItems = [...agentItems, ...folders, ...fileItems].filter(item => !excludeValues?.has(item.value))
-
-            setItems(allItems)
-            setSelectedIndex(0)
-          })
-          .catch(err => {
-            if (err.name !== 'AbortError') {
-              fileErrorHandler('file search', err)
-              setItems([])
+            if (isDir) {
+              folders.push(createItem('folder', name, normalized))
+            } else {
+              fileItems.push(createItem('file', name, normalized))
             }
           })
-          .finally(() => setLoading(false))
-      }
-    }
-  }, [isOpen, query, agents, loadDirectory, createItem, rootPath])
+
+          const lowerQuery = query.toLowerCase()
+          const agentItems = agents
+            .filter(a => !a.hidden && a.mode === 'subagent')
+            .filter(a => a.name.toLowerCase().includes(lowerQuery))
+            .map(a => createItem('agent', a.name, a.name, a.description))
+
+          const allItems = [...agentItems, ...folders, ...fileItems].filter(item => !excludeValues?.has(item.value))
+
+          setItems(allItems)
+          setSelectedIndex(0)
+        })
+        .catch(err => {
+          if (requestId !== requestIdRef.current) return
+          fileErrorHandler('file search', err)
+          setItems([])
+        })
+        .finally(() => {
+          if (requestId === requestIdRef.current) {
+            setLoading(false)
+          }
+        })
+    })
+
+    return () => cancelAnimationFrame(frameId)
+  }, [isOpen, query, agents, loadDirectory, createItem, rootPath, excludeValues])
 
   // 暴露方法给父组件
   useImperativeHandle(
@@ -282,11 +292,11 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
         }
       },
       goBack: () => {
-        if (currentPath !== '.') {
+        if (currentPath !== '.' && onNavigate) {
           const parts = normalizePath(currentPath).split('/')
           parts.pop()
           const parent = parts.length === 0 ? '.' : parts.join('/')
-          setCurrentPath(parent)
+          onNavigate(parent === '.' ? '' : `${parent}/`)
         }
       },
       getSelectedItem: () => items[selectedIndex] || null,
@@ -294,7 +304,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
         restoreFolderRef.current = name
       },
     }),
-    [items, selectedIndex, currentPath, onSelect],
+    [items, selectedIndex, currentPath, onNavigate, onSelect],
   )
 
   // 点击外部关闭

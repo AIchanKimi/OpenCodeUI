@@ -175,7 +175,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
             isLoaded: true,
           })),
         )
-      } catch (e) {
+      } catch {
         setTree(prev =>
           updateTreeNode(prev, parentPath, node => ({
             ...node,

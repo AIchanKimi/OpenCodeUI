@@ -7,7 +7,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { MessageRenderer } from '../message'
 import { messageStore } from '../../store'
 import { SpinnerIcon } from '../../components/Icons'
-import type { Message } from '../../types/message'
+import type { Message, Part } from '../../types/message'
 import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInline'
 import {
   VIRTUOSO_START_INDEX,
@@ -87,14 +87,17 @@ function messageHasContent(msg: Message): boolean {
 
 const INFRA_TYPES = new Set(['step-start', 'step-finish', 'snapshot', 'patch'])
 
+function partHasVisibleText(part: Part): boolean {
+  return (part.type === 'text' || part.type === 'reasoning') && part.text.trim().length > 0
+}
+
 /** assistant 消息最后一个有意义的 part 是否为 tool（跳过基础设施和空内容） */
 function endsWithTool(msg: Message): boolean {
   if (msg.info.role !== 'assistant') return false
   for (let i = msg.parts.length - 1; i >= 0; i--) {
     const p = msg.parts[i]
     if (INFRA_TYPES.has(p.type)) continue
-    if (p.type === 'text' && !(p as any).text?.trim()) continue
-    if (p.type === 'reasoning' && !(p as any).text?.trim()) continue
+    if ((p.type === 'text' || p.type === 'reasoning') && !partHasVisibleText(p)) continue
     return p.type === 'tool'
   }
   return false
@@ -110,8 +113,7 @@ function isToolOnlyFollowUp(msg: Message): boolean {
       continue
     }
     if (INFRA_TYPES.has(p.type)) continue
-    if (p.type === 'text' && !(p as any).text?.trim()) continue
-    if (p.type === 'reasoning' && !(p as any).text?.trim()) continue
+    if ((p.type === 'text' || p.type === 'reasoning') && !partHasVisibleText(p)) continue
     return false
   }
   return hasTool
@@ -128,7 +130,7 @@ function isMergeableTrailing(msg: Message): boolean {
   if (msg.info.role !== 'assistant') return false
   // 有可见 thinking → 新思考周期，不合并
   for (const p of msg.parts) {
-    if (p.type === 'reasoning' && (p as any).text?.trim()) return false
+    if (p.type === 'reasoning' && partHasVisibleText(p)) return false
   }
   // 找最后一个 tool 的位置（按 parts 数组索引）
   let lastToolIdx = -1
@@ -142,7 +144,7 @@ function isMergeableTrailing(msg: Message): boolean {
   // 所有可见 text 都必须在 lastToolIdx 之后
   for (let i = 0; i < lastToolIdx; i++) {
     const p = msg.parts[i]
-    if (p.type === 'text' && (p as any).text?.trim()) return false
+    if (p.type === 'text' && partHasVisibleText(p)) return false
   }
   return true
 }
@@ -451,7 +453,7 @@ export const ChatArea = memo(
         }, 120)
 
         return () => clearTimeout(timer)
-      }, [onLoadMore, isLoadingMore, isNearTop, sessionId, handleLoadMore])
+      }, [onLoadMore, isLoadingMore, isNearTop, sessionId, hasMoreHistory, handleLoadMore])
 
       // Always start at the bottom (latest message)
       const effectiveInitialIndex = Math.max(0, visibleMessages.length - 1)
@@ -778,7 +780,6 @@ export const ChatArea = memo(
               />
             </>
           ),
-          // eslint-disable-next-line react-hooks/exhaustive-deps
         }),
         [],
       )

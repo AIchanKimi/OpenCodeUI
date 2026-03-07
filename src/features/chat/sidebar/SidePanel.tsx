@@ -22,7 +22,7 @@ import {
 import { CircularProgress } from '../../../components/CircularProgress'
 import { useDirectory, useSessionStats, formatTokens, formatCost, useKeybindingLabel } from '../../../hooks'
 import type { ThemeMode } from '../../../hooks'
-import { useSessionContext } from '../../../contexts/SessionContext'
+import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useMessageStore } from '../../../store'
 import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
@@ -296,8 +296,16 @@ export function SidePanel({
   )
 
   useEffect(() => {
+    let frameId: number | null = null
+
     if (!isExpanded) {
-      setProjectsExpanded(false)
+      frameId = requestAnimationFrame(() => {
+        setProjectsExpanded(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
     }
   }, [isExpanded])
 
@@ -931,6 +939,7 @@ function SidebarFooter({
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [contextDialogOpen, setContextDialogOpen] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const prevShowLabelsRef = useRef(showLabels)
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -1020,8 +1029,19 @@ function SidebarFooter({
 
   // 侧边栏状态变化时关闭
   useEffect(() => {
-    if (isOpen) closeMenu()
-  }, [showLabels]) // eslint-disable-line react-hooks/exhaustive-deps
+    const showLabelsChanged = prevShowLabelsRef.current !== showLabels
+    prevShowLabelsRef.current = showLabels
+
+    let frameId: number | null = null
+
+    if (showLabelsChanged && isOpen) {
+      frameId = requestAnimationFrame(() => closeMenu())
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
+    }
+  }, [showLabels, isOpen, closeMenu])
 
   // 清理 closeTimeout 防止内存泄漏
   useEffect(() => {

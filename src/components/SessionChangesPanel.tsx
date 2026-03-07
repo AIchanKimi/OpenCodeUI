@@ -45,6 +45,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const [isResizing, setIsResizing] = useState(false)
   const rafRef = useRef<number>(0)
   const currentHeightRef = useRef<number | null>(null)
+  const requestIdRef = useRef(0)
 
   const isAnyResizing = isPanelResizing || isResizing
 
@@ -58,24 +59,37 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
 
   // 加载数据
   useEffect(() => {
-    if (sessionId) {
+    if (!sessionId) return
+
+    let cancelled = false
+    const requestId = ++requestIdRef.current
+    const timer = window.setTimeout(() => {
       setLoading(true)
       setError(null)
+
       getSessionDiff(sessionId)
         .then(data => {
+          if (cancelled || requestId !== requestIdRef.current) return
+
           setDiffs(data)
-          // 默认选中第一个文件
-          if (data.length > 0) {
-            setSelectedFile(data[0].file)
-          } else {
-            setSelectedFile(null)
-          }
+          setExpandedDirs(prev => (prev.size === 0 ? collectExpandedDirPaths(buildChangesTree(data)) : prev))
+          setSelectedFile(data.length > 0 ? data[0].file : null)
         })
         .catch(err => {
+          if (cancelled || requestId !== requestIdRef.current) return
           console.error('Failed to load session diff:', err)
           setError('Failed to load changes')
         })
-        .finally(() => setLoading(false))
+        .finally(() => {
+          if (!cancelled && requestId === requestIdRef.current) {
+            setLoading(false)
+          }
+        })
+    }, 0)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
     }
   }, [sessionId])
 
@@ -121,23 +135,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
 
   // 构建树形结构
   const changesTree = useMemo(() => buildChangesTree(diffs), [diffs])
-
-  // 默认展开所有目录（首次加载时）
-  useEffect(() => {
-    if (diffs.length > 0 && expandedDirs.size === 0) {
-      const allDirPaths = new Set<string>()
-      const collectDirs = (nodes: ChangesTreeNode[]) => {
-        for (const node of nodes) {
-          if (node.type === 'directory') {
-            allDirPaths.add(node.path)
-            collectDirs(node.children)
-          }
-        }
-      }
-      collectDirs(changesTree)
-      setExpandedDirs(allDirPaths)
-    }
-  }, [diffs, changesTree, expandedDirs.size])
 
   // 关闭预览
   const handleClosePreview = useCallback(() => {
@@ -584,6 +581,22 @@ function buildChangesTree(diffs: FileDiff[]): ChangesTreeNode[] {
   }
 
   return processNodes(root)
+}
+
+function collectExpandedDirPaths(nodes: ChangesTreeNode[]): Set<string> {
+  const allDirPaths = new Set<string>()
+
+  const collectDirs = (entries: ChangesTreeNode[]) => {
+    for (const node of entries) {
+      if (node.type === 'directory') {
+        allDirPaths.add(node.path)
+        collectDirs(node.children)
+      }
+    }
+  }
+
+  collectDirs(nodes)
+  return allDirPaths
 }
 
 // ============================================

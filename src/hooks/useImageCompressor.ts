@@ -24,6 +24,8 @@ export function useImageCompressor() {
 
   // 初始化 Worker
   useEffect(() => {
+    const pendingRequests = pendingRef.current
+
     // 动态导入 Worker
     workerRef.current = new Worker(new URL('../workers/imageCompressor.worker.ts', import.meta.url), { type: 'module' })
 
@@ -64,10 +66,10 @@ export function useImageCompressor() {
       workerRef.current?.terminate()
       workerRef.current = null
       // 拒绝所有未完成的请求
-      for (const [, pending] of pendingRef.current) {
+      for (const [, pending] of pendingRequests) {
         pending.reject(new Error('Worker terminated'))
       }
-      pendingRef.current.clear()
+      pendingRequests.clear()
     }
   }, [])
 

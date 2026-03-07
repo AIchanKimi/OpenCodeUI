@@ -180,7 +180,7 @@ const DesktopAperture = memo(function DesktopAperture({
   }, [entries.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Animation loop ----
-  const runLoop = useCallback(() => {
+  const runLoop = useCallback(function runLoop() {
     const container = containerRef.current
     if (!container) return
 
@@ -249,7 +249,7 @@ const DesktopAperture = memo(function DesktopAperture({
     if (isHoveringRef.current || alive) {
       rafIdRef.current = requestAnimationFrame(runLoop)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const ensureLoop = useCallback(() => {
     cancelAnimationFrame(rafIdRef.current)
@@ -394,109 +394,112 @@ const MobileAperture = memo(function MobileAperture({
   }, [])
 
   // ---- 动画循环 ----
-  const runLoop = useCallback(() => {
-    const container = containerRef.current
-    if (!container) return
+  const runLoop = useCallback(
+    function runLoop() {
+      const container = containerRef.current
+      if (!container) return
 
-    const items = container.querySelectorAll<HTMLElement>('[data-moi]')
-    const touchY = touchYRef.current
-    let alive = false
-    let focusIdx = -1
-    let maxS = 0
+      const items = container.querySelectorAll<HTMLElement>('[data-moi]')
+      const touchY = touchYRef.current
+      let alive = false
+      let focusIdx = -1
+      let maxS = 0
 
-    items.forEach((item, i) => {
-      const tick = item.querySelector<HTMLElement>('[data-mtick]')
-      const label = item.querySelector<HTMLElement>('[data-mlabel]')
-      if (!tick || !label) return
+      items.forEach((item, i) => {
+        const tick = item.querySelector<HTMLElement>('[data-mtick]')
+        const label = item.querySelector<HTMLElement>('[data-mlabel]')
+        if (!tick || !label) return
 
-      // target
-      let target = 0
-      if (touchY !== null) {
-        const rect = item.getBoundingClientRect()
-        const centerY = rect.top + rect.height / 2
-        const d = Math.abs(touchY - centerY)
-        if (d < MOBILE_INFLUENCE_RADIUS) {
-          target = Math.cos((d / MOBILE_INFLUENCE_RADIUS) * (Math.PI / 2))
+        // target
+        let target = 0
+        if (touchY !== null) {
+          const rect = item.getBoundingClientRect()
+          const centerY = rect.top + rect.height / 2
+          const d = Math.abs(touchY - centerY)
+          if (d < MOBILE_INFLUENCE_RADIUS) {
+            target = Math.cos((d / MOBILE_INFLUENCE_RADIUS) * (Math.PI / 2))
+          }
+        }
+
+        // lerp
+        const prev = strengthsRef.current[i] ?? 0
+        let s = prev + (target - prev) * LERP_FACTOR
+        if (Math.abs(s) < EPSILON && target === 0) s = 0
+        strengthsRef.current[i] = s
+        if (Math.abs(s - target) > EPSILON) alive = true
+
+        // 找最强项
+        if (s > maxS) {
+          maxS = s
+          focusIdx = i
+        }
+
+        const isActive = item.dataset.active === '1'
+        const baseW = isActive ? 10 : MOBILE_TICK_W_MIN
+
+        // styles
+        const w = baseW + s * (MOBILE_TICK_W_MAX - MOBILE_TICK_W_MIN)
+        const m = MOBILE_MARGIN_MIN + s * (MOBILE_MARGIN_MAX - MOBILE_MARGIN_MIN)
+        tick.style.width = `${w}px`
+        item.style.marginTop = `${m}px`
+        item.style.marginBottom = `${m}px`
+        tick.style.opacity = '1'
+
+        // tick 颜色
+        if (s > 0.5) {
+          tick.style.backgroundColor = 'hsl(var(--accent-main-200))'
+          tick.style.boxShadow = '0 0 3px hsl(var(--accent-main-100) / 0.4)'
+        } else if (isActive) {
+          tick.style.backgroundColor = 'hsl(var(--accent-main-100) / 0.55)'
+          tick.style.boxShadow = 'none'
+        } else {
+          tick.style.backgroundColor = 'hsl(var(--border-300))'
+          tick.style.boxShadow = 'none'
+        }
+
+        // label
+        if (s > MOBILE_LABEL_THRESHOLD) {
+          const t = Math.min(1, (s - MOBILE_LABEL_THRESHOLD) / (1 - MOBILE_LABEL_THRESHOLD))
+          label.style.opacity = `${t}`
+          label.style.transform = `translateX(${(1 - t) * 12}px)`
+          label.style.visibility = 'visible'
+        } else {
+          label.style.opacity = '0'
+          label.style.transform = 'translateX(12px)'
+          label.style.visibility = 'hidden'
+        }
+      })
+
+      // 焦点切换 → 震动 + 更新 overlay 标题
+      if (focusIdx >= 0 && maxS > 0.5 && focusIdx !== prevFocusIdxRef.current) {
+        prevFocusIdxRef.current = focusIdx
+        vibrate()
+        // 更新模糊层上的标题
+        const titleEl = overlayTitleRef.current
+        if (titleEl) {
+          titleEl.textContent = entries[focusIdx].title
+          titleEl.style.opacity = '1'
+          titleEl.style.transform = 'translateY(0px)'
+        }
+      }
+      // 没有焦点时淡出标题
+      if ((focusIdx < 0 || maxS <= 0.5) && !isTouchingRef.current) {
+        const titleEl = overlayTitleRef.current
+        if (titleEl) {
+          titleEl.style.opacity = '0'
+          titleEl.style.transform = 'translateY(4px)'
         }
       }
 
-      // lerp
-      const prev = strengthsRef.current[i] ?? 0
-      let s = prev + (target - prev) * LERP_FACTOR
-      if (Math.abs(s) < EPSILON && target === 0) s = 0
-      strengthsRef.current[i] = s
-      if (Math.abs(s - target) > EPSILON) alive = true
-
-      // 找最强项
-      if (s > maxS) {
-        maxS = s
-        focusIdx = i
-      }
-
-      const isActive = item.dataset.active === '1'
-      const baseW = isActive ? 10 : MOBILE_TICK_W_MIN
-
-      // styles
-      const w = baseW + s * (MOBILE_TICK_W_MAX - MOBILE_TICK_W_MIN)
-      const m = MOBILE_MARGIN_MIN + s * (MOBILE_MARGIN_MAX - MOBILE_MARGIN_MIN)
-      tick.style.width = `${w}px`
-      item.style.marginTop = `${m}px`
-      item.style.marginBottom = `${m}px`
-      tick.style.opacity = '1'
-
-      // tick 颜色
-      if (s > 0.5) {
-        tick.style.backgroundColor = 'hsl(var(--accent-main-200))'
-        tick.style.boxShadow = '0 0 3px hsl(var(--accent-main-100) / 0.4)'
-      } else if (isActive) {
-        tick.style.backgroundColor = 'hsl(var(--accent-main-100) / 0.55)'
-        tick.style.boxShadow = 'none'
+      if (isTouchingRef.current || alive) {
+        rafIdRef.current = requestAnimationFrame(runLoop)
       } else {
-        tick.style.backgroundColor = 'hsl(var(--border-300))'
-        tick.style.boxShadow = 'none'
+        // 所有 strength 归零后收起 overlay
+        setOverlayVisible(false)
       }
-
-      // label
-      if (s > MOBILE_LABEL_THRESHOLD) {
-        const t = Math.min(1, (s - MOBILE_LABEL_THRESHOLD) / (1 - MOBILE_LABEL_THRESHOLD))
-        label.style.opacity = `${t}`
-        label.style.transform = `translateX(${(1 - t) * 12}px)`
-        label.style.visibility = 'visible'
-      } else {
-        label.style.opacity = '0'
-        label.style.transform = 'translateX(12px)'
-        label.style.visibility = 'hidden'
-      }
-    })
-
-    // 焦点切换 → 震动 + 更新 overlay 标题
-    if (focusIdx >= 0 && maxS > 0.5 && focusIdx !== prevFocusIdxRef.current) {
-      prevFocusIdxRef.current = focusIdx
-      vibrate()
-      // 更新模糊层上的标题
-      const titleEl = overlayTitleRef.current
-      if (titleEl) {
-        titleEl.textContent = entries[focusIdx].title
-        titleEl.style.opacity = '1'
-        titleEl.style.transform = 'translateY(0px)'
-      }
-    }
-    // 没有焦点时淡出标题
-    if ((focusIdx < 0 || maxS <= 0.5) && !isTouchingRef.current) {
-      const titleEl = overlayTitleRef.current
-      if (titleEl) {
-        titleEl.style.opacity = '0'
-        titleEl.style.transform = 'translateY(4px)'
-      }
-    }
-
-    if (isTouchingRef.current || alive) {
-      rafIdRef.current = requestAnimationFrame(runLoop)
-    } else {
-      // 所有 strength 归零后收起 overlay
-      setOverlayVisible(false)
-    }
-  }, [entries, vibrate]) // eslint-disable-line react-hooks/exhaustive-deps
+    },
+    [entries, vibrate],
+  )
 
   const ensureLoop = useCallback(() => {
     cancelAnimationFrame(rafIdRef.current)

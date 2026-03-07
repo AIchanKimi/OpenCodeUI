@@ -3,7 +3,7 @@
 // 斜杠命令选择菜单
 // ============================================
 
-import { useState, useEffect, useLayoutEffect, useRef, useImperativeHandle, forwardRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useImperativeHandle, forwardRef, useMemo } from 'react'
 import { getCommands, type Command } from '../../api/command'
 import { TerminalIcon } from '../../components/Icons'
 
@@ -36,25 +36,38 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
   ref,
 ) {
   const [commands, setCommands] = useState<Command[]>([])
-  const [filteredCommands, setFilteredCommands] = useState<Command[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [loading, setLoading] = useState(false)
 
   const menuRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [dynamicMaxHeight, setDynamicMaxHeight] = useState<number | undefined>(undefined)
+  const requestIdRef = useRef(0)
+  const filteredCommands = useMemo(() => {
+    if (!isOpen) return []
+
+    const lowerQuery = query.toLowerCase()
+    return commands.filter(
+      cmd => cmd.name.toLowerCase().includes(lowerQuery) || cmd.description?.toLowerCase().includes(lowerQuery),
+    )
+  }, [commands, isOpen, query])
+  const activeIndex = filteredCommands.length === 0 ? 0 : Math.min(selectedIndex, filteredCommands.length - 1)
 
   // 动态计算菜单最大高度，防止在小屏幕上被 header 遮挡
   useLayoutEffect(() => {
-    if (!isOpen || !menuRef.current) {
-      setDynamicMaxHeight(undefined)
-      return
-    }
+    let frameId: number | null = null
+
     const calculate = () => {
       const el = menuRef.current
-      if (!el) return
+      if (!el) {
+        setDynamicMaxHeight(undefined)
+        return
+      }
       const parent = el.offsetParent as HTMLElement | null
-      if (!parent) return
+      if (!parent) {
+        setDynamicMaxHeight(undefined)
+        return
+      }
       const parentRect = parent.getBoundingClientRect()
       const available = parentRect.top - 56 - 16 - 8
       if (available > 0 && available < 360) {
@@ -63,10 +76,17 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
         setDynamicMaxHeight(undefined)
       }
     }
-    calculate()
+
+    if (isOpen) {
+      frameId = requestAnimationFrame(calculate)
+    } else {
+      frameId = requestAnimationFrame(() => setDynamicMaxHeight(undefined))
+    }
+
     window.addEventListener('resize', calculate)
     window.visualViewport?.addEventListener('resize', calculate)
     return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
       window.removeEventListener('resize', calculate)
       window.visualViewport?.removeEventListener('resize', calculate)
     }
@@ -76,42 +96,50 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
   useEffect(() => {
     if (!isOpen) return
 
-    setLoading(true)
-    getCommands(rootPath)
-      .then(cmds => {
-        setCommands(cmds)
-        setLoading(false)
-      })
-      .catch(err => {
-        console.error('Failed to load commands:', err)
-        setCommands([])
-        setLoading(false)
-      })
+    const frameId = requestAnimationFrame(() => {
+      const requestId = ++requestIdRef.current
+      setLoading(true)
+
+      getCommands(rootPath)
+        .then(cmds => {
+          if (requestId !== requestIdRef.current) return
+          setCommands(cmds)
+          setSelectedIndex(0)
+        })
+        .catch(err => {
+          if (requestId !== requestIdRef.current) return
+          console.error('Failed to load commands:', err)
+          setCommands([])
+        })
+        .finally(() => {
+          if (requestId === requestIdRef.current) {
+            setLoading(false)
+          }
+        })
+    })
+
+    return () => cancelAnimationFrame(frameId)
   }, [isOpen, rootPath])
 
-  // 根据 query 过滤命令
+  // query 变化时重置选中项
   useEffect(() => {
-    if (!isOpen) {
-      setFilteredCommands([])
-      return
-    }
+    if (!isOpen) return
 
-    const lowerQuery = query.toLowerCase()
-    const filtered = commands.filter(
-      cmd => cmd.name.toLowerCase().includes(lowerQuery) || cmd.description?.toLowerCase().includes(lowerQuery),
-    )
-    setFilteredCommands(filtered)
-    setSelectedIndex(0)
-  }, [isOpen, query, commands])
+    const frameId = requestAnimationFrame(() => {
+      setSelectedIndex(0)
+    })
+
+    return () => cancelAnimationFrame(frameId)
+  }, [isOpen, query])
 
   // 滚动选中项到可见区域
   useEffect(() => {
     if (!listRef.current) return
-    const selectedEl = listRef.current.children[selectedIndex] as HTMLElement
+    const selectedEl = listRef.current.children[activeIndex] as HTMLElement
     if (selectedEl) {
       selectedEl.scrollIntoView({ block: 'nearest' })
     }
-  }, [selectedIndex])
+  }, [activeIndex])
 
   // 暴露方法给父组件
   useImperativeHandle(
@@ -124,14 +152,14 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
         setSelectedIndex(prev => Math.min(prev + 1, filteredCommands.length - 1))
       },
       selectCurrent: () => {
-        const selected = filteredCommands[selectedIndex]
+        const selected = filteredCommands[activeIndex]
         if (selected) {
           onSelect(selected)
         }
       },
-      getSelectedCommand: () => filteredCommands[selectedIndex] || null,
+      getSelectedCommand: () => filteredCommands[activeIndex] || null,
     }),
-    [filteredCommands, selectedIndex, onSelect],
+    [filteredCommands, activeIndex, onSelect],
   )
 
   // 点击外部关闭
@@ -183,7 +211,7 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
             key={cmd.name}
             title={cmd.description}
             className={`w-full px-3 py-2.5 md:py-2 flex items-start gap-3 text-left transition-colors ${
-              index === selectedIndex ? 'bg-accent-main-100/10' : 'hover:bg-bg-100 active:bg-bg-100'
+              index === activeIndex ? 'bg-accent-main-100/10' : 'hover:bg-bg-100 active:bg-bg-100'
             }`}
             onClick={() => onSelect(cmd)}
             onPointerEnter={() => setSelectedIndex(index)}

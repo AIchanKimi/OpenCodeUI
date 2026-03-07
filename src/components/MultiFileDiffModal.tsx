@@ -4,7 +4,7 @@
  * VSCode 风格：全屏铺满 + 毛玻璃背景 + 左侧文件列表 + 右侧 Diff
  */
 
-import { memo, useState, useEffect, useMemo } from 'react'
+import { memo, useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { CloseIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
@@ -13,6 +13,7 @@ import { ViewModeSwitch } from './FullscreenViewer'
 import { getSessionDiff } from '../api/session'
 import type { FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
+import { useDelayedRender } from '../hooks/useDelayedRender'
 
 // ============================================
 // Types
@@ -33,7 +34,6 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
   onClose,
   sessionId,
 }: MultiFileDiffModalProps) {
-  const [shouldRender, setShouldRender] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
 
   const [loading, setLoading] = useState(false)
@@ -41,6 +41,8 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
   const [selectedFileIndex, setSelectedFileIndex] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>('split')
   const [error, setError] = useState<string | null>(null)
+  const shouldRender = useDelayedRender(isOpen, 200)
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     const checkWidth = () => setViewMode(window.innerWidth >= 1200 ? 'split' : 'unified')
@@ -50,36 +52,56 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
   }, [])
 
   useEffect(() => {
-    if (isOpen && sessionId) {
+    if (!isOpen || !sessionId) return
+
+    let cancelled = false
+    const requestId = ++requestIdRef.current
+    const timer = window.setTimeout(() => {
       setLoading(true)
       setError(null)
+
       getSessionDiff(sessionId)
         .then(data => {
+          if (cancelled || requestId !== requestIdRef.current) return
+
           setDiffs(data)
-          if (data.length > 0) setSelectedFileIndex(0)
+          if (data.length > 0) {
+            setSelectedFileIndex(0)
+          }
         })
         .catch(err => {
+          if (cancelled || requestId !== requestIdRef.current) return
           console.error('Failed to load session diff:', err)
           setError('Failed to load changes')
         })
-        .finally(() => setLoading(false))
+        .finally(() => {
+          if (!cancelled && requestId === requestIdRef.current) {
+            setLoading(false)
+          }
+        })
+    }, 0)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
     }
   }, [isOpen, sessionId])
 
   useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true)
-    } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen])
+    let frameId: number | null = null
 
-  useEffect(() => {
     if (shouldRender && isOpen) {
-      const timer = setTimeout(() => setIsVisible(true), 10)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(true)
+      })
+    } else {
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
     }
   }, [shouldRender, isOpen])
 

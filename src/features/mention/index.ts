@@ -24,7 +24,8 @@ export {
 } from './utils'
 
 // Components
-export { MentionTag, RichText, createMentionElement } from './MentionTag'
+export { MentionTag, RichText } from './MentionTag'
+export { createMentionElement } from './createMentionElement'
 export { MentionMenu, type MentionMenuHandle } from './MentionMenu'
 
 // Hooks

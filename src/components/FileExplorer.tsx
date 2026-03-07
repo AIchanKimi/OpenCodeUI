@@ -659,28 +659,47 @@ function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
   const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 })
   const scaleRef = useRef(1) // 同步访问，避免 stale closure
   const [scale, setScale] = useState(1)
+  const [fitScale, setFitScale] = useState(1)
   const [translate, setTranslate] = useState({ x: 0, y: 0 })
   const [initialized, setInitialized] = useState(false)
   const dragRef = useRef({ active: false, startX: 0, startY: 0 })
 
   // fit-to-container scale
-  const getFitScale = useCallback(() => {
-    const el = containerRef.current
-    if (!el || !naturalSize.w || !naturalSize.h) return 1
-    const rect = el.getBoundingClientRect()
-    return Math.min(rect.width / naturalSize.w, rect.height / naturalSize.h, 1)
-  }, [naturalSize])
+  const computeFitScale = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el || !naturalSize.w || !naturalSize.h) return 1
+      const rect = el.getBoundingClientRect()
+      return Math.min(rect.width / naturalSize.w, rect.height / naturalSize.h, 1)
+    },
+    [naturalSize],
+  )
 
   // 图片加载后初始化
   useEffect(() => {
-    if (naturalSize.w && !initialized) {
-      const fit = getFitScale()
-      scaleRef.current = fit
-      setScale(fit)
-      setTranslate({ x: 0, y: 0 })
-      setInitialized(true)
+    const container = containerRef.current
+    if (!container || !naturalSize.w || !naturalSize.h) return
+
+    const updateFitScale = () => {
+      const nextFitScale = computeFitScale(container)
+      setFitScale(nextFitScale)
+
+      if (!initialized) {
+        scaleRef.current = nextFitScale
+        setScale(nextFitScale)
+        setTranslate({ x: 0, y: 0 })
+        setInitialized(true)
+      }
     }
-  }, [naturalSize, initialized, getFitScale])
+
+    updateFitScale()
+
+    const resizeObserver = new ResizeObserver(updateFitScale)
+    resizeObserver.observe(container)
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [naturalSize, initialized, computeFitScale])
 
   // 滚轮缩放 — 以鼠标位置为锚点
   useEffect(() => {
@@ -752,11 +771,10 @@ function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
   }, [])
 
   const zoomFit = useCallback(() => {
-    const fit = getFitScale()
-    scaleRef.current = fit
-    setScale(fit)
+    scaleRef.current = fitScale
+    setScale(fitScale)
     setTranslate({ x: 0, y: 0 })
-  }, [getFitScale])
+  }, [fitScale])
 
   const zoomActual = useCallback(() => {
     scaleRef.current = 1
@@ -764,7 +782,6 @@ function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
     setTranslate({ x: 0, y: 0 })
   }, [])
 
-  const fitScale = getFitScale()
   const isFit = Math.abs(scale - fitScale) < 0.001 && translate.x === 0 && translate.y === 0
   const isActual = Math.abs(scale - 1) < 0.001 && translate.x === 0 && translate.y === 0
 
@@ -1020,29 +1037,17 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(0)
 
-  // 缓存高亮结果 - 仅在同一段 code 的高亮加载期间保留旧结果
-  const highlightedLinesRef = useRef<string[] | null>(null)
-  const highlightedCodeRef = useRef(code)
-
-  // code 变化时清除缓存，防止显示旧代码的高亮内容
-  if (highlightedCodeRef.current !== code) {
-    highlightedLinesRef.current = null
-    highlightedCodeRef.current = code
-  }
-
   // 解析高亮后的行
   const highlightedLines = useMemo(() => {
-    if (isLoading || !html) return highlightedLinesRef.current
+    if (isLoading || !html) return null
 
     const parser = new DOMParser()
     const doc = parser.parseFromString(html as string, 'text/html')
     const lineElements = doc.querySelectorAll('.line')
 
-    if (lineElements.length === 0) return highlightedLinesRef.current
+    if (lineElements.length === 0) return null
 
-    const result = Array.from(lineElements).map(el => el.innerHTML || '')
-    highlightedLinesRef.current = result
-    return result
+    return Array.from(lineElements).map(el => el.innerHTML || '')
   }, [html, isLoading])
 
   // 计算可见范围
@@ -1134,7 +1139,7 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
       )
     }
     return result
-  }, [startIndex, endIndex, lines, highlightedLines])
+  }, [startIndex, endIndex, lines, highlightedLines, truncateLines])
 
   return (
     <div

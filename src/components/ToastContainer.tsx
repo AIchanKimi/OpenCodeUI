@@ -124,7 +124,7 @@ export function ToastContainer() {
     notificationStore.markRead(id)
     if (sessionId) {
       const dir = directory ? `?dir=${directory}` : ''
-      window.location.hash = `#/session/${sessionId}${dir}`
+      window.location.assign(`#/session/${sessionId}${dir}`)
     }
   }
 

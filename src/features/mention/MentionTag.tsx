@@ -4,7 +4,7 @@
 // ============================================
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { MentionType, MentionItem } from './types'
+import type { MentionType } from './types'
 import { formatMentionLabel, getFileName, MENTION_COLORS } from './utils'
 import { CheckIcon } from '../../components/Icons'
 
@@ -122,72 +122,4 @@ export function RichText({ text, className = '' }: RichTextProps) {
       })}
     </span>
   )
-}
-
-// ============================================
-// createMentionElement - 为 contentEditable 创建 mention DOM 元素
-// ============================================
-
-/**
- * 为 contentEditable 创建 mention span 元素
- * 用于在输入框中插入 mention 标签
- *
- * 返回 { element, cleanup } - 调用者需要在元素移除时调用 cleanup 清理事件监听器
- */
-export function createMentionElement(item: MentionItem): { element: HTMLSpanElement; cleanup: () => void } {
-  const span = document.createElement('span')
-  const label = formatMentionLabel(item.type, item.displayName)
-
-  // 设置样式类
-  span.className = `mention-tag inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border cursor-pointer select-none`
-  span.contentEditable = 'false'
-
-  // 设置数据属性（用于序列化和样式）
-  span.dataset.mentionType = item.type
-  span.dataset.mentionValue = item.value
-  span.dataset.mentionDisplay = item.displayName
-
-  // 设置显示文本
-  span.textContent = label
-  span.title = `Click to copy: ${item.value}`
-
-  // 用于清理的 timeout ref
-  let copyTimeoutId: ReturnType<typeof setTimeout> | null = null
-
-  // 点击复制功能
-  const handleClick = (e: Event) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    navigator.clipboard.writeText(item.value).then(() => {
-      // 显示复制成功（添加 ✓ 图标）
-      // NOTE: 此处使用字符串拼接的内联 SVG，因为是原始 DOM 操作（innerHTML），无法使用 React 组件
-      const originalContent = span.innerHTML
-      const checkIcon =
-        '<svg class="w-3 h-3 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'
-      span.innerHTML = `${checkIcon}<span>${label}</span>`
-
-      // 清理之前的 timeout
-      if (copyTimeoutId) {
-        clearTimeout(copyTimeoutId)
-      }
-      copyTimeoutId = setTimeout(() => {
-        span.innerHTML = originalContent
-        copyTimeoutId = null
-      }, 1200)
-    })
-  }
-
-  span.addEventListener('click', handleClick)
-
-  // 返回清理函数
-  const cleanup = () => {
-    span.removeEventListener('click', handleClick)
-    if (copyTimeoutId) {
-      clearTimeout(copyTimeoutId)
-      copyTimeoutId = null
-    }
-  }
-
-  return { element: span, cleanup }
 }

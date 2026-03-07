@@ -51,6 +51,7 @@ export function useSmoothStream(
 
   // Refs for animation control
   const frameRef = useRef<number | null>(null)
+  const deferredDisplayFrameRef = useRef<number | null>(null)
   const lastTimeRef = useRef<number>(0)
   const frameCountRef = useRef(0) // 帧计数器，用于批量更新
   const idleFramesRef = useRef(0) // 连续空闲帧计数，用于降频
@@ -61,6 +62,17 @@ export function useSmoothStream(
   const prevTextRef = useRef(fullText)
   // 标记是否是组件首次渲染
   const isFirstRenderRef = useRef(true)
+
+  const scheduleDisplayIndex = useCallback((nextIndex: number) => {
+    if (deferredDisplayFrameRef.current) {
+      cancelAnimationFrame(deferredDisplayFrameRef.current)
+    }
+
+    deferredDisplayFrameRef.current = requestAnimationFrame(() => {
+      setDisplayIndex(nextIndex)
+      deferredDisplayFrameRef.current = null
+    })
+  }, [])
 
   // 检测内容重置（新对话/切换 session）
   useEffect(() => {
@@ -85,19 +97,19 @@ export function useSmoothStream(
     if (isNewContent) {
       // 切换到新 session，直接显示全部（不做动画）
       actualIndexRef.current = fullText.length
-      setDisplayIndex(fullText.length)
+      scheduleDisplayIndex(fullText.length)
     } else if (isNewConversation && isStreaming) {
       // 新对话开始，从 0 开始动画
       actualIndexRef.current = 0
-      setDisplayIndex(0)
+      scheduleDisplayIndex(0)
     } else if (!isStreaming) {
       // 非 streaming 的历史内容，直接显示完整内容
       actualIndexRef.current = fullText.length
-      setDisplayIndex(fullText.length)
+      scheduleDisplayIndex(fullText.length)
     }
 
     prevTextRef.current = fullText
-  }, [fullText, isStreaming])
+  }, [fullText, isStreaming, scheduleDisplayIndex])
 
   // 核心：处理 streaming 状态变化
   useEffect(() => {
@@ -112,7 +124,7 @@ export function useSmoothStream(
     // streaming 刚结束：立即显示全部剩余内容
     if (wasStreaming && !isStreaming) {
       actualIndexRef.current = fullText.length
-      setDisplayIndex(fullText.length)
+      scheduleDisplayIndex(fullText.length)
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current)
         frameRef.current = null
@@ -121,15 +133,15 @@ export function useSmoothStream(
     }
 
     wasStreamingRef.current = isStreaming
-  }, [isStreaming, fullText.length])
+  }, [isStreaming, fullText.length, scheduleDisplayIndex])
 
   // 历史消息或 hydrate 后内容补齐时，直接显示全部
   useEffect(() => {
     if (!isStreaming) {
       actualIndexRef.current = fullText.length
-      setDisplayIndex(fullText.length)
+      scheduleDisplayIndex(fullText.length)
     }
-  }, [fullText.length, isStreaming])
+  }, [fullText.length, isStreaming, scheduleDisplayIndex])
 
   // 使用 ref 存储最新值，避免 useEffect 依赖变化导致频繁重启动画
   const fullTextLengthRef = useRef(fullText.length)
@@ -168,7 +180,7 @@ export function useSmoothStream(
       const elapsed = time - lastTimeRef.current
 
       // 获取当前 index
-      let currentIndex = actualIndexRef.current
+      const currentIndex = actualIndexRef.current
 
       // 已经显示完了，继续等待新内容
       if (currentIndex >= fullTextLength) {
@@ -252,6 +264,10 @@ export function useSmoothStream(
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current)
         frameRef.current = null
+      }
+      if (deferredDisplayFrameRef.current) {
+        cancelAnimationFrame(deferredDisplayFrameRef.current)
+        deferredDisplayFrameRef.current = null
       }
       idleFramesRef.current = 0
     }

@@ -16,9 +16,11 @@ export function useMessageAnimation() {
 
   // 清理所有 timeout
   useEffect(() => {
+    const timeouts = timeoutsRef.current
+
     return () => {
-      timeoutsRef.current.forEach(id => clearTimeout(id))
-      timeoutsRef.current.clear()
+      timeouts.forEach(id => clearTimeout(id))
+      timeouts.clear()
     }
   }, [])
 

@@ -6,7 +6,7 @@
 import { useState, useRef, useCallback } from 'react'
 import type { MentionItem, MentionMenuState, MentionConfig } from './types'
 import { detectMentionTrigger, toAbsolutePath } from './utils'
-import { createMentionElement } from './MentionTag'
+import { createMentionElement } from './createMentionElement'
 
 interface UseMentionOptions extends MentionConfig {
   /** 编辑器元素的 ref */

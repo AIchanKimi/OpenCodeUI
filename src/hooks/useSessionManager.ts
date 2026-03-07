@@ -37,7 +37,10 @@ function mergeWithLocalStreamingMessages(
   const apiIds = new Set(apiMessages.map(m => m.info.id))
   const localOnly = localState.messages
     .filter(m => !apiIds.has(m.info.id))
-    .map(m => ({ info: m.info as any, parts: m.parts as any[] })) as ApiMessageWithParts[]
+    .map(m => ({
+      info: m.info as ApiMessageWithParts['info'],
+      parts: m.parts as unknown as ApiMessageWithParts['parts'],
+    })) as ApiMessageWithParts[]
 
   if (localOnly.length === 0) return apiMessages
 
@@ -317,8 +320,8 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
 
         const history = revertedUserMessages.map(m => {
           const content = extractUserMessageContent({
-            info: m.info as any,
-            parts: m.parts as any[],
+            info: m.info as ApiMessageWithParts['info'],
+            parts: m.parts as unknown as ApiMessageWithParts['parts'],
           })
           const userInfo = m.info as unknown as ApiUserMessage
           return {

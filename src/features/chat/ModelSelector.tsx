@@ -30,6 +30,10 @@ export interface ModelSelectorHandle {
   openMenu: () => void
 }
 
+type FlatListItem =
+  | { type: 'header'; data: { name: string }; key: string }
+  | { type: 'item'; data: ModelInfo; key: string }
+
 export const ModelSelector = memo(
   forwardRef<ModelSelectorHandle, ModelSelectorProps>(function ModelSelector(
     { models, selectedModelKey, onSelect, isLoading = false, disabled = false },
@@ -69,11 +73,13 @@ export const ModelSelector = memo(
 
     // 分组数据
     const { flatList } = useMemo(() => {
+      void refreshTrigger
+
       const groups = groupModelsByProvider(filteredModels)
       const recent = searchQuery ? [] : getRecentModels(models, 5)
       const pinned = searchQuery ? [] : getPinnedModels(models)
 
-      let flat: Array<{ type: 'header' | 'item'; data: any; key: string }> = []
+      const flat: FlatListItem[] = []
       const addedKeys = new Set<string>()
 
       // Pinned 分组优先
@@ -225,7 +231,7 @@ export const ModelSelector = memo(
         const el = document.getElementById(`list-item-${realIndex}`)
         el?.scrollIntoView({ block: 'nearest' })
       })
-    }, [isOpen]) // 只在打开时触发滚动，键盘导航有自己的滚动逻辑
+    }, [isOpen, highlightedIndex, itemIndices])
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
@@ -482,11 +488,13 @@ export const InputToolbarModelSelector = memo(function InputToolbarModelSelector
 
   // 分组：和 PC 端一致的结构
   const { flatList } = useMemo(() => {
+    void refreshTrigger
+
     const groups = groupModelsByProvider(filteredModels)
     const recent = searchQuery ? [] : getRecentModels(models, 5)
     const pinned = searchQuery ? [] : getPinnedModels(models)
 
-    let flat: Array<{ type: 'header' | 'item'; data: any; key: string }> = []
+    const flat: FlatListItem[] = []
     const addedKeys = new Set<string>()
 
     // Pinned 分组优先
@@ -646,7 +654,7 @@ export const InputToolbarModelSelector = memo(function InputToolbarModelSelector
       const el = document.getElementById(`itms-item-${realIndex}`)
       el?.scrollIntoView({ block: 'nearest' })
     })
-  }, [isOpen])
+  }, [isOpen, highlightedIndex, itemIndices])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

@@ -9,7 +9,7 @@
 
 import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import { diffLines, diffWords } from 'diff'
-import { useSyntaxHighlight } from '../hooks/useSyntaxHighlight'
+import { useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 
 // ============================================
 // 常量
@@ -32,11 +32,14 @@ const SCROLL_THROTTLE_MS = 16 // ~60fps
 // Throttle 工具函数
 // ============================================
 
-function throttle<T extends (...args: any[]) => void>(fn: T, delay: number): T & { cancel: () => void } {
+function throttle<Args extends unknown[]>(
+  fn: (...args: Args) => void,
+  delay: number,
+): ((...args: Args) => void) & { cancel: () => void } {
   let lastCall = 0
   let timeoutId: ReturnType<typeof setTimeout> | null = null
 
-  const throttled = ((...args: Parameters<T>) => {
+  const throttled = ((...args: Args) => {
     const now = Date.now()
     const remaining = delay - (now - lastCall)
 
@@ -54,7 +57,7 @@ function throttle<T extends (...args: any[]) => void>(fn: T, delay: number): T &
         fn(...args)
       }, remaining)
     }
-  }) as T & { cancel: () => void }
+  }) as ((...args: Args) => void) & { cancel: () => void }
 
   throttled.cancel = () => {
     if (timeoutId) {
@@ -200,8 +203,6 @@ const SplitDiffView = memo(function SplitDiffView({
   const [leftContentWidth, setLeftContentWidth] = useState(0)
   const [rightContentWidth, setRightContentWidth] = useState(0)
 
-  const cachedRef = useRef<PairedLine[] | null>(null)
-
   const shouldHighlight = !isResizing && language !== 'text'
   const { output: beforeTokens } = useSyntaxHighlight(before, {
     lang: language,
@@ -215,12 +216,7 @@ const SplitDiffView = memo(function SplitDiffView({
   })
 
   const skipWordDiff = isResizing || isLargeFile
-  const pairedLines = useMemo(() => {
-    if (isResizing && cachedRef.current) return cachedRef.current
-    const result = computePairedLines(before, after, skipWordDiff)
-    cachedRef.current = result
-    return result
-  }, [before, after, isResizing, skipWordDiff])
+  const pairedLines = useMemo(() => computePairedLines(before, after, skipWordDiff), [before, after, skipWordDiff])
 
   const totalHeight = pairedLines.length * LINE_HEIGHT
 
@@ -314,7 +310,7 @@ const SplitDiffView = memo(function SplitDiffView({
           {pair.left.type === 'delete' && <span className="text-danger-100">−</span>}
         </div>
         <div className="flex-1 pr-2 leading-5 text-[11px] whitespace-pre">
-          {pair.left.type !== 'empty' && <LineContent line={pair.left} tokens={beforeTokens as any[][] | null} />}
+          {pair.left.type !== 'empty' && <LineContent line={pair.left} tokens={beforeTokens} />}
         </div>
       </div>,
     )
@@ -328,7 +324,7 @@ const SplitDiffView = memo(function SplitDiffView({
           {pair.right.type === 'add' && <span className="text-success-100">+</span>}
         </div>
         <div className="flex-1 pr-2 leading-5 text-[11px] whitespace-pre">
-          {pair.right.type !== 'empty' && <LineContent line={pair.right} tokens={afterTokens as any[][] | null} />}
+          {pair.right.type !== 'empty' && <LineContent line={pair.right} tokens={afterTokens} />}
         </div>
       </div>,
     )
@@ -402,8 +398,6 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(300)
 
-  const cachedRef = useRef<UnifiedLine[] | null>(null)
-
   // resize时禁用高亮（大文件仍然高亮，因为useSyntaxHighlight是异步的不会阻塞）
   const shouldHighlight = !isResizing && language !== 'text'
   const { output: beforeTokens } = useSyntaxHighlight(before, {
@@ -417,12 +411,7 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
     enabled: shouldHighlight,
   })
 
-  const lines = useMemo(() => {
-    if (isResizing && cachedRef.current) return cachedRef.current
-    const result = computeUnifiedLines(before, after)
-    cachedRef.current = result
-    return result
-  }, [before, after, isResizing])
+  const lines = useMemo(() => computeUnifiedLines(before, after), [before, after])
 
   const totalHeight = lines.length * LINE_HEIGHT
 
@@ -468,13 +457,13 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   const visibleRows: React.ReactNode[] = []
   for (let i = startIndex; i < endIndex; i++) {
     const line = lines[i]
-    let tokens: any[][] | null = null
+    let tokens: HighlightTokens | null = null
     let lineNo: number | undefined
     if (line.type === 'delete' && line.oldLineNo) {
-      tokens = beforeTokens as any[][] | null
+      tokens = beforeTokens
       lineNo = line.oldLineNo
     } else if ((line.type === 'add' || line.type === 'context') && line.newLineNo) {
-      tokens = afterTokens as any[][] | null
+      tokens = afterTokens
       lineNo = line.newLineNo
     }
 
@@ -524,7 +513,10 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
 // Line Content Renderer
 // ============================================
 
-const LineContent = memo(function LineContent({ line, tokens }: { line: DiffLine; tokens: any[][] | null }) {
+type HighlightToken = HighlightTokens[number][number]
+type WordDiffChange = ReturnType<typeof diffWords>[number]
+
+const LineContent = memo(function LineContent({ line, tokens }: { line: DiffLine; tokens: HighlightTokens | null }) {
   // 词级别diff高亮
   if (line.highlightedContent) {
     return <span className="text-text-100" dangerouslySetInnerHTML={{ __html: line.highlightedContent }} />
@@ -535,7 +527,7 @@ const LineContent = memo(function LineContent({ line, tokens }: { line: DiffLine
     const lineTokens = tokens[line.lineNo - 1]
     return (
       <>
-        {lineTokens.map((token: any, i: number) => (
+        {lineTokens.map((token: HighlightToken, i: number) => (
           <span key={i} style={{ color: token.color }}>
             {token.content}
           </span>
@@ -675,7 +667,7 @@ function computeUnifiedLines(before: string, after: string): UnifiedLine[] {
   return result
 }
 
-function isTooFragmented(changes: any[]): boolean {
+function isTooFragmented(changes: WordDiffChange[]): boolean {
   let commonLength = 0,
     totalLength = 0
   for (const change of changes) {
@@ -685,10 +677,10 @@ function isTooFragmented(changes: any[]): boolean {
   return totalLength > 10 && commonLength / totalLength < 0.4
 }
 
-function computeWordDiff(oldLine: string, newLine: string): { left: string; right: string; changes: any[] } {
+function computeWordDiff(oldLine: string, newLine: string): { left: string; right: string; changes: WordDiffChange[] } {
   const changes = diffWords(oldLine, newLine)
 
-  const mergedChanges: any[] = []
+  const mergedChanges: WordDiffChange[] = []
   for (let i = 0; i < changes.length; i++) {
     const current = changes[i]
     const prev = mergedChanges[mergedChanges.length - 1]
@@ -721,31 +713,4 @@ function computeWordDiff(oldLine: string, newLine: string): { left: string; righ
   }
 
   return { left, right, changes: mergedChanges }
-}
-
-// ============================================
-// Export helper
-// ============================================
-
-export function extractContentFromUnifiedDiff(diff: string): { before: string; after: string } {
-  let before = '',
-    after = ''
-  for (const line of diff.split('\n')) {
-    if (
-      line.startsWith('---') ||
-      line.startsWith('+++') ||
-      line.startsWith('Index:') ||
-      line.startsWith('===') ||
-      line.startsWith('@@') ||
-      line.startsWith('\\ No newline')
-    )
-      continue
-    if (line.startsWith('-')) before += line.slice(1) + '\n'
-    else if (line.startsWith('+')) after += line.slice(1) + '\n'
-    else if (line.startsWith(' ')) {
-      before += line.slice(1) + '\n'
-      after += line.slice(1) + '\n'
-    }
-  }
-  return { before: before.trimEnd(), after: after.trimEnd() }
 }

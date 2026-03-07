@@ -69,6 +69,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
   const loadedPathRef = useRef<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
   const pendingSelectionRef = useRef<string | null>(null)
+  const requestIdRef = useRef(0)
 
   // Computed
   const currentDir = useMemo(() => getDirectoryPath(inputValue), [inputValue])
@@ -85,8 +86,10 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
   // ==========================================
 
   useEffect(() => {
-    if (isOpen) {
-      // 重置缓存，确保每次打开都加载最新数据
+    if (!isOpen) return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
       loadedPathRef.current = ''
       setItems([])
 
@@ -100,6 +103,9 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
             /* ignore */
           }
         }
+
+        if (cancelled) return
+
         path = normalizePath(path)
         if (!path.endsWith(PATH_SEP)) path += PATH_SEP
         setInputValue(path)
@@ -107,7 +113,13 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
         pendingSelectionRef.current = null
         setTimeout(() => inputRef.current?.focus(), 50)
       }
-      initPath()
+
+      void initPath()
+    }, 0)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
     }
   }, [isOpen, initialPath])
 
@@ -120,38 +132,54 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
     // 目录变化时始终重新加载
     if (currentDir === loadedPathRef.current) return
 
-    setIsLoading(true)
-    setError(null)
+    let cancelled = false
+    const requestId = ++requestIdRef.current
+    const timer = window.setTimeout(() => {
+      setIsLoading(true)
+      setError(null)
 
-    listDirectory(currentDir)
-      .then(nodes => {
-        const fileItems = nodes
-          .filter(n => n.type === 'directory' && !n.name.startsWith('.'))
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map(n => ({
-            name: n.name,
-            path: normalizePath(n.absolute),
-            type: n.type,
-          }))
+      listDirectory(currentDir)
+        .then(nodes => {
+          if (cancelled || requestId !== requestIdRef.current) return
 
-        setItems(fileItems)
-        loadedPathRef.current = currentDir
+          const fileItems = nodes
+            .filter(n => n.type === 'directory' && !n.name.startsWith('.'))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map(n => ({
+              name: n.name,
+              path: normalizePath(n.absolute),
+              type: n.type,
+            }))
 
-        if (pendingSelectionRef.current) {
-          const idx = fileItems.findIndex(item => item.name === pendingSelectionRef.current)
-          setSelectedIndex(idx !== -1 ? idx : 0)
-          pendingSelectionRef.current = null
-        } else {
-          setSelectedIndex(0)
-        }
-      })
-      .catch(err => {
-        fileErrorHandler('list directory', err)
-        setError(err.message)
-        setItems([])
-        loadedPathRef.current = ''
-      })
-      .finally(() => setIsLoading(false))
+          setItems(fileItems)
+          loadedPathRef.current = currentDir
+
+          if (pendingSelectionRef.current) {
+            const idx = fileItems.findIndex(item => item.name === pendingSelectionRef.current)
+            setSelectedIndex(idx !== -1 ? idx : 0)
+            pendingSelectionRef.current = null
+          } else {
+            setSelectedIndex(0)
+          }
+        })
+        .catch(err => {
+          if (cancelled || requestId !== requestIdRef.current) return
+          fileErrorHandler('list directory', err)
+          setError(err.message)
+          setItems([])
+          loadedPathRef.current = ''
+        })
+        .finally(() => {
+          if (!cancelled && requestId === requestIdRef.current) {
+            setIsLoading(false)
+          }
+        })
+    }, 0)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [isOpen, currentDir])
 
   // ==========================================

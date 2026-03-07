@@ -33,6 +33,27 @@ const exact =
     return names.some(n => lower === n)
   }
 
+interface MetadataFileEntry {
+  filePath?: string
+  file?: string
+  diff?: string
+  before?: string
+  after?: string
+  additions?: number
+  deletions?: number
+}
+
+interface MetadataDiagnosticEntry {
+  severity?: number
+  message?: string
+  range?: {
+    start?: {
+      line?: number
+      character?: number
+    }
+  }
+}
+
 // ============================================
 // Default Data Extractor
 // ============================================
@@ -71,13 +92,13 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
   // Diff / Files (from metadata)
   if (metadata) {
     if (Array.isArray(metadata.files) && metadata.files.length > 0) {
-      result.files = (metadata.files as any[]).map((f: any) => ({
-        filePath: f.filePath || f.file || 'unknown',
-        diff: f.diff,
-        before: f.before,
-        after: f.after,
-        additions: f.additions,
-        deletions: f.deletions,
+      result.files = (metadata.files as MetadataFileEntry[]).map(file => ({
+        filePath: file.filePath || file.file || 'unknown',
+        diff: file.diff,
+        before: file.before,
+        after: file.after,
+        additions: file.additions,
+        deletions: file.deletions,
       }))
     } else if (typeof metadata.diff === 'string') {
       // 优先使用 unified diff
@@ -107,7 +128,7 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
 
     // 提取 diagnostics
     if (metadata.diagnostics && typeof metadata.diagnostics === 'object') {
-      const diagMap = metadata.diagnostics as Record<string, any[]>
+      const diagMap = metadata.diagnostics as Record<string, MetadataDiagnosticEntry[]>
       const diagnostics: DiagnosticInfo[] = []
 
       for (const [file, items] of Object.entries(diagMap)) {
@@ -123,7 +144,7 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
           }
           diagnostics.push({
             file: file.split(/[/\\]/).pop() || file,
-            severity: severityMap[item.severity] || 'info',
+            severity: typeof item.severity === 'number' ? (severityMap[item.severity] ?? 'info') : 'info',
             message: item.message || '',
             line: item.range?.start?.line ?? 0,
             column: item.range?.start?.character ?? 0,

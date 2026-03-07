@@ -285,8 +285,12 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
     if (selectedAgent && primaryAgents.some(a => a.name === selectedAgent)) return
 
     // 否则选第一个 primary agent
-    setSelectedAgent(primaryAgents[0].name)
-  }, [agents]) // 故意不依赖 selectedAgent，只在 agents 列表变化时校验
+    const frameId = requestAnimationFrame(() => {
+      setSelectedAgent(primaryAgents[0].name)
+    })
+
+    return () => cancelAnimationFrame(frameId)
+  }, [agents, selectedAgent, setSelectedAgent])
 
   // Load child sessions and pending permissions on session change
   // 页面刷新时 childSessionStore 是空的，需要先从 API 恢复子 session 关系
@@ -480,7 +484,7 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
         chatAreaRef.current?.scrollToLastMessage()
       }, UNDO_SCROLL_DELAY_MS)
     },
-    [messages, animateUndo, handleUndo],
+    [messages, animateUndo, handleUndo, chatAreaRef],
   )
 
   // Redo with animation
@@ -488,7 +492,7 @@ export function useChatSession({ chatAreaRef, currentModel, refetchModels }: Use
     chatAreaRef.current?.suppressAutoScroll(AUTO_SCROLL_SUPPRESS_DURATION_MS)
     await animateRedo()
     await handleRedo()
-  }, [animateRedo, handleRedo])
+  }, [animateRedo, handleRedo, chatAreaRef])
 
   // Session selection
   const handleSelectSession = useCallback(

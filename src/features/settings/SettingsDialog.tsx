@@ -1301,7 +1301,7 @@ function ServersSettings() {
     const active = servers.find(s => s.id === activeServer.id)
     if (!active) return servers
     return [active, ...servers.filter(s => s.id !== active.id)]
-  }, [servers, activeServer?.id])
+  }, [servers, activeServer])
 
   useEffect(() => {
     checkAllHealth()
@@ -1520,12 +1520,22 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (!isOpen) return
-    setTab(normalizeTab(initialTab))
+
+    const frameId = requestAnimationFrame(() => {
+      setTab(normalizeTab(initialTab))
+    })
+
+    return () => cancelAnimationFrame(frameId)
   }, [isOpen, initialTab, normalizeTab])
 
   useEffect(() => {
     if (visibleTabs.some(t => t.id === tab)) return
-    setTab(visibleTabs[0]?.id || 'appearance')
+
+    const frameId = requestAnimationFrame(() => {
+      setTab(visibleTabs[0]?.id || 'appearance')
+    })
+
+    return () => cancelAnimationFrame(frameId)
   }, [tab, visibleTabs])
 
   const handleTabKeyDown = useCallback(

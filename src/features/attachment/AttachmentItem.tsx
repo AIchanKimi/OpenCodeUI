@@ -246,10 +246,10 @@ function ExpandedContent({ attachment, imageError, onImageError, onOpenDetail }:
               </>
             )}
             {(attachment.originalSource.value ||
-              (attachment.originalSource.text && attachment.originalSource.text.value)) && (
+              (attachment.originalSource.text && attachment.originalSource.text?.value)) && (
               <MetaRow
                 label="Mention"
-                value={attachment.originalSource.value || attachment.originalSource.text.value}
+                value={attachment.originalSource.value || attachment.originalSource.text?.value}
               />
             )}
           </>

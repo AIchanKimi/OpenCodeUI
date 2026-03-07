@@ -146,7 +146,7 @@ export function useRevertState({
         revertErrorHandler('undo', error)
       }
     },
-    [routeSessionId, animateUndo, messages, setMessages],
+    [routeSessionId, animateUndo, messages, setMessages, scrollToEnd],
   )
 
   const handleRedo = useCallback(async () => {

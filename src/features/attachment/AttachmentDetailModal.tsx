@@ -5,6 +5,7 @@ import { getAttachmentIcon } from './utils'
 import { clipboardErrorHandler } from '../../utils'
 import { saveData } from '../../utils/downloadUtils'
 import type { Attachment } from './types'
+import { useDelayedRender } from '../../hooks/useDelayedRender'
 
 // ============================================
 // 常量
@@ -55,24 +56,25 @@ export const AttachmentDetailModal = memo(function AttachmentDetailModal({
   isOpen,
   onClose,
 }: AttachmentDetailModalProps) {
-  const [shouldRender, setShouldRender] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const shouldRender = useDelayedRender(isOpen, 200)
 
   // 进场/退场动画
   useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true)
-    } else {
-      setIsVisible(false)
-      const t = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(t)
-    }
-  }, [isOpen])
+    let frameId: number | null = null
 
-  useEffect(() => {
     if (shouldRender && isOpen) {
-      const t = setTimeout(() => setIsVisible(true), 10)
-      return () => clearTimeout(t)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(true)
+      })
+    } else {
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
     }
   }, [shouldRender, isOpen])
 

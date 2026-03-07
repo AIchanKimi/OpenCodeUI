@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { CloseIcon } from '../Icons'
+import { useDelayedRender } from '../../hooks/useDelayedRender'
 
 interface DialogProps {
   isOpen: boolean
@@ -25,8 +26,8 @@ export function Dialog({
   rawContent = false,
 }: DialogProps) {
   // Animation state
-  const [shouldRender, setShouldRender] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const shouldRender = useDelayedRender(isOpen, 200)
   const dialogRef = useRef<HTMLDivElement>(null)
 
   // 拖拽条区域 ref —— 下滑关闭只从这个区域开始
@@ -38,6 +39,7 @@ export function Dialog({
   const dragOffsetY = useRef(0)
   const [dragY, setDragY] = useState(0)
   const isDragging = useRef(false)
+  const [isDraggingActive, setIsDraggingActive] = useState(false)
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     // 只有从拖拽条区域开始的触摸才能触发下滑关闭
@@ -48,6 +50,7 @@ export function Dialog({
     touchStartX.current = e.touches[0].clientX
     dragOffsetY.current = 0
     isDragging.current = false
+    setIsDraggingActive(false)
   }, [])
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -59,6 +62,7 @@ export function Dialog({
     // 只在向下拖且垂直方向为主时触发
     if (deltaY > 10 && deltaY > deltaX) {
       isDragging.current = true
+      setIsDraggingActive(true)
       dragOffsetY.current = deltaY
       setDragY(deltaY)
     }
@@ -73,6 +77,7 @@ export function Dialog({
     touchStartX.current = null
     dragOffsetY.current = 0
     isDragging.current = false
+    setIsDraggingActive(false)
     setDragY(0)
   }, [onClose])
 
@@ -119,23 +124,21 @@ export function Dialog({
     }
   }, [])
 
-  // Mount/Unmount logic
   useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true)
-    } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen])
+    let frameId: number | null = null
 
-  // Visibility logic
-  useEffect(() => {
     if (shouldRender && isOpen) {
-      // Small delay to ensure DOM is ready and transition triggers
-      const timer = setTimeout(() => setIsVisible(true), 10)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(true)
+      })
+    } else {
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
     }
   }, [shouldRender, isOpen])
 
@@ -174,7 +177,7 @@ export function Dialog({
         className={`
           relative bg-bg-000 border border-border-200 rounded-xl shadow-2xl 
           flex flex-col overflow-hidden
-          ${isDragging.current ? '' : 'transition-all duration-200 ease-out'}
+          ${isDraggingActive ? '' : 'transition-all duration-200 ease-out'}
           ${className}
         `}
         style={{
@@ -208,6 +211,7 @@ export function Dialog({
                   <button
                     onClick={onClose}
                     className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
+                    title="Close"
                   >
                     <CloseIcon size={18} />
                   </button>

@@ -2,7 +2,7 @@
 // useModelSelection - 模型选择逻辑
 // ============================================
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { ModelInfo } from '../api'
 import { getModelKey, findModelByKey, saveModelVariantPref, getModelVariantPref } from '../utils/modelUtils'
 import { serverStorage } from '../utils/perServerStorage'
@@ -25,41 +25,54 @@ interface UseModelSelectionReturn {
 }
 
 export function useModelSelection({ models }: UseModelSelectionOptions): UseModelSelectionReturn {
-  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(() => {
-    return serverStorage.get(STORAGE_KEY_SELECTED_MODEL)
-  })
-  const [selectedVariant, setSelectedVariant] = useState<string | undefined>(undefined)
+  const [{ selectedModelKey, selectedVariant }, setSelection] = useState<{
+    selectedModelKey: string | null
+    selectedVariant: string | undefined
+  }>(() => {
+    const initialModelKey = serverStorage.get(STORAGE_KEY_SELECTED_MODEL)
 
-  const currentModel = selectedModelKey ? findModelByKey(models, selectedModelKey) : undefined
+    return {
+      selectedModelKey: initialModelKey,
+      selectedVariant: initialModelKey ? getModelVariantPref(initialModelKey) : undefined,
+    }
+  })
+
+  const persistedModel = selectedModelKey ? findModelByKey(models, selectedModelKey) : undefined
+  const currentModel = useMemo(() => persistedModel ?? models[0], [models, persistedModel])
+  const resolvedModelKey = currentModel ? getModelKey(currentModel) : null
+  const resolvedSelectedVariant = useMemo(() => {
+    if (!resolvedModelKey) return undefined
+    if (persistedModel && selectedModelKey === resolvedModelKey) return selectedVariant
+    return getModelVariantPref(resolvedModelKey)
+  }, [resolvedModelKey, persistedModel, selectedModelKey, selectedVariant])
 
   // 切换模型
   const handleModelChange = useCallback(
     (modelKey: string, _model: ModelInfo) => {
       // 先保存当前模型的 variant 偏好
-      if (selectedModelKey && selectedVariant) {
-        saveModelVariantPref(selectedModelKey, selectedVariant)
+      if (selectedModelKey && resolvedSelectedVariant) {
+        saveModelVariantPref(selectedModelKey, resolvedSelectedVariant)
       }
 
       // 切换模型
-      setSelectedModelKey(modelKey)
+      setSelection({
+        selectedModelKey: modelKey,
+        selectedVariant: getModelVariantPref(modelKey),
+      })
       serverStorage.set(STORAGE_KEY_SELECTED_MODEL, modelKey)
-
-      // 恢复新模型的 variant 偏好
-      const savedVariant = getModelVariantPref(modelKey)
-      setSelectedVariant(savedVariant)
     },
-    [selectedModelKey, selectedVariant],
+    [selectedModelKey, resolvedSelectedVariant],
   )
 
   // Variant 变化时保存偏好
   const handleVariantChange = useCallback(
     (variant: string | undefined) => {
-      setSelectedVariant(variant)
-      if (selectedModelKey) {
-        saveModelVariantPref(selectedModelKey, variant)
+      setSelection(prev => ({ ...prev, selectedVariant: variant }))
+      if (resolvedModelKey) {
+        saveModelVariantPref(resolvedModelKey, variant)
       }
     },
-    [selectedModelKey],
+    [resolvedModelKey],
   )
 
   // 从消息中恢复模型选择
@@ -71,43 +84,18 @@ export function useModelSelection({ models }: UseModelSelectionOptions): UseMode
       const exists = findModelByKey(models, modelKey)
 
       if (exists) {
-        setSelectedModelKey(modelKey)
-        setSelectedVariant(variant ?? undefined)
+        setSelection({
+          selectedModelKey: modelKey,
+          selectedVariant: variant ?? getModelVariantPref(modelKey),
+        })
       }
     },
     [models],
   )
 
-  // 初始化时恢复 variant 偏好
-  useEffect(() => {
-    if (selectedModelKey && selectedVariant === undefined) {
-      const savedVariant = getModelVariantPref(selectedModelKey)
-      if (savedVariant) {
-        setSelectedVariant(savedVariant)
-      }
-    }
-  }, [selectedModelKey])
-
-  // 模型列表加载后自动选择
-  useEffect(() => {
-    if (models.length === 0) return
-    if (selectedModelKey) {
-      const exists = findModelByKey(models, selectedModelKey)
-      if (!exists) {
-        // 如果当前选中的模型不存在，选择第一个
-        const firstModel = models[0]
-        handleModelChange(getModelKey(firstModel), firstModel)
-      }
-    } else {
-      // 没有选中模型时，选择第一个
-      const firstModel = models[0]
-      handleModelChange(getModelKey(firstModel), firstModel)
-    }
-  }, [models, selectedModelKey, handleModelChange])
-
   return {
-    selectedModelKey,
-    selectedVariant,
+    selectedModelKey: resolvedModelKey,
+    selectedVariant: resolvedSelectedVariant,
     currentModel,
     handleModelChange,
     handleVariantChange,

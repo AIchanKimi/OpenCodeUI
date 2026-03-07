@@ -33,5 +33,14 @@ export { useVcsInfo } from './useVcsInfo'
 export type { UseVcsInfoResult } from './useVcsInfo'
 
 // Re-export from contexts
-export { DirectoryProvider, useDirectory, SessionProvider, useSessionContext } from '../contexts'
-export type { DirectoryContextValue } from '../contexts'
+export {
+  DirectoryProvider,
+  useDirectory,
+  useCurrentDirectory,
+  useSavedDirectories,
+  usePathInfo,
+  useSidebarExpanded,
+  SessionProvider,
+  useSessionContext,
+} from '../contexts'
+export type { DirectoryContextValue, SessionContextValue } from '../contexts'

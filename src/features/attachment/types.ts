@@ -1,5 +1,26 @@
 export type AttachmentType = 'file' | 'folder' | 'agent' | 'text' | 'command'
 
+export interface AttachmentOriginalSource {
+  type?: 'file' | 'symbol' | 'resource'
+  value?: string
+  start?: number
+  end?: number
+  path?: string
+  name?: string
+  kind?: number
+  uri?: string
+  clientName?: string
+  text?: {
+    value: string
+    start: number
+    end: number
+  }
+  range?: {
+    start: { line: number; character: number }
+    end?: { line: number; character: number }
+  }
+}
+
 /**
  * 统一的附件类型
  * 支持图片、文件、文件夹、agent、命令
@@ -36,5 +57,5 @@ export interface Attachment {
   category?: 'user' | 'system'
 
   // 原始 Source 对象 (用于展示更多元数据: Symbol, Resource 等)
-  originalSource?: any
+  originalSource?: AttachmentOriginalSource
 }

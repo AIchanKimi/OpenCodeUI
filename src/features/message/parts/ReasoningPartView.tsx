@@ -56,10 +56,20 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
   }, [reasoningDisplayMode])
 
   useEffect(() => {
+    let frameId: number | null = null
+
     if (isPartStreaming && hasContent) {
-      setExpanded(true)
+      frameId = requestAnimationFrame(() => {
+        setExpanded(true)
+      })
     } else if (!isPartStreaming) {
-      setExpanded(false)
+      frameId = requestAnimationFrame(() => {
+        setExpanded(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
     }
   }, [isPartStreaming, hasContent])
 

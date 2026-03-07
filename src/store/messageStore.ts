@@ -624,7 +624,11 @@ class MessageStore {
         state.revertState = {
           messageId: options.revertState.messageID,
           history: revertedUserMessages.map(m => {
-            const userInfo = m.info as any
+            const userInfo = m.info as MessageInfo & {
+              model?: RevertHistoryItem['model']
+              variant?: string
+              agent?: string
+            }
             return {
               messageId: m.info.id,
               text: this.extractUserText(m),
@@ -855,7 +859,7 @@ class MessageStore {
 
     // 只处理 text 类字段的增量更新
     if (data.field === 'text' && 'text' in oldPart) {
-      const newPart = { ...oldPart, [data.field]: (oldPart as any)[data.field] + data.delta }
+      const newPart = { ...oldPart, text: oldPart.text + data.delta }
       const newParts = [...oldMessage.parts]
       newParts[partIndex] = newPart as Part
 
@@ -1136,8 +1140,15 @@ export interface MessageStoreSnapshot {
   loadState: SessionState['loadState']
 }
 
+interface SessionStateSnapshot {
+  messages: Message[]
+  isStreaming: boolean
+  loadState: SessionState['loadState']
+  revertState: RevertState | null
+  canUndo: boolean
+}
+
 let cachedSnapshot: MessageStoreSnapshot | null = null
-let snapshotVersion = 0
 
 function createSnapshot(): MessageStoreSnapshot {
   return {
@@ -1168,7 +1179,6 @@ function getSnapshot(): MessageStoreSnapshot {
 // 订阅 store 变化，清除缓存
 messageStore.subscribe(() => {
   cachedSnapshot = null
-  snapshotVersion++
 })
 
 // ============================================
@@ -1233,15 +1243,18 @@ function shallowEqual<T>(a: T, b: T): boolean {
 
   if (keysA.length !== keysB.length) return false
 
+  const recordA = a as Record<string, unknown>
+  const recordB = b as Record<string, unknown>
+
   for (const key of keysA) {
-    if ((a as any)[key] !== (b as any)[key]) return false
+    if (recordA[key] !== recordB[key]) return false
   }
 
   return true
 }
 
 // 缓存：sessionId -> Snapshot
-const sessionSnapshots = new Map<string, any>()
+const sessionSnapshots = new Map<string, SessionStateSnapshot>()
 
 // 订阅 store 变化，清除相关缓存
 messageStore.subscribe(() => {
@@ -1251,13 +1264,13 @@ messageStore.subscribe(() => {
 /**
  * React hook to subscribe to a SPECIFIC session state
  */
-export function useSessionState(sessionId: string | null) {
-  const getSnapshot = () => {
+export function useSessionState(sessionId: string | null): SessionStateSnapshot | null {
+  const getSnapshot = (): SessionStateSnapshot | null => {
     if (!sessionId) return null
 
     // 如果缓存中有，直接返回
     if (sessionSnapshots.has(sessionId)) {
-      return sessionSnapshots.get(sessionId)
+      return sessionSnapshots.get(sessionId) ?? null
     }
 
     const state = messageStore.getSessionState(sessionId)

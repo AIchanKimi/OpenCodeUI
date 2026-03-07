@@ -14,8 +14,10 @@ import { diffLines } from 'diff'
 import { CloseIcon } from './Icons'
 import { CopyButton } from './ui'
 import { detectLanguage } from '../utils/languageUtils'
-import { DiffViewer, extractContentFromUnifiedDiff, type ViewMode } from './DiffViewer'
+import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
+import { DiffViewer, type ViewMode } from './DiffViewer'
 import { CodePreview } from './FileExplorer'
+import { useDelayedRender } from '../hooks/useDelayedRender'
 
 // ============================================
 // Types
@@ -50,9 +52,9 @@ export type FullscreenViewerProps = CodeViewerProps | DiffViewerProps
 export const FullscreenViewer = memo(function FullscreenViewer(props: FullscreenViewerProps) {
   const { isOpen, onClose, filePath, language } = props
 
-  const [shouldRender, setShouldRender] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const [diffViewMode, setDiffViewMode] = useState<ViewMode>('split')
+  const shouldRender = useDelayedRender(isOpen, 200)
 
   // 响应式 diff view mode
   useEffect(() => {
@@ -65,19 +67,22 @@ export const FullscreenViewer = memo(function FullscreenViewer(props: Fullscreen
 
   // 动画控制
   useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true)
-    } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen])
+    let frameId: number | null = null
 
-  useEffect(() => {
     if (shouldRender && isOpen) {
-      const timer = setTimeout(() => setIsVisible(true), 10)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(true)
+      })
+    } else {
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+      }
     }
   }, [shouldRender, isOpen])
 

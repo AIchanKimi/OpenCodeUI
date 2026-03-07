@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useDelayedRender } from '../../hooks/useDelayedRender'
 
 type DropdownPosition = 'top' | 'bottom'
 type DropdownAlign = 'left' | 'right'
@@ -37,13 +38,13 @@ export function DropdownMenu({
   className = '',
   children,
 }: DropdownMenuProps) {
-  const [shouldRender, setShouldRender] = useState(isOpen)
   const [isVisible, setIsVisible] = useState(false)
   const [posStyle, setPosStyle] = useState<React.CSSProperties>({})
   const [sizeStyle, setSizeStyle] = useState<React.CSSProperties>({})
+  const shouldRender = useDelayedRender(isOpen, 200)
 
   // 根据 trigger 位置计算 dropdown 定位
-  const calcStyles = () => {
+  const calcStyles = useCallback(() => {
     if (!triggerRef.current) return { pos: {}, size: {} }
     const rect = triggerRef.current.getBoundingClientRect()
     const gap = 8
@@ -95,25 +96,32 @@ export function DropdownMenu({
     }
 
     return { pos, size }
-  }
+  }, [triggerRef, position, align, width, minWidth, maxWidth, mobileFullWidth, constrainToRef])
 
   // Handle animation lifecycle
   useEffect(() => {
-    if (isOpen) {
-      const { pos, size } = calcStyles()
-      posRef.current = pos
-      setPosStyle(pos)
-      setSizeStyle(size)
-      setShouldRender(true)
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setIsVisible(true))
+    let frameId: number | null = null
+    let nestedFrameId: number | null = null
+
+    if (shouldRender && isOpen) {
+      frameId = requestAnimationFrame(() => {
+        const { pos, size } = calcStyles()
+        posRef.current = pos
+        setPosStyle(pos)
+        setSizeStyle(size)
+        nestedFrameId = requestAnimationFrame(() => setIsVisible(true))
       })
     } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
     }
-  }, [isOpen])
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId)
+      if (nestedFrameId !== null) cancelAnimationFrame(nestedFrameId)
+    }
+  }, [isOpen, shouldRender, calcStyles])
 
   // 打开期间持续跟踪位置
   const posRef = useRef<React.CSSProperties>({})
@@ -135,7 +143,7 @@ export function DropdownMenu({
     rafId = requestAnimationFrame(tick)
 
     return () => cancelAnimationFrame(rafId)
-  }, [shouldRender, triggerRef, position, align, mobileFullWidth, constrainToRef])
+  }, [shouldRender, calcStyles])
 
   if (!shouldRender) return null
 

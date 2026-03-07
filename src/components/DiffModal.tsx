@@ -9,7 +9,9 @@ import { createPortal } from 'react-dom'
 import { diffLines } from 'diff'
 import { CloseIcon } from './Icons'
 import { detectLanguage } from '../utils/languageUtils'
-import { DiffViewer, extractContentFromUnifiedDiff, type ViewMode } from './DiffViewer'
+import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
+import { DiffViewer, type ViewMode } from './DiffViewer'
+import { useDelayedRender } from '../hooks/useDelayedRender'
 
 // ============================================
 // Types
@@ -36,9 +38,9 @@ export const DiffModal = memo(function DiffModal({
   language,
   diffStats: providedStats,
 }: DiffModalProps) {
-  const [shouldRender, setShouldRender] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('split')
+  const shouldRender = useDelayedRender(isOpen, 200)
 
   useEffect(() => {
     const checkWidth = () => setViewMode(window.innerWidth >= 1000 ? 'split' : 'unified')
@@ -48,19 +50,22 @@ export const DiffModal = memo(function DiffModal({
   }, [])
 
   useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true)
-    } else {
-      setIsVisible(false)
-      const timer = setTimeout(() => setShouldRender(false), 200)
-      return () => clearTimeout(timer)
-    }
-  }, [isOpen])
+    let frameId: number | null = null
 
-  useEffect(() => {
     if (shouldRender && isOpen) {
-      const timer = setTimeout(() => setIsVisible(true), 10)
-      return () => clearTimeout(timer)
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(true)
+      })
+    } else {
+      frameId = requestAnimationFrame(() => {
+        setIsVisible(false)
+      })
+    }
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+      }
     }
   }, [shouldRender, isOpen])
 

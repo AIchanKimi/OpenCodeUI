@@ -46,13 +46,7 @@ export const Sidebar = memo(function Sidebar({
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false)
   const { addDirectory, pathInfo } = useDirectory()
   const [isMobile, setIsMobile] = useState(false)
-
-  // 外部触发打开 ProjectDialog（快捷键 / CommandPalette）
-  useEffect(() => {
-    if (projectDialogOpen) {
-      setIsProjectDialogOpen(true)
-    }
-  }, [projectDialogOpen])
+  const isProjectDialogVisible = isProjectDialogOpen || !!projectDialogOpen
 
   // Resizable state
   const [width, setWidth] = useState(() => {
@@ -172,11 +166,13 @@ export const Sidebar = memo(function Sidebar({
   const touchDeltaX = useRef(0)
   const [swipeX, setSwipeX] = useState(0)
   const isSwiping = useRef(false)
+  const [isSwipingActive, setIsSwipingActive] = useState(false)
 
   const handleSidebarTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
     touchDeltaX.current = 0
     isSwiping.current = false
+    setIsSwipingActive(false)
   }, [])
 
   const handleSidebarTouchMove = useCallback((e: React.TouchEvent) => {
@@ -184,6 +180,7 @@ export const Sidebar = memo(function Sidebar({
     // 只有向左滑时才触发
     if (deltaX < -10) {
       isSwiping.current = true
+      setIsSwipingActive(true)
       touchDeltaX.current = deltaX
       setSwipeX(deltaX)
     }
@@ -195,6 +192,7 @@ export const Sidebar = memo(function Sidebar({
       onClose()
     }
     isSwiping.current = false
+    setIsSwipingActive(false)
     touchDeltaX.current = 0
     setSwipeX(0)
   }, [onClose])
@@ -221,7 +219,7 @@ export const Sidebar = memo(function Sidebar({
           className={`
             fixed left-0 z-40 
             flex flex-col bg-bg-100 shadow-xl
-            ${isSwiping.current ? '' : 'transition-transform duration-300 ease-out'}
+            ${isSwipingActive ? '' : 'transition-transform duration-300 ease-out'}
             ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           `}
           style={{
@@ -252,7 +250,7 @@ export const Sidebar = memo(function Sidebar({
 
         {/* Project Dialog */}
         <ProjectDialog
-          isOpen={isProjectDialogOpen}
+          isOpen={isProjectDialogVisible}
           onClose={closeProjectDialog}
           onSelect={handleAddProject}
           initialPath={pathInfo?.home}
@@ -307,7 +305,7 @@ export const Sidebar = memo(function Sidebar({
 
       {/* Project Dialog */}
       <ProjectDialog
-        isOpen={isProjectDialogOpen}
+        isOpen={isProjectDialogVisible}
         onClose={closeProjectDialog}
         onSelect={handleAddProject}
         initialPath={pathInfo?.home}

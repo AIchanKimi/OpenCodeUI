@@ -159,7 +159,7 @@ function InputBoxComponent({
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
   const prevRevertedTextRef = useRef<string | undefined>(undefined)
   const contentWrapRef = useRef<HTMLDivElement>(null)
-  const expandedHeightRef = useRef(0)
+  const [expandedHeight, setExpandedHeight] = useState(0)
 
   // ============================================
   // 历史消息导航（类终端体验）
@@ -183,8 +183,8 @@ function InputBoxComponent({
           const sourcePath =
             fp.source && 'path' in fp.source
               ? fp.source.path
-              : fp.source && 'uri' in fp.source
-                ? (fp.source as any).uri
+              : fp.source?.type === 'resource'
+                ? fp.source.uri
                 : undefined
           atts.push({
             id: fp.id || crypto.randomUUID(),
@@ -271,7 +271,7 @@ function InputBoxComponent({
       for (const entry of entries) {
         // 只在展开态时采样，收起态的高度不更新（此时有 minHeight 撑着）
         if (!isCollapsed) {
-          expandedHeightRef.current = entry.contentRect.height
+          setExpandedHeight(entry.contentRect.height)
         }
       }
     })
@@ -289,19 +289,32 @@ function InputBoxComponent({
 
   // 处理 revert 恢复
   useEffect(() => {
+    let frameId: number | null = null
+
     if (revertedText !== undefined) {
-      setText(revertedText)
-      setAttachments(revertedAttachments || [])
-      // 聚焦并移动光标到末尾
-      if (textareaRef.current) {
-        textareaRef.current.focus()
-        textareaRef.current.setSelectionRange(revertedText.length, revertedText.length)
-      }
+      frameId = requestAnimationFrame(() => {
+        setText(revertedText)
+        setAttachments(revertedAttachments || [])
+        // 聚焦并移动光标到末尾
+        if (textareaRef.current) {
+          textareaRef.current.focus()
+          textareaRef.current.setSelectionRange(revertedText.length, revertedText.length)
+        }
+      })
     } else if (prevRevertedTextRef.current !== undefined && revertedText === undefined) {
-      setText('')
-      setAttachments([])
+      frameId = requestAnimationFrame(() => {
+        setText('')
+        setAttachments([])
+      })
     }
+
     prevRevertedTextRef.current = revertedText
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+      }
+    }
   }, [revertedText, revertedAttachments])
 
   // 自动调整 textarea 高度
@@ -364,6 +377,29 @@ function InputBoxComponent({
     historyIndexRef.current = -1
     onClearRevert?.()
   }, [canSend, text, attachments, selectedAgent, selectedVariant, onSend, onCommand, onClearRevert])
+
+  // 更新 @ 查询文本（用于进入/退出文件夹）
+  const updateMentionQuery = useCallback(
+    (newQuery: string) => {
+      if (!textareaRef.current) return
+
+      const beforeAt = text.slice(0, mentionStartIndex)
+      const afterQuery = text.slice(mentionStartIndex + 1 + mentionQuery.length)
+      const newText = beforeAt + '@' + newQuery + afterQuery
+
+      setText(newText)
+      setMentionQuery(newQuery)
+
+      // 移动光标到 @ 查询末尾
+      requestAnimationFrame(() => {
+        if (!textareaRef.current) return
+        const pos = mentionStartIndex + 1 + newQuery.length
+        textareaRef.current.setSelectionRange(pos, pos)
+        textareaRef.current.focus()
+      })
+    },
+    [text, mentionStartIndex, mentionQuery],
+  )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -512,80 +548,60 @@ function InputBoxComponent({
         handleSend()
       }
     },
-    [mentionOpen, slashOpen, mentionQuery, handleSend, text, attachments, userHistory],
+    [mentionOpen, slashOpen, mentionQuery, updateMentionQuery, handleSend, text, attachments, userHistory],
   )
 
-  // 更新 @ 查询文本（用于进入/退出文件夹）
-  const updateMentionQuery = useCallback(
-    (newQuery: string) => {
-      if (!textareaRef.current) return
-
-      const beforeAt = text.slice(0, mentionStartIndex)
-      const afterQuery = text.slice(mentionStartIndex + 1 + mentionQuery.length)
-      const newText = beforeAt + '@' + newQuery + afterQuery
-
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newText = e.target.value
       setText(newText)
-      setMentionQuery(newQuery)
 
-      // 移动光标到 @ 查询末尾
-      requestAnimationFrame(() => {
-        if (!textareaRef.current) return
-        const pos = mentionStartIndex + 1 + newQuery.length
-        textareaRef.current.setSelectionRange(pos, pos)
-        textareaRef.current.focus()
-      })
-    },
-    [text, mentionStartIndex, mentionQuery],
-  )
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newText = e.target.value
-    setText(newText)
-
-    // 用户修改了内容，检查是否应退出历史模式
-    if (historyIndexRef.current >= 0) {
-      const currentEntry = userHistory[userHistory.length - 1 - historyIndexRef.current]
-      if (!currentEntry || newText !== currentEntry.text) {
-        historyIndexRef.current = -1
+      // 用户修改了内容，检查是否应退出历史模式
+      if (historyIndexRef.current >= 0) {
+        const currentEntry = userHistory[userHistory.length - 1 - historyIndexRef.current]
+        if (!currentEntry || newText !== currentEntry.text) {
+          historyIndexRef.current = -1
+        }
       }
-    }
 
-    // 同步检测 mention 是否被破坏/删除
-    // 比对 attachments 的 textRange：如果文本中对应位置不再匹配，删除该 attachment
-    setAttachments(prev => {
-      const surviving = prev.filter(a => {
-        if (!a.textRange) return true // 图片等无 textRange 的保留
-        const { start, end, value } = a.textRange
-        const actual = newText.slice(start, end)
-        return actual === value
+      // 同步检测 mention 是否被破坏/删除
+      // 比对 attachments 的 textRange：如果文本中对应位置不再匹配，删除该 attachment
+      setAttachments(prev => {
+        const surviving = prev.filter(a => {
+          if (!a.textRange) return true // 图片等无 textRange 的保留
+          const { start, end, value } = a.textRange
+          const actual = newText.slice(start, end)
+          return actual === value
+        })
+        // 只在数量变化时更新（避免不必要的 re-render）
+        return surviving.length === prev.length ? prev : surviving
       })
-      // 只在数量变化时更新（避免不必要的 re-render）
-      return surviving.length === prev.length ? prev : surviving
-    })
 
-    // 检测 @ 触发
-    const cursorPos = e.target.selectionStart || 0
-    const trigger = detectMentionTrigger(newText, cursorPos, '@')
+      // 检测 @ 触发
+      const cursorPos = e.target.selectionStart || 0
+      const trigger = detectMentionTrigger(newText, cursorPos, '@')
 
-    if (trigger) {
-      setMentionQuery(trigger.query)
-      setMentionStartIndex(trigger.startIndex)
-      setMentionOpen(true)
-      setSlashOpen(false) // 关闭斜杠菜单
-    } else {
-      setMentionOpen(false)
-
-      // 检测 / 触发（只在行首或空白后）
-      const slashTrigger = detectSlashTrigger(newText, cursorPos)
-      if (slashTrigger) {
-        setSlashQuery(slashTrigger.query)
-        setSlashStartIndex(slashTrigger.startIndex)
-        setSlashOpen(true)
+      if (trigger) {
+        setMentionQuery(trigger.query)
+        setMentionStartIndex(trigger.startIndex)
+        setMentionOpen(true)
+        setSlashOpen(false) // 关闭斜杠菜单
       } else {
-        setSlashOpen(false)
+        setMentionOpen(false)
+
+        // 检测 / 触发（只在行首或空白后）
+        const slashTrigger = detectSlashTrigger(newText, cursorPos)
+        if (slashTrigger) {
+          setSlashQuery(slashTrigger.query)
+          setSlashStartIndex(slashTrigger.startIndex)
+          setSlashOpen(true)
+        } else {
+          setSlashOpen(false)
+        }
       }
-    }
-  }, [])
+    },
+    [userHistory],
+  )
 
   // @ Mention 选择处理
   const handleMentionSelect = useCallback(
@@ -898,7 +914,7 @@ function InputBoxComponent({
         <div
           ref={contentWrapRef}
           className={`flex flex-col gap-2 ${isCollapsed ? 'justify-end' : ''}`}
-          style={isCollapsed && expandedHeightRef.current > 0 ? { minHeight: expandedHeightRef.current } : undefined}
+          style={isCollapsed && expandedHeight > 0 ? { minHeight: expandedHeight } : undefined}
         >
           {(showScrollToBottom || canRedo || collapsedPermission || collapsedQuestion) && (
             <div className={`flex items-center justify-center gap-2`}>
