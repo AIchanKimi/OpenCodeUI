@@ -7,7 +7,17 @@
 // - useLayoutEffect 补偿 prepend 滚动偏移
 // - setInterval 在 streaming 时自动滚动到底部
 
-import { useRef, useImperativeHandle, forwardRef, memo, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
+import {
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { MessageRenderer } from '../message'
 import { messageStore } from '../../store'
 import { useTheme } from '../../hooks/useTheme'
@@ -53,6 +63,7 @@ export const ChatArea = memo(
         onLoadMore,
         onUndo,
         canUndo,
+        hasMoreHistory = false,
         registerMessage,
         retryStatus = null,
         bottomPadding = 0,
@@ -69,6 +80,7 @@ export const ChatArea = memo(
       const loadMoreRef = useRef(onLoadMore)
       loadMoreRef.current = onLoadMore
       const isLoadingRef = useRef(false)
+      const [isLoadingMore, setIsLoadingMore] = useState(false)
       // prepend 补偿用
       const prevScrollHeightRef = useRef(0)
       const prevFirstIdRef = useRef<string | null>(null)
@@ -179,12 +191,14 @@ export const ChatArea = memo(
             if (!hasMore) return
 
             isLoadingRef.current = true
+            setIsLoadingMore(true)
             // 快照 scrollHeight 用于补偿
             prevScrollHeightRef.current = root.scrollHeight
             prevFirstIdRef.current = visibleMessages[0]?.info.id ?? null
 
             Promise.resolve(fn()).finally(() => {
               isLoadingRef.current = false
+              setIsLoadingMore(false)
             })
           },
           { root, rootMargin: '200px 0px 0px 0px' },
@@ -341,9 +355,34 @@ export const ChatArea = memo(
 
       return (
         <div className="h-full overflow-hidden contain-strict relative">
+          {/* Session loading spinner — 延迟 150ms 显示，快速加载时不闪烁 */}
+          {loadState === 'loading' && visibleMessages.length === 0 && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3 text-text-400 session-loading-indicator">
+                <span className="w-5 h-5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
+                <span className="text-sm">Loading session...</span>
+              </div>
+            </div>
+          )}
+
           <div ref={scrollRef} className="h-full overflow-y-auto custom-scrollbar contain-content">
             {/* Top sentinel for loadMore */}
             <div ref={topSentinelRef} className="h-px" aria-hidden="true" />
+
+            {/* Loading more / No more history indicator */}
+            {visibleMessages.length > 0 &&
+              (isLoadingMore ? (
+                <div className="flex justify-center py-3">
+                  <div className="flex items-center gap-2 text-text-400 text-xs">
+                    <span className="w-3.5 h-3.5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
+                    Loading history...
+                  </div>
+                </div>
+              ) : !hasMoreHistory ? (
+                <div className="flex justify-center py-3">
+                  <span className="text-text-500 text-xs">Beginning of conversation</span>
+                </div>
+              ) : null)}
 
             {/* Top spacing */}
             <div className="h-20" />

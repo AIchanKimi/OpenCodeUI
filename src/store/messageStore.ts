@@ -10,7 +10,6 @@
 
 import type { Message, Part, MessageInfo, FilePart, AgentPart } from '../types/message'
 import type { ApiMessageWithParts, ApiMessage, ApiPart, ApiSession, Attachment } from '../api/types'
-import { MAX_HISTORY_MESSAGES } from '../constants'
 import { logger } from '../utils/logger'
 import type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
 
@@ -177,26 +176,6 @@ class MessageStore {
     }
   }
 
-  private trimMessagesIfNeeded(state: SessionState) {
-    const excess = state.messages.length - MAX_HISTORY_MESSAGES
-    if (excess <= 0) return
-
-    state.messages = state.messages.slice(excess)
-    state.hasMoreHistory = false
-
-    if (state.revertState) {
-      const remainingIds = new Set(state.messages.map(m => m.info.id))
-      if (!remainingIds.has(state.revertState.messageId)) {
-        state.revertState = null
-      } else if (state.revertState.history.length > 0) {
-        state.revertState.history = state.revertState.history.filter(item => remainingIds.has(item.messageId))
-        if (state.revertState.history.length === 0) {
-          state.revertState = null
-        }
-      }
-    }
-  }
-
   updateSessionMetadata(
     sessionId: string,
     options: {
@@ -298,7 +277,6 @@ class MessageStore {
       state.isStreaming = false
     }
 
-    this.trimMessagesIfNeeded(state)
     this.notify()
   }
 
@@ -317,7 +295,6 @@ class MessageStore {
     }
     state.hasMoreHistory = hasMore
 
-    this.trimMessagesIfNeeded(state)
     this.notify()
   }
 
@@ -372,7 +349,6 @@ class MessageStore {
       if (apiMsg.role === 'assistant') {
         state.isStreaming = true
       }
-      this.trimMessagesIfNeeded(state)
     }
 
     this.notify()
@@ -447,7 +423,6 @@ class MessageStore {
     if (hasStreamingMessage) {
       state.messages = state.messages.map(m => (m.isStreaming ? { ...m, isStreaming: false } : m))
     }
-    this.trimMessagesIfNeeded(state)
     this.notify()
   }
 
@@ -460,7 +435,6 @@ class MessageStore {
     if (hasStreamingMessage) {
       state.messages = state.messages.map(m => (m.isStreaming ? { ...m, isStreaming: false } : m))
     }
-    this.trimMessagesIfNeeded(state)
     this.notify()
   }
 
@@ -553,7 +527,6 @@ class MessageStore {
     const state = this.sessions.get(sessionId)
     if (!state) return
     state.isStreaming = isStreaming
-    if (!isStreaming) this.trimMessagesIfNeeded(state)
     this.notify()
   }
 

@@ -20,7 +20,7 @@ import {
   type ApiMessageWithParts,
 } from '../api'
 import { sessionErrorHandler } from '../utils'
-import { INITIAL_MESSAGE_LIMIT, HISTORY_LOAD_BATCH_SIZE, MAX_HISTORY_MESSAGES } from '../constants'
+import { INITIAL_MESSAGE_LIMIT, HISTORY_LOAD_BATCH_SIZE } from '../constants'
 
 interface UseSessionManagerOptions {
   sessionId: string | null
@@ -195,19 +195,9 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
     const state = messageStore.getSessionState(sessionId)
     if (!state) return
 
-    if (state.messages.length >= MAX_HISTORY_MESSAGES) {
-      messageStore.prependMessages(sessionId, [], false)
-      return
-    }
-
     const dir = state.directory || directoryRef.current
     const currentCursor = cursorRef.current.get(sessionId) ?? Math.max(INITIAL_MESSAGE_LIMIT, state.messages.length)
-    const targetCursor = Math.min(currentCursor + HISTORY_LOAD_BATCH_SIZE, MAX_HISTORY_MESSAGES)
-
-    if (targetCursor <= currentCursor) {
-      messageStore.prependMessages(sessionId, [], false)
-      return
-    }
+    const targetCursor = currentCursor + HISTORY_LOAD_BATCH_SIZE
 
     try {
       const apiMessages = await getSessionMessages(sessionId, targetCursor, dir)
@@ -222,7 +212,7 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
         .filter(m => !existingIds.has(m.info.id))
         .sort((a, b) => (a.info.time?.created ?? 0) - (b.info.time?.created ?? 0))
 
-      const hasMore = apiMessages.length >= targetCursor && targetCursor < MAX_HISTORY_MESSAGES
+      const hasMore = apiMessages.length >= targetCursor
       messageStore.prependMessages(sessionId, prependCandidates, hasMore)
     } catch (error) {
       sessionErrorHandler('load more history', error)
