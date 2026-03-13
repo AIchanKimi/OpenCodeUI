@@ -331,6 +331,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
               stepFinish={item.stepFinish}
               duration={isLastStepFinish ? duration : undefined}
               turnDuration={isLastStepFinish ? turnDuration : undefined}
+              isStreaming={isStreaming}
             />
           )
         }
@@ -393,9 +394,10 @@ interface ToolGroupProps {
   stepFinish?: StepFinishPart
   duration?: number
   turnDuration?: number
+  isStreaming?: boolean
 }
 
-const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDuration }: ToolGroupProps) {
+const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDuration, isStreaming }: ToolGroupProps) {
   const [expanded, setExpanded] = useState(true)
   const shouldRenderBody = useDelayedRender(expanded)
 
@@ -403,9 +405,9 @@ const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDur
   const totalCount = parts.length
   const isAllDone = doneCount === totalCount
 
-  // ── Single tool: render directly without steps header ──
-  // Uses compact layout to align icon with ReasoningPartView
-  if (totalCount === 1) {
+  // ── Single tool, NOT streaming: compact layout ──
+  // streaming 中即使只有 1 个 tool 也用 timeline 布局，避免后续变成多 tool 时 DOM 结构跳变
+  if (totalCount === 1 && !isStreaming) {
     return (
       <div className="flex flex-col">
         <ToolPartView part={parts[0]} isFirst={true} isLast={true} compact={true} />
@@ -418,38 +420,51 @@ const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDur
     )
   }
 
-  // ── Multi-tool: collapsible steps group with timeline ──
+  // ── Timeline layout (multi-tool or streaming single-tool) ──
+  // steps header 只在多工具时显示
+  const showStepsHeader = totalCount > 1
+
   return (
     <div className="flex flex-col">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 py-1.5 text-text-400 text-sm hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors"
-      >
-        <span className="inline-flex w-[14px] items-center justify-center shrink-0">
-          {expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-        </span>
-        <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-          <span className="text-[13px] font-medium leading-tight">
-            {isAllDone ? `${totalCount} steps` : `${doneCount}/${totalCount} steps`}
+      {showStepsHeader && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 py-1.5 text-text-400 text-sm hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors"
+        >
+          <span className="inline-flex w-[14px] items-center justify-center shrink-0">
+            {expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
           </span>
-          {!expanded && stepFinish && (
-            <span className="text-xs text-text-500 font-mono opacity-70">{formatTokens(stepFinish.tokens)}</span>
-          )}
-        </span>
-      </button>
+          <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+            <span className="text-[13px] font-medium leading-tight">
+              {isAllDone ? `${totalCount} steps` : `${doneCount}/${totalCount} steps`}
+            </span>
+            {!expanded && stepFinish && (
+              <span className="text-xs text-text-500 font-mono opacity-70">{formatTokens(stepFinish.tokens)}</span>
+            )}
+          </span>
+        </button>
+      )}
 
-      <div
-        className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${
-          expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-        }`}
-      >
-        <div className="flex flex-col overflow-hidden">
-          {shouldRenderBody &&
-            parts.map((part, idx) => (
-              <ToolPartView key={part.id} part={part} isFirst={idx === 0} isLast={idx === parts.length - 1} />
-            ))}
+      {showStepsHeader ? (
+        <div
+          className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${
+            expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          }`}
+        >
+          <div className="flex flex-col overflow-hidden">
+            {shouldRenderBody &&
+              parts.map((part, idx) => (
+                <ToolPartView key={part.id} part={part} isFirst={idx === 0} isLast={idx === parts.length - 1} />
+              ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col">
+          {parts.map((part, idx) => (
+            <ToolPartView key={part.id} part={part} isFirst={idx === 0} isLast={idx === parts.length - 1} />
+          ))}
+        </div>
+      )}
 
       {stepFinish && (
         <div className="mt-2">

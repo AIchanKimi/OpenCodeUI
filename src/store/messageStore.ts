@@ -27,6 +27,9 @@ class MessageStore {
   private sessionAccessTime = new Map<string, number>()
   private pendingNotify = false
   private rafId: number | null = null
+  // delta 批量化：追踪被 mutable 修改过的消息，在 notify 前统一做不可变快照
+  private dirtyMessages = new Set<string>() // messageID set
+  private dirtySessionId: string | null = null
 
   // ============================================
   // Subscription & Notification
@@ -45,12 +48,46 @@ class MessageStore {
       this.rafId = requestAnimationFrame(() => {
         this.pendingNotify = false
         this.rafId = null
+        this.flushDirtyMessages()
         this.subscribers.forEach(fn => fn())
       })
     } else {
       this.pendingNotify = false
+      this.flushDirtyMessages()
       this.subscribers.forEach(fn => fn())
     }
+  }
+
+  /**
+   * 将 delta 期间 mutable 修改过的消息做一次不可变快照。
+   * 这样一帧内多个 delta 只产生一次数组拷贝，而不是每个 delta 都拷贝。
+   */
+  private flushDirtyMessages() {
+    if (this.dirtyMessages.size === 0 || !this.dirtySessionId) return
+
+    const state = this.sessions.get(this.dirtySessionId)
+    if (!state) {
+      this.dirtyMessages.clear()
+      this.dirtySessionId = null
+      return
+    }
+
+    // 只对被标记 dirty 的消息生成新引用
+    let changed = false
+    const newMessages = state.messages.map(m => {
+      if (this.dirtyMessages.has(m.info.id)) {
+        changed = true
+        return { ...m, parts: [...m.parts] }
+      }
+      return m
+    })
+
+    if (changed) {
+      state.messages = newMessages
+    }
+
+    this.dirtyMessages.clear()
+    this.dirtySessionId = null
   }
 
   private notifyImmediate() {
@@ -59,6 +96,7 @@ class MessageStore {
       this.rafId = null
     }
     this.pendingNotify = false
+    this.flushDirtyMessages()
     this.subscribers.forEach(fn => fn())
   }
 
@@ -380,22 +418,20 @@ class MessageStore {
     const state = this.sessions.get(data.sessionID)
     if (!state) return
 
-    const msgIndex = state.messages.findIndex(m => m.info.id === data.messageID)
-    if (msgIndex === -1) return
+    const msg = state.messages.find(m => m.info.id === data.messageID)
+    if (!msg) return
 
-    const oldMessage = state.messages[msgIndex]
-    const partIndex = oldMessage.parts.findIndex(p => p.id === data.partID)
-    if (partIndex === -1) return
+    const part = msg.parts.find(p => p.id === data.partID)
+    if (!part) return
 
-    const oldPart = oldMessage.parts[partIndex]
-    if (!(data.field === 'text' && 'text' in oldPart)) return
+    if (!(data.field === 'text' && 'text' in part))
+      return // Mutable 修改：直接拼接 text，不做不可变拷贝。
+      // 一帧内可能收到多个 delta，只有最后的状态会被 React 看到。
+      // flushDirtyMessages() 会在 notify 的 rAF 回调中统一生成新引用。
+    ;(part as { text: string }).text += data.delta
 
-    const newPart = { ...oldPart, text: oldPart.text + data.delta }
-    const newParts = [...oldMessage.parts]
-    newParts[partIndex] = newPart as Part
-
-    const newMessage = { ...oldMessage, parts: newParts }
-    state.messages = [...state.messages.slice(0, msgIndex), newMessage, ...state.messages.slice(msgIndex + 1)]
+    this.dirtyMessages.add(data.messageID)
+    this.dirtySessionId = data.sessionID
     this.notify()
   }
 

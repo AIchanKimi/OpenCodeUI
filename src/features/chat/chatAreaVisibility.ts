@@ -128,8 +128,10 @@ export function buildVisibleMessageEntries(messages: Message[]): VisibleMessageE
     } else {
       const mergedMessages = filteredMessages.slice(i + 1, j)
       const tailParts = mergedMessages.flatMap(message => message.parts)
+      // 合并后如果任何源消息在 streaming，合并结果也应该是 streaming
+      const anyStreaming = msg.isStreaming || mergedMessages.some(m => m.isStreaming)
       result.push({
-        message: { ...msg, parts: [...msg.parts, ...tailParts] },
+        message: { ...msg, parts: [...msg.parts, ...tailParts], isStreaming: anyStreaming },
         sourceIds,
       })
       i = j - 1

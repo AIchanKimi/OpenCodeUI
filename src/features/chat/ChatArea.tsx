@@ -24,7 +24,7 @@ import { useTheme } from '../../hooks/useTheme'
 import type { Message } from '../../types/message'
 import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInline'
 import { buildVisibleMessageEntries } from './chatAreaVisibility'
-import { SCROLL_CHECK_INTERVAL_MS, AT_BOTTOM_THRESHOLD_PX } from '../../constants'
+import { AT_BOTTOM_THRESHOLD_PX } from '../../constants'
 import { useIsMobile } from '../../hooks'
 
 interface ChatAreaProps {
@@ -183,12 +183,18 @@ export const ChatArea = memo(
 
       useEffect(() => {
         if (!isStreaming) return
-        const interval = setInterval(() => {
-          if (suppressScrollRef.current || !isAtBottomRef.current || userInteractingRef.current) return
+        let rafId: number
+        const tick = () => {
+          if (suppressScrollRef.current || !isAtBottomRef.current || userInteractingRef.current) {
+            rafId = requestAnimationFrame(tick)
+            return
+          }
           const el = scrollRef.current
           if (el) el.scrollTop = el.scrollHeight
-        }, SCROLL_CHECK_INTERVAL_MS)
-        return () => clearInterval(interval)
+          rafId = requestAnimationFrame(tick)
+        }
+        rafId = requestAnimationFrame(tick)
+        return () => cancelAnimationFrame(rafId)
       }, [isStreaming])
 
       // ============================================
@@ -438,7 +444,11 @@ export const ChatArea = memo(
 
             {/* Messages */}
             {visibleMessages.map(msg => (
-              <div key={msg.info.id} data-message-id={msg.info.id} className="chat-message-item">
+              <div
+                key={msg.info.id}
+                data-message-id={msg.info.id}
+                className={msg.isStreaming ? undefined : 'chat-message-item'}
+              >
                 {renderMessage(msg)}
               </div>
             ))}
