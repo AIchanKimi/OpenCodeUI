@@ -184,6 +184,7 @@ export const ChatArea = memo(
         }
       }, [])
 
+      // Streaming 时：RAF 循环高频 pin 底部
       useEffect(() => {
         if (!isStreaming) return
         let rafId: number
@@ -199,6 +200,27 @@ export const ChatArea = memo(
         rafId = requestAnimationFrame(tick)
         return () => cancelAnimationFrame(rafId)
       }, [isStreaming])
+
+      // 非 streaming 时：ResizeObserver 监听内容高度变化，保持底部
+      // 覆盖所有场景：reasoning 折叠动画、CopyButton 出现、StepFinish 渲染、图片加载等
+      useEffect(() => {
+        if (isStreaming) return
+        const el = scrollRef.current
+        if (!el) return
+
+        const ro = new ResizeObserver(() => {
+          if (isAtBottomRef.current && !userInteractingRef.current && !suppressScrollRef.current) {
+            el.scrollTop = el.scrollHeight
+          }
+        })
+
+        // 监听滚动容器内所有直接子元素的尺寸变化
+        for (const child of el.children) {
+          ro.observe(child)
+        }
+
+        return () => ro.disconnect()
+      }, [isStreaming, visibleMessages])
 
       // ============================================
       // Session switch: snap to bottom
@@ -461,9 +483,8 @@ export const ChatArea = memo(
             {/* Messages */}
             {messageGroups.map(group => {
               const first = group[0]
-              const isStreaming = group.some(m => m.isStreaming)
               return (
-                <div key={first.info.id} className={isStreaming ? undefined : 'chat-message-item'}>
+                <div key={first.info.id} className="chat-message-item">
                   {renderMessageGroup(group)}
                 </div>
               )
