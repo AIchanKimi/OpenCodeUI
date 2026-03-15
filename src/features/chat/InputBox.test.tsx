@@ -67,6 +67,7 @@ vi.mock('./input/UndoStatus', () => ({
 
 vi.mock('../../hooks', () => ({
   useIsMobile: () => false,
+  usePresence: (show: boolean) => ({ shouldRender: show, ref: { current: null } }),
 }))
 
 vi.mock('../../store/messageStoreHooks', () => ({

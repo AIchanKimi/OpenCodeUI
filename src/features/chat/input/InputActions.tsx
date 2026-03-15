@@ -8,14 +8,18 @@ import type { CollapsedDialogInfo } from '../InputBox'
 // PresenceItem — 通用的入场/退场动画包装器
 // ============================================
 
-function PresenceItem({ show, children }: { show: boolean; children: ReactNode }) {
+export function PresenceItem({ show, children }: { show: boolean; children: ReactNode }) {
   const { shouldRender, ref } = usePresence<HTMLDivElement>(show, {
     from: { opacity: 0, transform: 'translateY(8px) scale(0.95)' },
     to: { opacity: 1, transform: 'translateY(0px) scale(1)' },
     duration: 0.15,
   })
   if (!shouldRender) return null
-  return <div ref={ref}>{children}</div>
+  return (
+    <div ref={ref} className="shrink-0">
+      {children}
+    </div>
+  )
 }
 
 // ============================================
@@ -104,9 +108,7 @@ export const FloatingActions = memo(function FloatingActions({
       </PresenceItem>
 
       <PresenceItem show={!!canRedo}>
-        {canRedo && (
-          <UndoStatus canRedo={canRedo} revertSteps={revertSteps ?? 0} onRedo={onRedo} onRedoAll={onRedoAll} />
-        )}
+        {canRedo && <UndoStatus revertSteps={revertSteps ?? 0} onRedo={onRedo} onRedoAll={onRedoAll} />}
       </PresenceItem>
 
       <PresenceItem show={!!showScrollToBottom && !isCollapsed}>
@@ -132,7 +134,7 @@ export const CollapsedCapsule = memo(function CollapsedCapsule({
   onScrollToBottom,
 }: CollapsedCapsuleProps) {
   return (
-    <div className="flex items-center justify-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+    <div className="flex items-center justify-center gap-2">
       <button
         type="button"
         onClick={onExpand}

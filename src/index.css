@@ -644,52 +644,6 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   }
 }
 
-/* Mobile Drawer Animations */
-@keyframes fade-in-overlay {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in-overlay {
-  animation: fade-in-overlay 0.3s ease-out forwards;
-}
-
-/* Mobile responsive utilities */
-.mobile-overlay-backdrop {
-  position: fixed;
-  inset: 0;
-  background-color: hsl(var(--always-black) / 0.5);
-  backdrop-filter: blur(2px);
-  z-index: 99;
-}
-
-/* Message animations */
-@keyframes message-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes message-exit {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -708,17 +662,6 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   }
 }
 
-@keyframes scale-in {
-  from {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 /* Animation utility classes */
 .animate-in {
   animation-duration: 200ms;
@@ -730,41 +673,14 @@ textarea.custom-scrollbar::-webkit-scrollbar-thumb {
   animation-name: fade-in;
 }
 
-/* Session 切换淡入动画 */
-.animate-fade-in {
-  animation: fade-in 200ms ease-out;
-}
-
-/* 滚动容器隐藏（containerReady=false 时），scroll-to-bottom 在此状态下完成 */
-.chat-scroll-hidden {
-  opacity: 0;
-}
-
 /* Session 加载 spinner — 延迟 150ms 才显示，快速加载时不闪烁 */
 .session-loading-indicator {
   opacity: 0;
   animation: fade-in 200ms ease-out 150ms forwards;
 }
 
-/* Modal 缩放进入动画 */
-.animate-scale-in {
-  animation: scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 .slide-in-from-bottom-2 {
   animation-name: slide-in-from-bottom;
-}
-
-.scale-in {
-  animation-name: scale-in;
-}
-
-.duration-200 {
-  animation-duration: 200ms;
-}
-
-.duration-300 {
-  animation-duration: 300ms;
 }
 
 /* Custom Animations */
