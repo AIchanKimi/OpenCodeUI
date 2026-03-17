@@ -23,6 +23,7 @@ export { useKeybindingStore, useGlobalKeybindings, useKeybindingLabel } from './
 export type { KeybindingHandlers } from './useKeybindings'
 export { useNotification } from './useNotification'
 export { usePresence } from './usePresence'
+export { useResponsiveMaxHeight } from './useResponsiveMaxHeight'
 export type { ThemeMode } from './useTheme'
 export type { UseProjectResult } from './useProject'
 export type { UseRevertStateResult, RevertHistoryItem } from './useRevertState'

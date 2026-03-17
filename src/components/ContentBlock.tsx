@@ -17,6 +17,7 @@ import { CodePreview } from './CodePreview'
 import { detectLanguage } from '../utils/languageUtils'
 import { FullscreenViewer } from './FullscreenViewer'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
+import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
 
 // ============================================
 // Types
@@ -81,15 +82,9 @@ export const ContentBlock = memo(function ContentBlock({
   const [diffViewMode, setDiffViewMode] = useState<ViewMode>('split')
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // 响应式 maxHeight：限制在视口高度的 40% 以内，最小 160px，最大 400px
-  // 外部传入的值优先
-  const [viewportHeight, setViewportHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 800)
-  useEffect(() => {
-    const onResize = () => setViewportHeight(window.innerHeight)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-  const maxHeight = maxHeightProp ?? Math.max(120, Math.min(300, Math.floor(viewportHeight * 0.3)))
+  // 响应式 maxHeight，外部传入的值优先
+  const responsiveMaxHeight = useResponsiveMaxHeight()
+  const maxHeight = maxHeightProp ?? responsiveMaxHeight
 
   const isError = variant === 'error'
   const isDiff = !!diff

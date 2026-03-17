@@ -2,7 +2,7 @@ import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ContentBlock } from '../../../../components'
 import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
-import { useDelayedRender } from '../../../../hooks'
+import { useDelayedRender, useResponsiveMaxHeight } from '../../../../hooks'
 import { useSessionState, messageStore, childSessionStore } from '../../../../store'
 import { abortSession, getSessionMessages } from '../../../../api'
 import { sessionErrorHandler } from '../../../../utils'
@@ -125,7 +125,6 @@ export const TaskRenderer = memo(function TaskRenderer({ part }: ToolRendererPro
                     label={t('task.result')}
                     content={typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)}
                     defaultCollapsed={true}
-                    maxHeight={150}
                   />
                 )}
 
@@ -254,6 +253,7 @@ const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionVie
   const { t } = useTranslation('message')
   const scrollRef = useRef<HTMLDivElement>(null)
   const loadedRef = useRef(false)
+  const subSessionMaxHeight = useResponsiveMaxHeight(0.25, 120, 240)
 
   const sessionState = useSessionState(sessionId)
   const messages = sessionState?.messages ?? EMPTY_MESSAGES
@@ -322,7 +322,7 @@ const SubSessionView = memo(function SubSessionView({ sessionId }: SubSessionVie
       <div
         ref={scrollRef}
         className="overflow-y-auto custom-scrollbar px-3 py-2 space-y-2"
-        style={{ maxHeight: '240px' }}
+        style={{ maxHeight: subSessionMaxHeight }}
       >
         {visibleMessages.map((msg: Message, idx: number) => (
           <MessageItem key={msg.info.id} message={msg} isLast={idx === visibleMessages.length - 1} />
