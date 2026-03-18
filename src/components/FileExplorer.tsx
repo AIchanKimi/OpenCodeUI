@@ -30,16 +30,20 @@ const MIN_TREE_HEIGHT = 100
 const MIN_PREVIEW_HEIGHT = 150
 
 interface FileExplorerProps {
+  panelTabId: string
   directory?: string
   previewFile: PreviewFile | null
+  previewFiles: PreviewFile[]
   position?: 'bottom' | 'right'
   isPanelResizing?: boolean
   sessionId?: string | null
 }
 
 export const FileExplorer = memo(function FileExplorer({
+  panelTabId,
   directory,
   previewFile,
+  previewFiles,
   position = 'right',
   isPanelResizing = false,
   sessionId,
@@ -85,8 +89,10 @@ export const FileExplorer = memo(function FileExplorer({
     if (previewFile) {
       selectFile(previewFile.path)
       loadPreview(previewFile.path)
+    } else {
+      clearPreview()
     }
-  }, [previewFile, selectFile, loadPreview])
+  }, [previewFile, selectFile, loadPreview, clearPreview])
 
   // 处理文件点击
   const handleFileClick = useCallback(
@@ -94,21 +100,39 @@ export const FileExplorer = memo(function FileExplorer({
       if (node.type === 'directory') {
         toggleExpand(node.path)
       } else {
-        selectFile(node.path)
-        loadPreview(node.path)
         layoutStore.openFilePreview({ path: node.path, name: node.name }, position)
       }
     },
-    [toggleExpand, selectFile, loadPreview, position],
+    [toggleExpand, position],
   )
 
   // 关闭预览
   const handleClosePreview = useCallback(() => {
-    clearPreview()
-    layoutStore.closeFilePreview()
+    layoutStore.closeAllFilePreviews(panelTabId)
     setTreeHeight(null)
     currentHeightRef.current = null
-  }, [clearPreview])
+  }, [panelTabId])
+
+  const handleActivatePreview = useCallback(
+    (path: string) => {
+      layoutStore.activateFilePreview(panelTabId, path)
+    },
+    [panelTabId],
+  )
+
+  const handleClosePreviewTab = useCallback(
+    (path: string) => {
+      layoutStore.closeFilePreview(panelTabId, path)
+    },
+    [panelTabId],
+  )
+
+  const handleReorderPreviewTabs = useCallback(
+    (draggedPath: string, targetPath: string) => {
+      layoutStore.reorderFilePreviews(panelTabId, draggedPath, targetPath)
+    },
+    [panelTabId],
+  )
 
   // 拖拽调整高度 - 使用 CSS 变量 + requestAnimationFrame 优化
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -210,7 +234,7 @@ export const FileExplorer = memo(function FileExplorer({
   }, [])
 
   // 是否显示预览
-  const showPreview = previewContent || previewLoading || previewError
+  const showPreview = Boolean(previewFile) || previewLoading || Boolean(previewError)
 
   // 没有选择目录
   if (!directory) {
@@ -309,11 +333,15 @@ export const FileExplorer = memo(function FileExplorer({
       {showPreview && (
         <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: MIN_PREVIEW_HEIGHT }}>
           <FilePreview
-            path={selectedPath}
+            previewFiles={previewFiles}
+            path={previewFile?.path ?? selectedPath}
             content={previewContent}
             isLoading={previewLoading}
             error={previewError}
             onClose={handleClosePreview}
+            onActivatePreview={handleActivatePreview}
+            onClosePreview={handleClosePreviewTab}
+            onReorderPreview={handleReorderPreviewTabs}
             isResizing={isAnyResizing}
           />
         </div>
@@ -450,17 +478,35 @@ const FileTreeItem = memo(function FileTreeItem({
 // ============================================
 
 interface FilePreviewProps {
+  previewFiles: PreviewFile[]
   path: string | null
   content: FileContent | null
   isLoading: boolean
   error: string | null
   onClose: () => void
+  onActivatePreview: (path: string) => void
+  onClosePreview: (path: string) => void
+  onReorderPreview: (draggedPath: string, targetPath: string) => void
   isResizing?: boolean
 }
 
-function FilePreview({ path, content, isLoading, error, onClose, isResizing = false }: FilePreviewProps) {
+function FilePreview({
+  previewFiles,
+  path,
+  content,
+  isLoading,
+  error,
+  onClose,
+  onActivatePreview,
+  onClosePreview,
+  onReorderPreview,
+  isResizing = false,
+}: FilePreviewProps) {
   const { t } = useTranslation(['components', 'common'])
   const scrollRef = useRef<HTMLDivElement>(null)
+  const tabsScrollRef = useRef<HTMLDivElement>(null)
+  const [draggedPath, setDraggedPath] = useState<string | null>(null)
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null)
 
   // 获取文件名
   const fileName = path?.split(/[/\\]/).pop() || 'Untitled'
@@ -472,6 +518,25 @@ function FilePreview({ path, content, isLoading, error, onClose, isResizing = fa
       downloadFileContent(content, fileName)
     }
   }, [content, fileName])
+
+  const handlePreviewDragEnd = useCallback(() => {
+    if (draggedPath && dragOverPath && draggedPath !== dragOverPath) {
+      onReorderPreview(draggedPath, dragOverPath)
+    }
+    setDraggedPath(null)
+    setDragOverPath(null)
+  }, [draggedPath, dragOverPath, onReorderPreview])
+
+  const handleTabsWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const container = tabsScrollRef.current
+    if (!container || container.scrollWidth <= container.clientWidth) return
+
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+    if (delta === 0) return
+
+    e.preventDefault()
+    container.scrollLeft += delta
+  }, [])
 
   // 处理内容类型分发
   const displayContent = useMemo(() => {
@@ -532,27 +597,81 @@ function FilePreview({ path, content, isLoading, error, onClose, isResizing = fa
   return (
     <div className="flex flex-col h-full relative">
       {/* Preview Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-100/50 bg-bg-100/30 shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <img
-            src={getMaterialIconUrl(path || 'file', 'file')}
-            alt=""
-            width={14}
-            height={14}
-            className="shrink-0"
-            onError={e => {
-              e.currentTarget.style.visibility = 'hidden'
-            }}
-          />
-          <span className="text-[11px] font-mono text-text-200 truncate">{fileName}</span>
-          {/* Modified 标签暂不在 Files 预览显示 */}
-          {/* {content?.diff && (
-            <span className="text-[9px] px-1.5 py-0.5 bg-warning-100/20 text-warning-100 rounded font-medium shrink-0">
-              Modified
-            </span>
-          )} */}
+      <div className="flex items-stretch justify-between border-b border-border-100/50 bg-bg-100/30 shrink-0">
+        <div
+          ref={tabsScrollRef}
+          onWheel={handleTabsWheel}
+          className="min-w-0 flex-1 overflow-x-auto no-scrollbar px-1 py-1"
+        >
+          <div className="flex min-w-max items-center gap-1">
+            {previewFiles.map(file => {
+              const isActive = file.path === path
+              const isDragOver = dragOverPath === file.path && draggedPath !== file.path
+              return (
+                <div
+                  key={file.path}
+                  draggable
+                  onDragStart={e => {
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', file.path)
+                    setDraggedPath(file.path)
+                    setDragOverPath(null)
+                  }}
+                  onDragOver={e => {
+                    e.preventDefault()
+                    if (draggedPath && draggedPath !== file.path) {
+                      setDragOverPath(file.path)
+                    }
+                  }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    if (draggedPath && draggedPath !== file.path) {
+                      setDragOverPath(file.path)
+                    }
+                  }}
+                  onDragEnd={handlePreviewDragEnd}
+                  className={
+                    isActive
+                      ? `flex h-7 w-40 max-w-40 shrink-0 items-center gap-1 overflow-hidden rounded-md border bg-bg-200 text-text-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isDragOver ? 'border-accent-main-100/70' : 'border-border-200/60'}`
+                      : `flex h-7 w-40 max-w-40 shrink-0 items-center gap-1 overflow-hidden rounded-md border bg-transparent text-text-400 hover:border-border-100/40 hover:bg-bg-100/80 hover:text-text-200 ${isDragOver ? 'border-accent-main-100/70 bg-accent-main-100/8' : 'border-transparent'}`
+                  }
+                  title={file.path}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onActivatePreview(file.path)}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pl-2 pr-1 text-left"
+                  >
+                    <img
+                      src={getMaterialIconUrl(file.path, 'file')}
+                      alt=""
+                      width={13}
+                      height={13}
+                      className="shrink-0"
+                      onError={e => {
+                        e.currentTarget.style.visibility = 'hidden'
+                      }}
+                    />
+                    <span className="block min-w-0 flex-1 truncate text-[11px] font-mono">{file.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation()
+                      onClosePreview(file.path)
+                    }}
+                    onDragStart={e => e.stopPropagation()}
+                    className="mr-1 shrink-0 rounded p-1 text-text-500 hover:bg-bg-300 hover:text-text-100 transition-colors"
+                    title={`${t('common:close')} ${file.name}`}
+                  >
+                    <CloseIcon size={10} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0 border-l border-border-100/40 px-1.5">
           {/* 下载按钮 */}
           {content && (
             <button
@@ -566,6 +685,7 @@ function FilePreview({ path, content, isLoading, error, onClose, isResizing = fa
           <button
             onClick={onClose}
             className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200 rounded transition-colors"
+            title={t('common:closeAllTabs')}
           >
             <CloseIcon size={12} />
           </button>

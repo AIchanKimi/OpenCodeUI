@@ -28,7 +28,7 @@ function PanelFallback() {
 
 export const RightPanel = memo(function RightPanel() {
   const { t } = useTranslation(['components', 'common'])
-  const { rightPanelOpen, rightPanelWidth, previewFile } = useLayoutStore()
+  const { rightPanelOpen, rightPanelWidth } = useLayoutStore()
   const { sessionId } = useMessageStore()
   const { currentDirectory } = useDirectory()
 
@@ -87,10 +87,9 @@ export const RightPanel = memo(function RightPanel() {
         case 'files':
           return (
             <Suspense fallback={<PanelFallback />}>
-              <FileExplorer
+              <FilesContent
+                activeTab={activeTab}
                 directory={currentDirectory}
-                previewFile={previewFile}
-                position="right"
                 isPanelResizing={isPanelResizing}
                 sessionId={sessionId}
               />
@@ -137,7 +136,7 @@ export const RightPanel = memo(function RightPanel() {
           return null
       }
     },
-    [currentDirectory, previewFile, sessionId, isPanelResizing],
+    [currentDirectory, sessionId, isPanelResizing],
   )
 
   return (
@@ -175,6 +174,41 @@ const TerminalContent = memo(function TerminalContent({ activeTab, directory }: 
     <>
       {terminalTabs.map(tab => (
         <Terminal key={tab.id} ptyId={tab.id} directory={directory} isActive={tab.id === activeTab.id} />
+      ))}
+    </>
+  )
+})
+
+interface FilesContentProps {
+  activeTab: PanelTab
+  directory?: string
+  isPanelResizing?: boolean
+  sessionId?: string | null
+}
+
+const FilesContent = memo(function FilesContent({
+  activeTab,
+  directory,
+  isPanelResizing = false,
+  sessionId,
+}: FilesContentProps) {
+  const { panelTabs } = useLayoutStore()
+  const fileTabs = panelTabs.filter(t => t.position === 'right' && t.type === 'files')
+
+  return (
+    <>
+      {fileTabs.map(tab => (
+        <div key={tab.id} className={tab.id === activeTab.id ? 'h-full' : 'hidden'}>
+          <FileExplorer
+            panelTabId={tab.id}
+            directory={directory}
+            previewFile={tab.previewFile ?? null}
+            previewFiles={tab.previewFiles ?? []}
+            position="right"
+            isPanelResizing={isPanelResizing}
+            sessionId={sessionId}
+          />
+        </div>
       ))}
     </>
   )

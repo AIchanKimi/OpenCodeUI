@@ -41,13 +41,16 @@ const TAB_ICONS: Record<PanelTabType, React.ReactNode> = {
 }
 
 // Tab 显示名称
-function getTabLabel(tab: PanelTab, t: (key: string) => string): string {
+function getTabLabel(tab: PanelTab, tabs: PanelTab[], t: (key: string) => string): string {
   if (tab.type === 'terminal') {
     return tab.title ?? t('terminal.terminal')
   }
   switch (tab.type) {
     case 'files':
-      return t('panelContainer.files')
+      if (tab.title) return tab.title
+      const fileTabs = tabs.filter(item => item.type === 'files')
+      if (fileTabs.length <= 1) return t('panelContainer.files')
+      return `${t('panelContainer.files')} ${fileTabs.findIndex(item => item.id === tab.id) + 1}`
     case 'changes':
       return t('panelContainer.changes')
     case 'mcp':
@@ -221,6 +224,7 @@ export const PanelContainer = memo(function PanelContainer({
             <PanelTabButton
               key={tab.id}
               tab={tab}
+              label={getTabLabel(tab, tabs, t)}
               isActive={tab.id === activeTabId}
               isDragging={draggedId === tab.id}
               isDragOver={dragOverId === tab.id}
@@ -396,6 +400,7 @@ export const PanelContainer = memo(function PanelContainer({
 
 interface PanelTabButtonProps {
   tab: PanelTab
+  label: string
   isActive: boolean
   isDragging: boolean
   isDragOver: boolean
@@ -409,6 +414,7 @@ interface PanelTabButtonProps {
 
 const PanelTabButton = memo(function PanelTabButton({
   tab,
+  label,
   isActive,
   isDragging,
   isDragOver,
@@ -528,7 +534,7 @@ const PanelTabButton = memo(function PanelTabButton({
       <span className="opacity-60 shrink-0">{TAB_ICONS[tab.type]}</span>
 
       {/* Label */}
-      <span className="truncate max-w-[100px]">{getTabLabel(tab, t)}</span>
+      <span className="truncate max-w-[100px]">{label}</span>
 
       {/* Close Button (only for closeable tabs like terminal) */}
       {onClose && (

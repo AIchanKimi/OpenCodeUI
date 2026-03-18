@@ -31,7 +31,7 @@ function PanelFallback() {
 
 export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelProps) {
   const { t } = useTranslation(['components', 'common'])
-  const { bottomPanelOpen, bottomPanelHeight, previewFile } = useLayoutStore()
+  const { bottomPanelOpen, bottomPanelHeight } = useLayoutStore()
   const { sessionId } = useMessageStore()
 
   const [isRestoring, setIsRestoring] = useState(false)
@@ -155,11 +155,11 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
         case 'files':
           return (
             <Suspense fallback={<PanelFallback />}>
-              <FileExplorer
+              <FilesContent
+                activeTab={activeTab}
                 directory={directory ?? ''}
-                previewFile={previewFile}
-                position="bottom"
                 isPanelResizing={isPanelResizing}
+                sessionId={sessionId}
               />
             </Suspense>
           )
@@ -198,7 +198,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
           return null
       }
     },
-    [isRestoring, handleNewTerminal, directory, previewFile, sessionId, isPanelResizing],
+    [isRestoring, handleNewTerminal, directory, sessionId, isPanelResizing],
   )
 
   return (
@@ -236,6 +236,41 @@ const TerminalContent = memo(function TerminalContent({ activeTab, directory }: 
     <>
       {terminalTabs.map(tab => (
         <Terminal key={tab.id} ptyId={tab.id} directory={directory} isActive={tab.id === activeTab.id} />
+      ))}
+    </>
+  )
+})
+
+interface FilesContentProps {
+  activeTab: PanelTab
+  directory?: string
+  isPanelResizing?: boolean
+  sessionId?: string | null
+}
+
+const FilesContent = memo(function FilesContent({
+  activeTab,
+  directory,
+  isPanelResizing = false,
+  sessionId,
+}: FilesContentProps) {
+  const { panelTabs } = useLayoutStore()
+  const fileTabs = panelTabs.filter(t => t.position === 'bottom' && t.type === 'files')
+
+  return (
+    <>
+      {fileTabs.map(tab => (
+        <div key={tab.id} className={tab.id === activeTab.id ? 'h-full' : 'hidden'}>
+          <FileExplorer
+            panelTabId={tab.id}
+            directory={directory}
+            previewFile={tab.previewFile ?? null}
+            previewFiles={tab.previewFiles ?? []}
+            position="bottom"
+            isPanelResizing={isPanelResizing}
+            sessionId={sessionId}
+          />
+        </div>
       ))}
     </>
   )

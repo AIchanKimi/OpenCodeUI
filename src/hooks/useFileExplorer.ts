@@ -68,6 +68,8 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   const [previewContent, setPreviewContent] = useState<FileContent | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const previewCacheRef = useRef<Map<string, FileContent>>(new Map())
+  const previewLoadIdRef = useRef(0)
 
   // 文件状态（git）
   const [fileStatus, setFileStatus] = useState<Map<string, FileStatusItem>>(new Map())
@@ -243,31 +245,50 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     async (path: string) => {
       if (!directory) return
 
+      const loadId = ++previewLoadIdRef.current
+
       setPreviewLoading(true)
       setPreviewError(null)
 
+      const cached = previewCacheRef.current.get(path)
+      if (cached) {
+        if (loadId === previewLoadIdRef.current) {
+          setPreviewContent(cached)
+          setPreviewLoading(false)
+        }
+        return
+      }
+
       try {
         const content = await getFileContent(path, directory)
+        if (loadId !== previewLoadIdRef.current) return
+        previewCacheRef.current.set(path, content)
         setPreviewContent(content)
       } catch (e) {
+        if (loadId !== previewLoadIdRef.current) return
         setPreviewError(e instanceof Error ? e.message : 'Failed to load file')
         setPreviewContent(null)
       } finally {
-        setPreviewLoading(false)
+        if (loadId === previewLoadIdRef.current) {
+          setPreviewLoading(false)
+        }
       }
     },
     [directory],
   )
 
   const clearPreview = useCallback(() => {
+    previewLoadIdRef.current += 1
     setPreviewContent(null)
     setPreviewError(null)
+    setPreviewLoading(false)
   }, [])
 
   // 刷新
   const refresh = useCallback(async () => {
     setExpandedPaths(new Set())
     setSelectedPath(null)
+    previewCacheRef.current.clear()
     setPreviewContent(null)
     await loadRoot()
   }, [loadRoot])
@@ -278,6 +299,14 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       loadRoot()
     }
   }, [autoLoad, directory, loadRoot])
+
+  useEffect(() => {
+    previewCacheRef.current.clear()
+    previewLoadIdRef.current += 1
+    setPreviewContent(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
+  }, [directory, sessionId])
 
   return {
     tree,
