@@ -96,7 +96,9 @@ export function PermissionDialog({
               <div className="px-4 pb-2 flex items-center gap-2">
                 <UsersIcon className="w-3.5 h-3.5 text-info-100" />
                 <span className="text-xs text-info-100">
-                  {t('permissionDialog.fromSubtask', { title: childSessionInfo?.title || 'Subtask' })}
+                  {t('permissionDialog.fromSubtask', {
+                    title: childSessionInfo?.title || t('permissionDialog.subtaskFallback'),
+                  })}
                 </span>
               </div>
             )}

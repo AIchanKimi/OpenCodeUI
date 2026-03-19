@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
 import {
   SunIcon,
@@ -269,9 +269,12 @@ function CustomCSSEditor({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="text-[11px] text-text-400">
-          Override fonts, colors, and styles. Use{' '}
-          <code className="text-[10px] px-1 py-0.5 bg-bg-200 rounded font-mono">:root:root</code> for higher
-          specificity.
+          <Trans
+            i18nKey="settings:appearance.customCssSpecificityHelp"
+            components={{
+              1: <code className="text-[10px] px-1 py-0.5 bg-bg-200 rounded font-mono" />,
+            }}
+          />
         </div>
         {!localValue.trim() && (
           <button

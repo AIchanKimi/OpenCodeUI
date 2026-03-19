@@ -1,5 +1,5 @@
 import { lazy, Suspense, useRef, useEffect, useState, useCallback, useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import {
   Header,
   InputBox,
@@ -656,13 +656,14 @@ function App() {
                 <div className="absolute bottom-full inset-x-0 flex justify-center pb-2 pointer-events-none z-20">
                   <div className="px-3 py-1.5 bg-bg-000/95 border border-border-200 rounded-lg shadow-lg text-xs text-text-300 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150">
                     {showCancelHint ? (
-                      <>
-                        Press{' '}
-                        <kbd className="mx-0.5 px-1.5 py-0.5 bg-bg-200 border border-border-200 rounded text-[11px] font-mono font-medium text-text-200">
-                          Esc
-                        </kbd>{' '}
-                        again to stop
-                      </>
+                      <Trans
+                        i18nKey="chat:hints.pressEscAgain"
+                        components={{
+                          1: (
+                            <kbd className="mx-0.5 px-1.5 py-0.5 bg-bg-200 border border-border-200 rounded text-[11px] font-mono font-medium text-text-200" />
+                          ),
+                        }}
+                      />
                     ) : (
                       fullAutoHint
                     )}

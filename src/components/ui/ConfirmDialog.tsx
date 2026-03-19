@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Dialog } from './Dialog'
 import { Button } from './Button'
 
@@ -19,18 +20,20 @@ export function ConfirmDialog({
   onConfirm,
   title,
   description,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText,
+  cancelText,
   variant = 'info',
   isLoading = false,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation(['common'])
+
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={title} width={400} showCloseButton={false}>
       {description && <div className="text-sm text-text-300 leading-relaxed mb-6">{description}</div>}
 
       <div className="flex items-center justify-end gap-3">
         <Button variant="secondary" onClick={onClose} disabled={isLoading}>
-          {cancelText}
+          {cancelText ?? t('common:cancel')}
         </Button>
         <Button
           variant={variant === 'danger' ? 'danger' : 'primary'}
@@ -40,7 +43,7 @@ export function ConfirmDialog({
           }}
           isLoading={isLoading}
         >
-          {confirmText}
+          {confirmText ?? t('common:confirm')}
         </Button>
       </div>
     </Dialog>

@@ -8,6 +8,7 @@
 // 3. 存储子 session 的基本信息（用于显示来源）
 
 import type { ApiSession } from '../api/types'
+import i18n from '../i18n'
 
 // ============================================
 // Types
@@ -70,7 +71,7 @@ class ChildSessionStore {
     this.sessionInfo.set(session.id, {
       id: session.id,
       parentID: session.parentID,
-      title: session.title || 'Subtask',
+      title: session.title || i18n.t('chat:permissionDialog.subtaskFallback'),
       status: 'running',
       createdAt: session.time.created,
     })

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getCurrentProject, getProjects, type ApiProject } from '../api'
 import { apiErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
@@ -21,6 +22,7 @@ export interface UseProjectResult {
 const STORAGE_KEY = 'selected-project-id'
 
 export function useProject(): UseProjectResult {
+  const { t } = useTranslation(['commands'])
   const [currentProject, setCurrentProject] = useState<ApiProject | null>(null)
   const [projects, setProjects] = useState<ApiProject[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -56,11 +58,11 @@ export function useProject(): UseProjectResult {
       }
     } catch (e) {
       apiErrorHandler('load projects', e)
-      setError(e instanceof Error ? e.message : 'Failed to load projects')
+      setError(e instanceof Error ? e.message : t('sessions.failedToLoadProjects'))
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [t])
 
   // 初始加载
   useEffect(() => {

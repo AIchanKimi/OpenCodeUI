@@ -3,6 +3,8 @@
   "openSettingsDesc": "打开设置对话框",
   "openProject": "打开项目",
   "openProjectDesc": "打开项目选择器",
+  "commandPalette": "命令面板",
+  "commandPaletteDesc": "打开命令面板",
   "openShortcutsSettings": "打开快捷键设置",
   "openShortcutsSettingsDesc": "打开设置的快捷键标签页",
   "toggleSidebar": "切换侧边栏",
@@ -27,16 +29,21 @@
   "selectModelDesc": "打开模型选择器",
   "toggleAgent": "切换 Agent",
   "toggleAgentDesc": "切换 Agent 模式",
+  "sendMessage": "发送消息",
+  "sendMessageDesc": "发送当前消息",
   "copyLastResponse": "复制最后回复",
   "copyLastResponseDesc": "复制最后的 AI 回复到剪贴板",
   "cancelMessage": "取消消息",
   "cancelMessageDesc": "取消当前响应",
+  "toggleFullAuto": "免确认执行",
+  "toggleFullAutoDesc": "切换自动放行所有操作",
   "categories": {
     "general": "通用",
     "session": "会话",
     "terminal": "终端",
     "model": "模型",
-    "message": "消息"
+    "message": "消息",
+    "permission": "权限"
   },
   "sessions": {
     "searchChats": "搜索对话...",
@@ -45,14 +52,24 @@
     "untitledChat": "未命名对话",
     "rename": "重命名",
     "switchProject": "切换项目",
+    "failedToLoadProjects": "加载项目失败",
     "noOtherProjects": "没有其他项目",
     "addProject": "添加项目...",
     "noProject": "无项目",
     "removeProjectTitle": "移除项目",
-    "removeProjectConfirm": "确定从列表中移除此项目文件夹？文件不会被删除。"
+    "removeProjectConfirm": "确定从列表中移除此项目文件夹？文件不会被删除。",
+    "groups": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "previous7Days": "过去 7 天",
+      "previous30Days": "过去 30 天",
+      "older": "更早"
+    }
   },
   "slashCommand": {
     "commands": "命令",
+    "newSessionDesc": "创建新的对话会话",
+    "compactDesc": "通过总结对话历史来压缩当前会话",
     "noMatchingCommands": "没有匹配的命令",
     "noCommandsAvailable": "没有可用的命令"
   },

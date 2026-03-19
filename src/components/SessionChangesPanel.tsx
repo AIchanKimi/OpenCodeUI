@@ -343,7 +343,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-100 bg-bg-100/30 shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-[10px] text-text-400 uppercase tracking-wider font-bold">
-              {diffs.length} file{diffs.length !== 1 ? 's' : ''}
+              {t('sessionChanges.fileCount', { count: diffs.length })}
             </span>
             <div className="flex items-center gap-2 text-[10px] font-mono">
               <span className="text-success-100">+{totalStats.additions}</span>
@@ -359,7 +359,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                 className={`px-2 py-0.5 text-[10px] transition-colors ${
                   listMode === 'flat' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
                 }`}
-                title="Flat list"
+                title={t('sessionChanges.flatList')}
               >
                 {t('sessionChanges.list')}
               </button>
@@ -368,7 +368,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                 className={`px-2 py-0.5 text-[10px] transition-colors ${
                   listMode === 'tree' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
                 }`}
-                title="Tree view"
+                title={t('sessionChanges.treeView')}
               >
                 {t('sessionChanges.tree')}
               </button>

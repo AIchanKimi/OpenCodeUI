@@ -18,7 +18,7 @@ export function NotificationSettings() {
   const [toastEnabled, setToastEnabledState] = useState(notificationStore.toastEnabled)
 
   const handleTestNotification = () => {
-    sendNotification('OpenCode', 'This is a test notification')
+    sendNotification(t('notifications.testTitle'), t('notifications.testBody'))
   }
 
   const handleToastToggle = () => {

@@ -10,6 +10,27 @@ import { keyEventToString, formatKeybinding, parseKeybinding } from '../../store
 import { UndoIcon, SearchIcon } from '../../components/Icons'
 import type { KeybindingConfig, KeybindingAction } from '../../store/keybindingStore'
 
+const ACTION_TRANSLATION_KEYS: Record<KeybindingAction, { label: string; description: string }> = {
+  openSettings: { label: 'openSettings', description: 'openSettingsDesc' },
+  openProject: { label: 'openProject', description: 'openProjectDesc' },
+  commandPalette: { label: 'commandPalette', description: 'commandPaletteDesc' },
+  toggleSidebar: { label: 'toggleSidebar', description: 'toggleSidebarDesc' },
+  toggleRightPanel: { label: 'toggleRightPanel', description: 'toggleRightPanelDesc' },
+  focusInput: { label: 'focusInput', description: 'focusInputDesc' },
+  newSession: { label: 'newSession', description: 'newSessionDesc' },
+  archiveSession: { label: 'archiveSession', description: 'archiveSessionDesc' },
+  previousSession: { label: 'previousSession', description: 'previousSessionDesc' },
+  nextSession: { label: 'nextSession', description: 'nextSessionDesc' },
+  toggleTerminal: { label: 'toggleTerminal', description: 'toggleTerminalDesc' },
+  newTerminal: { label: 'newTerminal', description: 'newTerminalDesc' },
+  selectModel: { label: 'selectModel', description: 'selectModelDesc' },
+  toggleAgent: { label: 'toggleAgent', description: 'toggleAgentDesc' },
+  sendMessage: { label: 'sendMessage', description: 'sendMessageDesc' },
+  cancelMessage: { label: 'cancelMessage', description: 'cancelMessageDesc' },
+  copyLastResponse: { label: 'copyLastResponse', description: 'copyLastResponseDesc' },
+  toggleFullAuto: { label: 'toggleFullAuto', description: 'toggleFullAutoDesc' },
+}
+
 // ============================================
 // Kbd - 按键胶囊
 // ============================================
@@ -195,22 +216,32 @@ const CATEGORY_LABELS: Record<KeybindingConfig['category'], string> = {
 }
 
 export function KeybindingsSection() {
-  const { t } = useTranslation(['settings', 'common'])
+  const { t } = useTranslation(['settings', 'common', 'commands'])
   const { keybindings, setKeybinding, resetKeybinding, resetAll, isKeyUsed } = useKeybindingStore()
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
+  const localizedKeybindings = useMemo(
+    () =>
+      keybindings.map(kb => ({
+        ...kb,
+        label: t(`commands:${ACTION_TRANSLATION_KEYS[kb.action].label}`),
+        description: t(`commands:${ACTION_TRANSLATION_KEYS[kb.action].description}`),
+      })),
+    [keybindings, t],
+  )
+
   // 搜索直接过滤，不需要 toggle
   const filtered = useMemo(() => {
-    if (!search.trim()) return keybindings
+    if (!search.trim()) return localizedKeybindings
     const q = search.toLowerCase()
-    return keybindings.filter(
+    return localizedKeybindings.filter(
       kb =>
         kb.label.toLowerCase().includes(q) ||
         kb.description.toLowerCase().includes(q) ||
         kb.currentKey.toLowerCase().includes(q),
     )
-  }, [keybindings, search])
+  }, [localizedKeybindings, search])
 
   const grouped = useMemo(
     () =>
@@ -220,7 +251,7 @@ export function KeybindingsSection() {
     [filtered],
   )
 
-  const hasModifications = keybindings.some(kb => kb.currentKey !== kb.defaultKey)
+  const hasModifications = localizedKeybindings.some(kb => kb.currentKey !== kb.defaultKey)
 
   // 自动聚焦搜索
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { CloseIcon } from '../Icons'
 import { useDelayedRender } from '../../hooks/useDelayedRender'
 
@@ -25,6 +26,7 @@ export function Dialog({
   showCloseButton = true,
   rawContent = false,
 }: DialogProps) {
+  const { t } = useTranslation(['common'])
   // Animation state
   const [isVisible, setIsVisible] = useState(false)
   const shouldRender = useDelayedRender(isOpen, 200)
@@ -211,7 +213,7 @@ export function Dialog({
                   <button
                     onClick={onClose}
                     className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
-                    title="Close"
+                    title={t('common:close')}
                   >
                     <CloseIcon size={18} />
                   </button>

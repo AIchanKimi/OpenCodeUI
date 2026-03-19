@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSyntaxHighlightRef, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 
 const LINE_HEIGHT = 20
@@ -27,6 +28,7 @@ interface CodePreviewProps {
  *     sticky proxy scrollbar (bottom: 0) — 可见的横向滚动条
  */
 export function CodePreview({ code, language, truncateLines = true, maxHeight, isResizing = false }: CodePreviewProps) {
+  const { t } = useTranslation(['common'])
   const lines = useMemo(() => {
     const raw = code.split('\n')
     if (raw.length > 1 && raw[raw.length - 1] === '' && code.endsWith('\n')) {
@@ -203,7 +205,7 @@ export function CodePreview({ code, language, truncateLines = true, maxHeight, i
       contents.push(
         <div key={i} className="leading-5 pl-3 pr-4 whitespace-pre" style={{ height: LINE_HEIGHT }}>
           {displayContent}
-          {isTruncated && <span className="text-text-500 ml-1">… (truncated)</span>}
+          {isTruncated && <span className="text-text-500 ml-1">{t('common:truncated')}</span>}
         </div>,
       )
     }

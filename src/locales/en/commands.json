@@ -3,6 +3,8 @@
   "openSettingsDesc": "Open settings dialog",
   "openProject": "Open Project",
   "openProjectDesc": "Open project selector",
+  "commandPalette": "Command Palette",
+  "commandPaletteDesc": "Open command palette",
   "openShortcutsSettings": "Open Shortcuts Settings",
   "openShortcutsSettingsDesc": "Open settings to shortcuts tab",
   "toggleSidebar": "Toggle Sidebar",
@@ -27,16 +29,21 @@
   "selectModelDesc": "Open model selector",
   "toggleAgent": "Toggle Agent",
   "toggleAgentDesc": "Switch agent mode",
+  "sendMessage": "Send Message",
+  "sendMessageDesc": "Send current message",
   "copyLastResponse": "Copy Last Response",
   "copyLastResponseDesc": "Copy last AI response to clipboard",
   "cancelMessage": "Cancel Message",
   "cancelMessageDesc": "Cancel current response",
+  "toggleFullAuto": "Act Without Asking",
+  "toggleFullAutoDesc": "Toggle auto-approve all actions",
   "categories": {
     "general": "General",
     "session": "Session",
     "terminal": "Terminal",
     "model": "Model",
-    "message": "Message"
+    "message": "Message",
+    "permission": "Permission"
   },
   "sessions": {
     "searchChats": "Search chats...",
@@ -45,14 +52,24 @@
     "untitledChat": "Untitled Chat",
     "rename": "Rename",
     "switchProject": "Switch Project",
+    "failedToLoadProjects": "Failed to load projects",
     "noOtherProjects": "No other projects",
     "addProject": "Add Project...",
     "noProject": "No project",
     "removeProjectTitle": "Remove Project",
-    "removeProjectConfirm": "Remove this project folder from the list? Files won't be deleted."
+    "removeProjectConfirm": "Remove this project folder from the list? Files won't be deleted.",
+    "groups": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "previous7Days": "Previous 7 Days",
+      "previous30Days": "Previous 30 Days",
+      "older": "Older"
+    }
   },
   "slashCommand": {
     "commands": "Commands",
+    "newSessionDesc": "Create a new chat session",
+    "compactDesc": "Compact session by summarizing conversation history",
     "noMatchingCommands": "No matching commands",
     "noCommandsAvailable": "No commands available"
   },

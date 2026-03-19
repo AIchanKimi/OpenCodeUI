@@ -64,11 +64,12 @@ export function ChatSettings() {
           />
           {isAutoMode && (
             <div className="text-[11px] text-text-400 mt-2 px-1">
-              Using <span className="font-mono text-text-300">{effectiveStyle === 'windows' ? '\\' : '/'}</span>
+              {t('chat.usingStyle', { style: effectiveStyle === 'windows' ? '\\' : '/' })}
               {detectedStyle && (
                 <>
-                  , detected{' '}
-                  <span className="font-mono text-text-300">{detectedStyle === 'windows' ? 'Windows' : 'Unix'}</span>
+                  {t('chat.detectedStyle', {
+                    style: detectedStyle === 'windows' ? t('chat.windows') : t('chat.unix'),
+                  })}
                 </>
               )}
             </div>
@@ -86,10 +87,10 @@ export function ChatSettings() {
           </SettingRow>
         </SettingsCard>
 
-        <SettingsCard title="Sidebar Recents" description="Optional folder view for recent chats">
+        <SettingsCard title={t('chat.sidebarRecents')} description={t('chat.sidebarRecentsDesc')}>
           <SettingRow
-            label="Folder-Style Recents"
-            description="Group recent chats by project folder while keeping the default list available"
+            label={t('chat.folderStyleRecents')}
+            description={t('chat.folderStyleRecentsDesc')}
             icon={<FolderIcon size={14} />}
             onClick={handleSidebarFolderRecentsToggle}
           >
@@ -98,15 +99,12 @@ export function ChatSettings() {
         </SettingsCard>
       </div>
 
-      <SettingsCard
-        title="Conversation Experience"
-        description="Message density, reasoning style, and step summary fields"
-      >
+      <SettingsCard title={t('chat.conversationExperience')} description={t('chat.conversationExperienceDesc')}>
         <div className="space-y-3">
           <div className="grid gap-2 lg:grid-cols-2">
             <SettingRow
-              label="Collapse Long Messages"
-              description="Auto-collapse lengthy user messages"
+              label={t('chat.collapseLongMessages')}
+              description={t('chat.collapseLongMessagesDesc')}
               icon={<CompactIcon size={14} />}
               onClick={handleCollapseToggle}
               className="bg-bg-100/35 border-border-200/45"
@@ -120,16 +118,14 @@ export function ChatSettings() {
                   <ThinkingIcon size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium text-text-100">Thinking Display</div>
-                  <div className="text-[11px] text-text-400 mt-0.5 mb-2">
-                    Choose capsule, low-noise italic, or markdown reasoning style
-                  </div>
+                  <div className="text-[13px] font-medium text-text-100">{t('chat.thinkingDisplay')}</div>
+                  <div className="text-[11px] text-text-400 mt-0.5 mb-2">{t('chat.thinkingDisplayDesc')}</div>
                   <SegmentedControl
                     value={reasoningDisplayMode}
                     options={[
-                      { value: 'capsule', label: 'Capsule' },
-                      { value: 'italic', label: 'Italic' },
-                      { value: 'markdown', label: 'Markdown' },
+                      { value: 'capsule', label: t('chat.capsule') },
+                      { value: 'italic', label: t('chat.italic') },
+                      { value: 'markdown', label: t('chat.markdown') },
                     ]}
                     onChange={v => handleReasoningDisplayModeChange(v as ReasoningDisplayMode)}
                   />
@@ -139,15 +135,17 @@ export function ChatSettings() {
           </div>
 
           <div className="pt-3 border-t border-border-100/55">
-            <div className="text-[11px] font-medium text-text-400 uppercase tracking-wider mb-2">Step Finish Info</div>
+            <div className="text-[11px] font-medium text-text-400 uppercase tracking-wider mb-2">
+              {t('chat.stepFinishInfo')}
+            </div>
             <div className="grid gap-2 md:grid-cols-2">
               {(
                 [
-                  { key: 'tokens', label: 'Tokens', desc: 'Show token usage' },
-                  { key: 'cache', label: 'Cache', desc: 'Show cache hit info' },
-                  { key: 'cost', label: 'Cost', desc: 'Show API cost' },
-                  { key: 'duration', label: 'Duration', desc: 'Show message response time' },
-                  { key: 'turnDuration', label: 'Total Duration', desc: 'Show full turn elapsed time' },
+                  { key: 'tokens', label: t('chat.tokens'), desc: t('chat.showTokenUsage') },
+                  { key: 'cache', label: t('chat.cache'), desc: t('chat.showCacheHit') },
+                  { key: 'cost', label: t('chat.cost'), desc: t('chat.showApiCost') },
+                  { key: 'duration', label: t('chat.duration'), desc: t('chat.showResponseTime') },
+                  { key: 'turnDuration', label: t('chat.totalDuration'), desc: t('chat.showTurnElapsed') },
                 ] as const
               ).map(({ key, label, desc }) => (
                 <SettingRow

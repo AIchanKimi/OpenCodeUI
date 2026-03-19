@@ -71,7 +71,7 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
         .catch(err => {
           if (cancelled || requestId !== requestIdRef.current) return
           sessionErrorHandler('load session diff', err)
-          setError('Failed to load changes')
+          setError(t('multiFileDiff.failedToLoad'))
         })
         .finally(() => {
           if (!cancelled && requestId === requestIdRef.current) {
@@ -84,7 +84,7 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [isOpen, sessionId])
+  }, [isOpen, sessionId, t])
 
   const selectedDiff = diffs[selectedFileIndex]
   const language = selectedDiff ? detectLanguage(selectedDiff.file) || 'text' : 'text'
@@ -106,9 +106,7 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
         <div className="flex items-center gap-4 min-w-0">
           <span className="text-text-100 font-medium text-[13px]">{t('multiFileDiff.sessionChanges')}</span>
           <div className="flex items-center gap-3 text-[11px] font-mono text-text-400 tabular-nums">
-            <span>
-              {stats.files} file{stats.files !== 1 ? 's' : ''}
-            </span>
+            <span>{t('multiFileDiff.fileCount', { count: stats.files })}</span>
             {(stats.additions > 0 || stats.deletions > 0) && (
               <div className="flex items-center gap-1.5">
                 {stats.additions > 0 && <span className="text-success-100">+{stats.additions}</span>}

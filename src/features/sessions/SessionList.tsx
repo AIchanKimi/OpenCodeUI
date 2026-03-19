@@ -30,7 +30,7 @@ interface SessionListProps {
 }
 
 // 时间分组类型
-type TimeGroup = 'Today' | 'Yesterday' | 'Previous 7 Days' | 'Previous 30 Days' | 'Older'
+type TimeGroup = 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older'
 
 export function SessionList({
   sessions,
@@ -81,11 +81,11 @@ export function SessionList({
   // 分组逻辑
   const groupedSessions = useMemo(() => {
     const groups: Record<TimeGroup, ApiSession[]> = {
-      Today: [],
-      Yesterday: [],
-      'Previous 7 Days': [],
-      'Previous 30 Days': [],
-      Older: [],
+      today: [],
+      yesterday: [],
+      previous7Days: [],
+      previous30Days: [],
+      older: [],
     }
 
     const now = new Date()
@@ -97,15 +97,15 @@ export function SessionList({
     sessions.forEach(session => {
       const updated = session.time.updated ?? session.time.created
       if (updated >= today) {
-        groups['Today'].push(session)
+        groups.today.push(session)
       } else if (updated >= yesterday) {
-        groups['Yesterday'].push(session)
+        groups.yesterday.push(session)
       } else if (updated >= weekAgo) {
-        groups['Previous 7 Days'].push(session)
+        groups.previous7Days.push(session)
       } else if (updated >= monthAgo) {
-        groups['Previous 30 Days'].push(session)
+        groups.previous30Days.push(session)
       } else {
-        groups['Older'].push(session)
+        groups.older.push(session)
       }
     })
 
@@ -165,7 +165,7 @@ export function SessionList({
             return (
               <div key={group}>
                 <h3 className="px-3 mb-1.5 mt-2 text-[10px] font-bold text-text-400/60 uppercase tracking-widest select-none">
-                  {group}
+                  {t(`sessions.groups.${group}`)}
                 </h3>
                 <div className="space-y-0.5">
                   {groupSessions.map(session => (

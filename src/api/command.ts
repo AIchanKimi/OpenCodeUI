@@ -5,6 +5,7 @@
 import { get, post } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
+import i18n from '../i18n'
 
 export interface Command {
   name: string
@@ -17,10 +18,12 @@ type ApiCommand = Omit<Command, 'source'>
 
 // Frontend-added slash commands that do not come from GET /command.
 // These are executed locally or via dedicated session actions.
-const FRONTEND_COMMANDS: Command[] = [
-  { name: 'new', description: 'Create a new chat session', source: 'frontend' },
-  { name: 'compact', description: 'Compact session by summarizing conversation history', source: 'frontend' },
-]
+function getFrontendCommands(): Command[] {
+  return [
+    { name: 'new', description: i18n.t('commands:slashCommand.newSessionDesc'), source: 'frontend' },
+    { name: 'compact', description: i18n.t('commands:slashCommand.compactDesc'), source: 'frontend' },
+  ]
+}
 
 const COMMAND_CACHE_TTL_MS = 10_000
 
@@ -28,7 +31,7 @@ const commandCache = new Map<string, { data: Command[]; expiresAt: number }>()
 const commandInflight = new Map<string, Promise<Command[]>>()
 
 function getCommandCacheKey(directory?: string): string {
-  return `${serverStore.getActiveServerId()}::${formatPathForApi(directory) ?? ''}`
+  return `${serverStore.getActiveServerId()}::${i18n.resolvedLanguage || i18n.language}::${formatPathForApi(directory) ?? ''}`
 }
 
 async function fetchCommands(directory?: string): Promise<Command[]> {
@@ -38,9 +41,10 @@ async function fetchCommands(directory?: string): Promise<Command[]> {
   } catch {
     // Backend unreachable — frontend commands still available
   }
+  const frontendCommands = getFrontendCommands()
   const commandsFromApi: Command[] = apiCommands.map(command => ({ ...command, source: 'api' }))
   const apiNames = new Set(commandsFromApi.map(c => c.name))
-  return [...commandsFromApi, ...FRONTEND_COMMANDS.filter(c => !apiNames.has(c.name))]
+  return [...commandsFromApi, ...frontendCommands.filter(c => !apiNames.has(c.name))]
 }
 
 export async function getCommands(directory?: string): Promise<Command[]> {

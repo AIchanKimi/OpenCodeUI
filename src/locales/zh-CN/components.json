@@ -7,7 +7,9 @@
     "selectProject": "选择项目以浏览文件",
     "explorer": "文件浏览器",
     "noFilesFound": "未找到文件",
-    "binaryFile": "二进制文件 - 无法预览",
+    "failedToLoadFiles": "加载文件失败",
+    "failedToLoadFile": "加载文件内容失败",
+    "binaryFile": "二进制文件，无法预览",
     "fit": "适应",
     "oneToOne": "1:1"
   },
@@ -34,8 +36,8 @@
     "files": "文件",
     "changes": "变更",
     "mcp": "MCP",
-    "skills": "Skills",
-    "worktrees": "Worktree",
+    "skills": "技能",
+    "worktrees": "工作树",
     "tab": "标签",
     "addTab": "添加标签",
     "moveToRight": "移动到右侧面板",
@@ -46,10 +48,13 @@
     "loadingChanges": "加载变更中...",
     "failedToLoad": "加载变更失败",
     "noChanges": "此会话无变更",
-    "list": "List",
-    "tree": "Tree",
-    "unified": "Unified",
-    "split": "Split"
+    "fileCount_other": "{{count}} 个文件",
+    "list": "列表",
+    "flatList": "平铺列表",
+    "tree": "树形",
+    "treeView": "树形视图",
+    "unified": "统一",
+    "split": "分栏"
   },
   "mcpPanel": {
     "title": "MCP 服务器",
@@ -76,27 +81,34 @@
     "authenticate": "认证"
   },
   "skillPanel": {
-    "title": "Skills",
-    "filterPlaceholder": "筛选 Skill...",
-    "loadingSkills": "加载 Skills...",
-    "failedToLoad": "加载 Skills 失败",
-    "noSkills": "没有可用的 Skill"
+    "title": "技能",
+    "filterPlaceholder": "筛选技能...",
+    "loadingSkills": "加载技能中...",
+    "failedToLoad": "加载技能失败",
+    "noSkills": "没有可用技能"
   },
   "worktreePanel": {
-    "selectProject": "选择项目以管理 Worktree",
+    "selectProject": "选择项目以管理工作树",
     "git": "Git",
-    "worktrees": "Worktree",
-    "createWorktree": "新建 Worktree",
-    "loadingWorktrees": "加载 Worktree...",
-    "noWorktrees": "没有 Worktree",
-    "removeWorktree": "移除 Worktree",
-    "resetWorktree": "重置 Worktree",
-    "newWorktree": "新建 Worktree",
-    "worktreeNamePlaceholder": "Worktree 名称（例如 feature-xyz）",
+    "worktrees": "工作树",
+    "createWorktree": "新建工作树",
+    "loadingWorktrees": "加载工作树中...",
+    "failedToLoad": "加载工作树失败",
+    "failedWithMessage": "工作树操作失败：{{message}}",
+    "failedToCreate": "新建工作树失败",
+    "failedToRemove": "移除工作树失败",
+    "failedToReset": "重置工作树失败",
+    "noWorktrees": "没有工作树",
+    "removeWorktree": "移除工作树",
+    "removeWorktreeConfirm": "确定要移除工作树“{{name}}”吗？这会删除对应的工作树目录。",
+    "resetWorktree": "重置工作树",
+    "resetWorktreeConfirm": "确定要重置工作树“{{name}}”吗？这会丢弃所有未提交的更改。",
+    "newWorktree": "新建工作树",
+    "worktreeNamePlaceholder": "工作树名称（例如 feature-xyz）",
     "openSessionAfter": "创建后打开会话",
-    "openSession": "在此 Worktree 中打开会话",
-    "resetWorktreeAction": "重置 Worktree",
-    "removeWorktreeAction": "移除 Worktree"
+    "openSession": "在此工作树中打开会话",
+    "resetWorktreeAction": "重置工作树",
+    "removeWorktreeAction": "移除工作树"
   },
   "toast": {
     "clearAll": "清除全部"
@@ -106,6 +118,8 @@
   },
   "multiFileDiff": {
     "sessionChanges": "会话变更",
+    "fileCount_other": "{{count}} 个文件",
+    "failedToLoad": "加载变更失败",
     "noChangesFound": "未找到变更",
     "selectFile": "选择文件以查看变更"
   },

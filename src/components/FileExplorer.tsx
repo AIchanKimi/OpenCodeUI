@@ -677,7 +677,7 @@ function FilePreview({
             <button
               onClick={handleDownload}
               className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
-              title={`Save ${fileName}`}
+              title={`${t('common:save')} ${fileName}`}
             >
               <DownloadIcon size={12} />
             </button>
@@ -1022,6 +1022,8 @@ interface BinaryPlaceholderProps {
 }
 
 function BinaryPlaceholder({ mimeType, fileName, onDownload }: BinaryPlaceholderProps) {
+  const { t } = useTranslation(['components', 'common'])
+
   return (
     <div className="flex flex-col items-center justify-center h-full text-text-400 text-xs gap-2 p-4">
       <img
@@ -1036,14 +1038,14 @@ function BinaryPlaceholder({ mimeType, fileName, onDownload }: BinaryPlaceholder
       />
       <span className="font-medium text-text-300">{fileName}</span>
       <span>{formatMimeType(mimeType)}</span>
-      <span className="text-text-500 text-[10px]">Binary file — preview not available</span>
+      <span className="text-text-500 text-[10px]">{t('components:fileExplorer.binaryFile')}</span>
       {onDownload && (
         <button
           onClick={onDownload}
           className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-bg-200 hover:bg-bg-300 text-text-200 rounded transition-colors text-[11px]"
         >
           <DownloadIcon size={12} />
-          Download
+          {t('common:download')}
         </button>
       )}
     </div>

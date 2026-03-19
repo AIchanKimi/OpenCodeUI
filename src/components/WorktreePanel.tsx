@@ -62,11 +62,11 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
       const list = await listWorktrees(currentDirectory)
       setWorktrees(list)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load worktrees')
+      setError(e instanceof Error ? e.message : t('worktreePanel.failedToLoad'))
     } finally {
       setLoading(false)
     }
-  }, [currentDirectory])
+  }, [currentDirectory, t])
 
   useEffect(() => {
     loadWorktrees()
@@ -79,14 +79,14 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         loadWorktrees()
       },
       onWorktreeFailed: data => {
-        setError(`Worktree failed: ${data.message}`)
+        setError(t('worktreePanel.failedWithMessage', { message: data.message }))
         setActionLoading(null)
       },
       onVcsBranchUpdated: () => {
         refreshVcs()
       },
     })
-  }, [loadWorktrees, refreshVcs])
+  }, [loadWorktrees, refreshVcs, t])
 
   // 在 worktree 目录下开启新 session
   const handleOpenSession = useCallback(
@@ -114,12 +114,12 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
           handleOpenSession(wt.directory)
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to create worktree')
+        setError(e instanceof Error ? e.message : t('worktreePanel.failedToCreate'))
       } finally {
         setActionLoading(null)
       }
     },
-    [currentDirectory, loadWorktrees, handleOpenSession],
+    [currentDirectory, loadWorktrees, handleOpenSession, t],
   )
 
   // 删除 worktree
@@ -132,13 +132,13 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         await removeWorktree({ directory }, currentDirectory)
         await loadWorktrees()
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to remove worktree')
+        setError(e instanceof Error ? e.message : t('worktreePanel.failedToRemove'))
       } finally {
         setActionLoading(null)
         setDeleteConfirm({ isOpen: false, directory: null })
       }
     },
-    [currentDirectory, loadWorktrees],
+    [currentDirectory, loadWorktrees, t],
   )
 
   // 重置 worktree
@@ -151,13 +151,13 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
         await resetWorktree({ directory }, currentDirectory)
         await loadWorktrees()
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to reset worktree')
+        setError(e instanceof Error ? e.message : t('worktreePanel.failedToReset'))
       } finally {
         setActionLoading(null)
         setResetConfirm({ isOpen: false, directory: null })
       }
     },
-    [currentDirectory, loadWorktrees],
+    [currentDirectory, loadWorktrees, t],
   )
 
   // 从 worktree path 中提取显示名
@@ -297,7 +297,9 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
           }
         }}
         title={t('worktreePanel.removeWorktree')}
-        description={`Remove worktree "${deleteConfirm.directory ? getWorktreeName(deleteConfirm.directory) : ''}"? This will delete the worktree directory.`}
+        description={t('worktreePanel.removeWorktreeConfirm', {
+          name: deleteConfirm.directory ? getWorktreeName(deleteConfirm.directory) : '',
+        })}
         confirmText={t('common:remove')}
         variant="danger"
       />
@@ -312,7 +314,9 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
           }
         }}
         title={t('worktreePanel.resetWorktree')}
-        description={`Reset worktree "${resetConfirm.directory ? getWorktreeName(resetConfirm.directory) : ''}"? This will discard all uncommitted changes.`}
+        description={t('worktreePanel.resetWorktreeConfirm', {
+          name: resetConfirm.directory ? getWorktreeName(resetConfirm.directory) : '',
+        })}
         confirmText={t('common:reset')}
         variant="danger"
       />

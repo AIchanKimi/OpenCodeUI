@@ -62,20 +62,23 @@ export function ProjectSelector({
     (project: ApiProject | null): string => {
       if (!project) return isLoading ? t('common:loading') : t('sessions.noProject')
       if (project.name) return project.name
-      if (project.id === 'global') return 'Global'
+      if (project.id === 'global') return t('chat:sidebar.global')
 
       const worktree = project.worktree || ''
       const parts = worktree.replace(/\\/g, '/').split('/').filter(Boolean)
       return parts[parts.length - 1] || worktree
     },
-    [isLoading],
+    [isLoading, t],
   )
 
-  const getPath = useCallback((project: ApiProject | null): string => {
-    if (!project) return ''
-    if (project.id === 'global') return t('chat:sidebar.allProjects')
-    return project.worktree || ''
-  }, [])
+  const getPath = useCallback(
+    (project: ApiProject | null): string => {
+      if (!project) return ''
+      if (project.id === 'global') return t('chat:sidebar.allProjects')
+      return project.worktree || ''
+    },
+    [t],
+  )
 
   // ==========================================
   // Computed

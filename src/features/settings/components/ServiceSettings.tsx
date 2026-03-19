@@ -103,7 +103,7 @@ export function ServiceSettings() {
 
   if (!isTauriDesktop) {
     return (
-      <SettingsCard title={t('service.localService')} description="This section is available on desktop app only">
+      <SettingsCard title={t('service.localService')} description={t('service.desktopOnlyDesc')}>
         <div className="text-[12px] text-text-400 leading-relaxed">{t('service.webModeDesc')}</div>
       </SettingsCard>
     )

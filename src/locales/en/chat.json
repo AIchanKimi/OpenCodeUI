@@ -75,6 +75,7 @@
     "rule": "Rule",
     "allowOnce": "Allow once",
     "alwaysAllow": "Always allow",
+    "subtaskFallback": "Subtask",
     "browserSession": "Browser session",
     "thisSession": "This session",
     "autoApproveEnabled": "Auto-approve enabled. Refresh browser to reset permissions.",

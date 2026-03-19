@@ -4,6 +4,7 @@
 // ============================================
 
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { listDirectory, getFileContent, getFileStatus, getSessionDiff } from '../api'
 import type { FileNode, FileContent, FileStatusItem, FileDiff } from '../api/types'
 
@@ -52,6 +53,7 @@ export interface UseFileExplorerResult {
 
 export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileExplorerResult {
   const { directory, autoLoad = true, sessionId } = options
+  const { t } = useTranslation(['components'])
 
   // 文件树状态
   const [tree, setTree] = useState<FileTreeNode[]>([])
@@ -143,14 +145,14 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       }
     } catch (e) {
       if (loadId === loadIdRef.current) {
-        setError(e instanceof Error ? e.message : 'Failed to load files')
+        setError(e instanceof Error ? e.message : t('fileExplorer.failedToLoadFiles'))
       }
     } finally {
       if (loadId === loadIdRef.current) {
         setIsLoading(false)
       }
     }
-  }, [directory, sessionId])
+  }, [directory, sessionId, t])
 
   // 加载子目录
   const loadChildren = useCallback(
@@ -266,7 +268,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         setPreviewContent(content)
       } catch (e) {
         if (loadId !== previewLoadIdRef.current) return
-        setPreviewError(e instanceof Error ? e.message : 'Failed to load file')
+        setPreviewError(e instanceof Error ? e.message : t('fileExplorer.failedToLoadFile'))
         setPreviewContent(null)
       } finally {
         if (loadId === previewLoadIdRef.current) {
@@ -274,7 +276,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         }
       }
     },
-    [directory],
+    [directory, t],
   )
 
   const clearPreview = useCallback(() => {
