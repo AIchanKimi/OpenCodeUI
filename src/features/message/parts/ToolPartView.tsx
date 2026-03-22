@@ -33,6 +33,8 @@ interface ToolPartViewProps {
   /** Compact layout: icon inline with text (14px column), no timeline connectors.
    *  Used for single-tool groups to align with ReasoningPartView. */
   compact?: boolean
+  /** Descriptive steps mode: no icon/timeline, flat rows aligned with step summary. */
+  descriptive?: boolean
 }
 
 export const ToolPartView = memo(function ToolPartView({
@@ -40,6 +42,7 @@ export const ToolPartView = memo(function ToolPartView({
   isFirst = false,
   isLast = false,
   compact = false,
+  descriptive = false,
 }: ToolPartViewProps) {
   const { t } = useTranslation('message')
   const { state, tool: toolName } = part
@@ -93,6 +96,81 @@ export const ToolPartView = memo(function ToolPartView({
       {getToolIcon(toolName)}
     </div>
   )
+
+  const bodyContent = (
+    <>
+      {!hideToolBodyForPermission && <ToolBody part={part} />}
+      {permissionRequest && (
+        <div className={hideToolBodyForPermission ? '' : 'pt-2'}>
+          <InlinePermission request={permissionRequest} onReply={onPermissionReply} isReplying={isReplying} />
+        </div>
+      )}
+      {questionRequest && (
+        <div className="pt-2">
+          <InlineQuestion
+            request={questionRequest}
+            onReply={onQuestionReply}
+            onReject={onQuestionReject}
+            isReplying={isReplying}
+          />
+        </div>
+      )}
+    </>
+  )
+
+  if (descriptive) {
+    return (
+      <div className="group py-0.5">
+        <button
+          type="button"
+          className="flex w-full items-center rounded-md px-0 py-1 text-left hover:bg-bg-200/30 transition-colors group/header"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+            <span
+              className={`shrink-0 font-medium text-[13px] leading-tight ${
+                isActive
+                  ? 'reasoning-shimmer-text'
+                  : isError
+                    ? 'text-danger-100'
+                    : 'text-text-200 group-hover/header:text-text-100'
+              }`}
+            >
+              {formatToolName(toolName)}
+            </span>
+
+            {title && (
+              <span
+                className={`min-w-0 flex-1 truncate font-mono text-xs ${
+                  isActive ? 'reasoning-shimmer-text' : isError ? 'text-danger-100/80' : 'text-text-400'
+                }`}
+              >
+                {title}
+              </span>
+            )}
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center">
+            {duration !== undefined && state.status === 'completed' && (
+              <span
+                className={`text-[10px] font-mono tabular-nums ${isError ? 'text-danger-100/70' : 'text-text-500'}`}
+              >
+                {formatDuration(duration)}
+              </span>
+            )}
+          </div>
+        </button>
+
+        <div
+          className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${
+            effectiveExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          }`}
+        >
+          <div className="overflow-hidden">{shouldRenderBody && <div className="pb-2 pt-1">{bodyContent}</div>}</div>
+        </div>
+      </div>
+    )
+  }
 
   // ── Compact layout (single-tool, no timeline) ──
   // Grid: [14px icon] [gap 6px] [content] — mirrors ReasoningPartView alignment
@@ -155,30 +233,7 @@ export const ToolPartView = memo(function ToolPartView({
             }`}
           >
             <div className="overflow-hidden">
-              {shouldRenderBody && (
-                <div className="pl-2 pr-2.5 pb-2 pt-1">
-                  {!hideToolBodyForPermission && <ToolBody part={part} />}
-                  {permissionRequest && (
-                    <div className={hideToolBodyForPermission ? '' : 'pt-2'}>
-                      <InlinePermission
-                        request={permissionRequest}
-                        onReply={onPermissionReply}
-                        isReplying={isReplying}
-                      />
-                    </div>
-                  )}
-                  {questionRequest && (
-                    <div className="pt-2">
-                      <InlineQuestion
-                        request={questionRequest}
-                        onReply={onQuestionReply}
-                        onReject={onQuestionReject}
-                        isReplying={isReplying}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
+              {shouldRenderBody && <div className="pl-2 pr-2.5 pb-2 pt-1">{bodyContent}</div>}
             </div>
           </div>
         </div>
@@ -259,26 +314,7 @@ export const ToolPartView = memo(function ToolPartView({
           }`}
         >
           <div className="overflow-hidden">
-            {shouldRenderBody && (
-              <div className="pl-2 pr-2.5 pb-2 pt-1">
-                {!hideToolBodyForPermission && <ToolBody part={part} />}
-                {permissionRequest && (
-                  <div className={hideToolBodyForPermission ? '' : 'pt-2'}>
-                    <InlinePermission request={permissionRequest} onReply={onPermissionReply} isReplying={isReplying} />
-                  </div>
-                )}
-                {questionRequest && (
-                  <div className="pt-2">
-                    <InlineQuestion
-                      request={questionRequest}
-                      onReply={onQuestionReply}
-                      onReject={onQuestionReject}
-                      isReplying={isReplying}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+            {shouldRenderBody && <div className="pl-2 pr-2.5 pb-2 pt-1">{bodyContent}</div>}
           </div>
         </div>
       </div>

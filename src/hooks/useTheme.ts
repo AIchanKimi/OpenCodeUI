@@ -146,6 +146,12 @@ export function useTheme() {
     themeStore.setDiffStyle(style)
   }, [])
 
+  // ---- Descriptive Tool Steps ----
+
+  const setDescriptiveToolSteps = useCallback((enabled: boolean) => {
+    themeStore.setDescriptiveToolSteps(enabled)
+  }, [])
+
   // ---- Inline Tool Requests ----
 
   const setInlineToolRequests = useCallback((enabled: boolean) => {
@@ -197,6 +203,10 @@ export function useTheme() {
     // Diff 行标记风格
     diffStyle: state.diffStyle,
     setDiffStyle,
+
+    // 带工具描述的 steps 摘要
+    descriptiveToolSteps: state.descriptiveToolSteps,
+    setDescriptiveToolSteps,
 
     // 工具内嵌权限/提问
     inlineToolRequests: state.inlineToolRequests,

@@ -78,6 +78,7 @@ const DEFAULT_STEP_FINISH_DISPLAY: StepFinishDisplay = {
 
 const DEFAULT_REASONING_DISPLAY_MODE: ReasoningDisplayMode = 'capsule'
 const DEFAULT_DIFF_STYLE: DiffStyle = 'markers'
+const DEFAULT_DESCRIPTIVE_TOOL_STEPS = false
 const DEFAULT_INLINE_TOOL_REQUESTS = false
 const DEFAULT_CODE_WORD_WRAP = false
 
@@ -98,6 +99,8 @@ export interface ThemeState {
   wideMode: boolean
   /** Diff 行标记风格 */
   diffStyle: DiffStyle
+  /** 是否启用带工具描述的 steps 摘要 */
+  descriptiveToolSteps: boolean
   /** 是否在工具下方内嵌权限/提问请求 */
   inlineToolRequests: boolean
   /** 代码块/diff 自动换行 */
@@ -116,6 +119,7 @@ const STORAGE_KEY_STEP_FINISH_DISPLAY = 'step-finish-display'
 const STORAGE_KEY_REASONING_DISPLAY_MODE = 'reasoning-display-mode'
 const STORAGE_KEY_WIDE_MODE = 'chat-wide-mode'
 const STORAGE_KEY_DIFF_STYLE = 'diff-style'
+const STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS = 'descriptive-tool-steps'
 const STORAGE_KEY_INLINE_TOOL_REQUESTS = 'inline-tool-requests'
 const STORAGE_KEY_CODE_WORD_WRAP = 'code-word-wrap'
 
@@ -158,6 +162,10 @@ class ThemeStore {
     const savedDiffStyle = localStorage.getItem(STORAGE_KEY_DIFF_STYLE) as DiffStyle | null
     const diffStyle: DiffStyle = savedDiffStyle === 'changeBars' ? 'changeBars' : DEFAULT_DIFF_STYLE
 
+    const savedDescriptiveToolSteps = localStorage.getItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS)
+    const descriptiveToolSteps =
+      savedDescriptiveToolSteps === null ? DEFAULT_DESCRIPTIVE_TOOL_STEPS : savedDescriptiveToolSteps === 'true'
+
     const savedInlineToolRequests = localStorage.getItem(STORAGE_KEY_INLINE_TOOL_REQUESTS)
     const inlineToolRequests =
       savedInlineToolRequests === null ? DEFAULT_INLINE_TOOL_REQUESTS : savedInlineToolRequests === 'true'
@@ -174,6 +182,7 @@ class ThemeStore {
       reasoningDisplayMode,
       wideMode: savedWideMode,
       diffStyle,
+      descriptiveToolSteps,
       inlineToolRequests,
       codeWordWrap,
     }
@@ -208,6 +217,9 @@ class ThemeStore {
   }
   get diffStyle() {
     return this.state.diffStyle
+  }
+  get descriptiveToolSteps() {
+    return this.state.descriptiveToolSteps
   }
   get inlineToolRequests() {
     return this.state.inlineToolRequests
@@ -309,6 +321,13 @@ class ThemeStore {
     if (this.state.diffStyle === style) return
     this.state = { ...this.state, diffStyle: style }
     localStorage.setItem(STORAGE_KEY_DIFF_STYLE, style)
+    this.emit()
+  }
+
+  setDescriptiveToolSteps(enabled: boolean) {
+    if (this.state.descriptiveToolSteps === enabled) return
+    this.state = { ...this.state, descriptiveToolSteps: enabled }
+    localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(enabled))
     this.emit()
   }
 

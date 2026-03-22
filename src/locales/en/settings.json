@@ -71,6 +71,8 @@
     "conversationExperienceDesc": "Message density, reasoning style, and step summary fields",
     "collapseLongMessages": "Collapse Long Messages",
     "collapseLongMessagesDesc": "Auto-collapse lengthy user messages",
+    "descriptiveToolSteps": "Descriptive Steps",
+    "descriptiveToolStepsDesc": "Replace plain step counts with tool-aware summaries and show a steps line even for single tool calls",
     "inlineToolRequests": "Inline Tool Requests",
     "inlineToolRequestsDesc": "Show pending permission and question requests under the related tool call instead of floating dialogs",
     "thinkingDisplay": "Thinking Display",

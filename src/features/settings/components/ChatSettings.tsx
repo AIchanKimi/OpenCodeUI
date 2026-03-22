@@ -10,6 +10,7 @@ import {
   EyeIcon,
   FolderIcon,
   PermissionListIcon,
+  SplitIcon,
 } from '../../../components/Icons'
 import { usePathMode, useIsMobile } from '../../../hooks'
 import { autoApproveStore, layoutStore, useLayoutStore } from '../../../store'
@@ -25,6 +26,7 @@ export function ChatSettings() {
   const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
   const [stepFinishDisplay, setStepFinishDisplay] = useState(themeStore.stepFinishDisplay)
   const [reasoningDisplayMode, setReasoningDisplayMode] = useState(themeStore.reasoningDisplayMode)
+  const [descriptiveToolSteps, setDescriptiveToolSteps] = useState(themeStore.descriptiveToolSteps)
   const [inlineToolRequests, setInlineToolRequests] = useState(themeStore.inlineToolRequests)
   const isMobile = useIsMobile()
   void isMobile // reserved for future mobile-specific logic
@@ -49,6 +51,12 @@ export function ChatSettings() {
   const handleReasoningDisplayModeChange = (mode: ReasoningDisplayMode) => {
     setReasoningDisplayMode(mode)
     themeStore.setReasoningDisplayMode(mode)
+  }
+
+  const handleDescriptiveToolStepsToggle = () => {
+    const v = !descriptiveToolSteps
+    setDescriptiveToolSteps(v)
+    themeStore.setDescriptiveToolSteps(v)
   }
 
   const handleInlineToolRequestsToggle = () => {
@@ -128,6 +136,16 @@ export function ChatSettings() {
               className="bg-bg-100/35 border-border-200/45"
             >
               <Toggle enabled={inlineToolRequests} onChange={handleInlineToolRequestsToggle} />
+            </SettingRow>
+
+            <SettingRow
+              label={t('chat.descriptiveToolSteps')}
+              description={t('chat.descriptiveToolStepsDesc')}
+              icon={<SplitIcon size={14} />}
+              onClick={handleDescriptiveToolStepsToggle}
+              className="bg-bg-100/35 border-border-200/45"
+            >
+              <Toggle enabled={descriptiveToolSteps} onChange={handleDescriptiveToolStepsToggle} />
             </SettingRow>
 
             <div className="rounded-lg border border-border-200/45 bg-bg-100/35 px-2.5 py-2.5">

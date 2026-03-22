@@ -489,7 +489,7 @@ interface ToolGroupProps {
 const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDuration, isStreaming }: ToolGroupProps) {
   const { t } = useTranslation('message')
   const [expanded, setExpanded] = useState(true)
-  const { inlineToolRequests } = useTheme()
+  const { descriptiveToolSteps, inlineToolRequests } = useTheme()
   const { pendingPermissions, pendingQuestions } = useInlineToolRequests()
   const hasPendingInteraction =
     inlineToolRequests &&
@@ -506,38 +506,58 @@ const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDur
   const doneCount = parts.filter(p => p.state.status === 'completed').length
   const totalCount = parts.length
   const isAllDone = doneCount === totalCount
+  const hasActiveTools = parts.some(isToolPartActive)
+  const hasErroredTools = parts.some(part => part.state.status === 'error')
+  const stepsSummary = descriptiveToolSteps ? buildDescriptiveToolStepsSummary(parts, t) : undefined
 
   // compact: 单工具时用紧凑布局（图标内联，无 timeline 连接线）
   // 不区分 streaming 状态 — 单工具始终 compact，第二个工具到来时再自然过渡到 timeline
-  const isSingleCompact = totalCount === 1
-  // steps header: 仅多工具时显示
-  const showStepsHeader = totalCount > 1
+  const isSingleCompact = totalCount === 1 && !descriptiveToolSteps
+  // steps header: 多工具始终显示；描述型 steps 模式下，单工具也显示
+  const showStepsHeader = totalCount > 1 || descriptiveToolSteps
 
   // 统一容器结构 — ToolPartView 始终在同一 React 树位置，
   // streaming→idle / 1→N 工具切换时不 remount，expanded 状态不丢失
   return (
     <SmoothHeight isActive={!!isStreaming}>
       <div className="flex flex-col">
-        {showStepsHeader && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1.5 py-1.5 text-text-400 text-sm hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors"
-          >
-            <span className="inline-flex w-[14px] items-center justify-center shrink-0">
-              {effectiveExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-            </span>
-            <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-              <span className="text-[13px] font-medium leading-tight">
-                {isAllDone
-                  ? t('stepsCount', { done: totalCount, total: totalCount })
-                  : t('stepsCount', { done: doneCount, total: totalCount })}
+        {showStepsHeader &&
+          (descriptiveToolSteps ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              className="flex w-full items-start rounded-md py-1 text-left hover:bg-bg-200/30 transition-colors"
+            >
+              <span
+                className={`min-w-0 flex-1 text-[12px] leading-5 ${
+                  hasActiveTools ? 'reasoning-shimmer-text' : hasErroredTools ? 'text-danger-100' : 'text-text-300'
+                }`}
+              >
+                {stepsSummary}
               </span>
-              {!effectiveExpanded && stepFinish && (
-                <span className="text-xs text-text-500 font-mono opacity-70">{formatTokens(stepFinish.tokens, t)}</span>
-              )}
-            </span>
-          </button>
-        )}
+            </button>
+          ) : (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-1.5 py-1.5 text-text-400 text-sm hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors"
+            >
+              <span className="inline-flex w-[14px] items-center justify-center shrink-0">
+                {effectiveExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+              </span>
+              <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+                <span className="text-[13px] font-medium leading-tight">
+                  {isAllDone
+                    ? t('stepsCount', { done: totalCount, total: totalCount })
+                    : t('stepsCount', { done: doneCount, total: totalCount })}
+                </span>
+                {!effectiveExpanded && stepFinish && (
+                  <span className="text-xs text-text-500 font-mono opacity-70">
+                    {formatTokens(stepFinish.tokens, t)}
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
 
         <div
           className={
@@ -558,6 +578,7 @@ const ToolGroup = memo(function ToolGroup({ parts, stepFinish, duration, turnDur
                   isFirst={idx === 0}
                   isLast={idx === parts.length - 1}
                   compact={isSingleCompact}
+                  descriptive={descriptiveToolSteps}
                 />
               ))}
           </div>
@@ -586,6 +607,137 @@ function formatTokens(
     return t('tokensK', { count: (total / 1000).toFixed(1) })
   }
   return `${total} ${t('tokens')}`
+}
+
+type ToolSummaryCategory =
+  | 'execute'
+  | 'edit'
+  | 'read'
+  | 'search'
+  | 'network'
+  | 'task'
+  | 'todo'
+  | 'question'
+  | 'think'
+  | 'other'
+
+type ToolSummaryPhase = 'done' | 'active'
+
+function buildDescriptiveToolStepsSummary(
+  parts: ToolPart[],
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const doneSegments = collectToolSummaryCounts(parts.filter(part => part.state.status === 'completed')).map(
+    ({ category, count }) => formatToolSummarySegment(category, count, 'done', t),
+  )
+  const failedCount = parts.filter(part => part.state.status === 'error').length
+  const activeSegments = collectToolSummaryCounts(parts.filter(isToolPartActive)).map(({ category, count }) =>
+    formatToolSummarySegment(category, count, 'active', t),
+  )
+
+  const segments = [...doneSegments]
+  if (failedCount > 0) {
+    segments.push(t('toolSteps.failed', { count: failedCount }))
+  }
+  segments.push(...activeSegments)
+
+  if (segments.length === 0) {
+    return t('stepsCount', { done: 0, total: parts.length })
+  }
+
+  return segments.join(t('toolSteps.separator'))
+}
+
+function collectToolSummaryCounts(parts: ToolPart[]): Array<{ category: ToolSummaryCategory; count: number }> {
+  const counts = new Map<ToolSummaryCategory, number>()
+  const order: ToolSummaryCategory[] = []
+
+  for (const part of parts) {
+    const category = getToolSummaryCategory(part.tool)
+    if (!counts.has(category)) {
+      order.push(category)
+      counts.set(category, 0)
+    }
+    counts.set(category, (counts.get(category) || 0) + 1)
+  }
+
+  return order.map(category => ({ category, count: counts.get(category) || 0 }))
+}
+
+function formatToolSummarySegment(
+  category: ToolSummaryCategory,
+  count: number,
+  phase: ToolSummaryPhase,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  switch (category) {
+    case 'execute':
+      return t(phase === 'active' ? 'toolSteps.executeActive' : 'toolSteps.executeDone', { count })
+    case 'edit':
+      return t(phase === 'active' ? 'toolSteps.editActive' : 'toolSteps.editDone', { count })
+    case 'read':
+      return t(phase === 'active' ? 'toolSteps.readActive' : 'toolSteps.readDone', { count })
+    case 'search':
+      return t(phase === 'active' ? 'toolSteps.searchActive' : 'toolSteps.searchDone', { count })
+    case 'network':
+      return t(phase === 'active' ? 'toolSteps.networkActive' : 'toolSteps.networkDone', { count })
+    case 'task':
+      return t(phase === 'active' ? 'toolSteps.taskActive' : 'toolSteps.taskDone', { count })
+    case 'todo':
+      return t(phase === 'active' ? 'toolSteps.todoActive' : 'toolSteps.todoDone', { count })
+    case 'question':
+      return t(phase === 'active' ? 'toolSteps.questionActive' : 'toolSteps.questionDone', { count })
+    case 'think':
+      return t(phase === 'active' ? 'toolSteps.thinkActive' : 'toolSteps.thinkDone', { count })
+    default:
+      return t(phase === 'active' ? 'toolSteps.otherActive' : 'toolSteps.otherDone', { count })
+  }
+}
+
+function getToolSummaryCategory(toolName: string): ToolSummaryCategory {
+  const lower = toolName.toLowerCase()
+
+  if (lower.includes('todo')) return 'todo'
+  if (lower === 'task') return 'task'
+  if (lower.includes('question') || lower.includes('ask')) return 'question'
+  if (
+    lower.includes('bash') ||
+    lower.includes('sh') ||
+    lower.includes('cmd') ||
+    lower.includes('terminal') ||
+    lower.includes('shell')
+  ) {
+    return 'execute'
+  }
+  if (
+    lower.includes('write') ||
+    lower.includes('save') ||
+    lower.includes('edit') ||
+    lower.includes('replace') ||
+    lower.includes('patch')
+  ) {
+    return 'edit'
+  }
+  if (lower.includes('read') || lower.includes('cat')) return 'read'
+  if (lower.includes('search') || lower.includes('find') || lower.includes('grep') || lower.includes('glob')) {
+    return 'search'
+  }
+  if (
+    lower.includes('web') ||
+    lower.includes('fetch') ||
+    lower.includes('http') ||
+    lower.includes('browse') ||
+    lower.includes('network') ||
+    lower.includes('exa')
+  ) {
+    return 'network'
+  }
+  if (lower.includes('think') || lower.includes('reason') || lower.includes('plan')) return 'think'
+  return 'other'
+}
+
+function isToolPartActive(part: ToolPart): boolean {
+  return part.state.status === 'running' || part.state.status === 'pending'
 }
 
 function getTaskChildSessionId(part: ToolPart): string | undefined {

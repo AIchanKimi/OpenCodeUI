@@ -31,6 +31,30 @@
     "running": "运行中",
     "failed": "失败"
   },
+  "toolSteps": {
+    "separator": "，",
+    "executeDone": "运行了 {{count}} 条命令",
+    "executeActive": "正在运行 {{count}} 条命令",
+    "editDone": "编辑了 {{count}} 个文件",
+    "editActive": "正在编辑 {{count}} 个文件",
+    "readDone": "读取了 {{count}} 个文件",
+    "readActive": "正在读取 {{count}} 个文件",
+    "searchDone": "搜索了 {{count}} 次",
+    "searchActive": "正在搜索",
+    "networkDone": "抓取了 {{count}} 个网页",
+    "networkActive": "正在抓取 {{count}} 个网页",
+    "taskDone": "运行了 {{count}} 个任务",
+    "taskActive": "正在运行 {{count}} 个任务",
+    "todoDone": "更新了任务列表",
+    "todoActive": "正在更新任务列表",
+    "questionDone": "提出了 {{count}} 个问题",
+    "questionActive": "正在提问",
+    "thinkDone": "推理了 {{count}} 次",
+    "thinkActive": "正在推理",
+    "otherDone": "调用了 {{count}} 个工具",
+    "otherActive": "正在调用 {{count}} 个工具",
+    "failed": "{{count}} 个操作失败"
+  },
   "todo": {
     "tasks": "任务",
     "completedCount": "{{completed}}/{{total}}"
