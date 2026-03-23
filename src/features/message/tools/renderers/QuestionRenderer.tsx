@@ -117,8 +117,13 @@ function AnsweredQuestion({ qa }: { qa: QAPair }) {
           .map((customAnswer, idx) => (
             <span
               key={`custom-${idx}`}
-              className="inline-flex items-center px-2.5 py-1 text-[12px] rounded-md border border-text-100 text-text-100 bg-bg-300/40"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] rounded-md border border-text-100 text-text-100 bg-bg-300/40"
             >
+              {qa.multiple && (
+                <span className="inline-flex w-3.5 h-3.5 rounded items-center justify-center border border-text-100 bg-text-100 text-bg-000">
+                  <CheckIcon size={10} />
+                </span>
+              )}
               {customAnswer}
             </span>
           ))}
