@@ -161,7 +161,6 @@ export const ToolPartView = memo(function ToolPartView({
 
   if (descriptive) {
     const data = extractToolData(part)
-    const exitCode = data.exitCode
     const hasDiffFiles = !!data.files?.length
     // diffStats 可能从 metadata 来，也可能需要从 diff 数据计算
     const diffStats = data.diffStats || computeDiffStatsFromData(data)
@@ -170,7 +169,7 @@ export const ToolPartView = memo(function ToolPartView({
       <div className="group py-0.5">
         <button
           type="button"
-          className="flex w-full items-center rounded-md px-0 py-1 text-left hover:bg-bg-200/30 transition-colors group/header"
+          className="flex w-full items-center gap-3 rounded-md px-0 py-1 text-left hover:bg-bg-200/30 transition-colors group/header"
           onClick={() => setExpanded(!expanded)}
         >
           <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
@@ -188,35 +187,24 @@ export const ToolPartView = memo(function ToolPartView({
 
             {title && (
               <span
-                className={`min-w-0 flex-1 truncate font-mono text-xs ${
+                className={`min-w-0 truncate font-mono text-xs ${
                   isActive ? 'reasoning-shimmer-text' : isError ? 'text-danger-100/80' : 'text-text-400'
                 }`}
               >
                 {title}
               </span>
             )}
-          </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {/* Diff stats — 只在收起时且非失败时显示 */}
+            {/* Diff stats — 紧跟 title，收起时且非失败时显示 */}
             {!effectiveExpanded && !isActive && !isError && (diffStats || hasDiffFiles) && (
-              <span className="flex items-center gap-1 text-[10px] font-mono font-medium tabular-nums">
+              <span className="shrink-0 flex items-center gap-1 text-[10px] font-mono font-medium tabular-nums">
                 {(diffStats?.additions ?? 0) > 0 && <span className="text-success-100">+{diffStats!.additions}</span>}
                 {(diffStats?.deletions ?? 0) > 0 && <span className="text-danger-100">-{diffStats!.deletions}</span>}
               </span>
             )}
+          </div>
 
-            {/* Exit code — 只在收起时显示 */}
-            {!effectiveExpanded && exitCode !== undefined && !isActive && (
-              <span
-                className={`text-[10px] font-mono font-medium tabular-nums ${
-                  exitCode === 0 ? 'text-accent-secondary-100' : 'text-warning-100'
-                }`}
-              >
-                exit:{exitCode}
-              </span>
-            )}
-
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {duration !== undefined && state.status === 'completed' && (
               <span
                 className={`text-[10px] font-mono tabular-nums ${isError ? 'text-danger-100/70' : 'text-text-500'}`}
