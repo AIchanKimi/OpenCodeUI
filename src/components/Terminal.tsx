@@ -12,6 +12,7 @@ import { getPtyConnectUrl, updatePtySession } from '../api/pty'
 import { layoutStore } from '../store/layoutStore'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { logger } from '../utils/logger'
+import { isTauri } from '../utils/tauri'
 
 // ============================================
 // 终端主题 - 与应用主题配合
@@ -114,12 +115,16 @@ function isDarkMode(): boolean {
 // ============================================
 // Mobile Extra Keys Toolbar
 // 参考 Termux / Moshi / Blink Shell 业界方案
-// CTRL / ALT 为粘滞修饰键，点击激活后下一次按键自动附带
+// CTRL / ALT 为粘滞修饰键，支持同时激活，下一次按键自动附带
 // ============================================
 
-type StickyModifier = 'ctrl' | 'alt' | null
+type ModifierKey = 'ctrl' | 'alt'
 
-type ModifierKey = Exclude<StickyModifier, null>
+type StickyModifiers = Record<ModifierKey, boolean>
+
+function createStickyModifiers(): StickyModifiers {
+  return { ctrl: false, alt: false }
+}
 
 interface MobileExtraKey {
   data?: string
@@ -179,20 +184,25 @@ function toCtrlSequence(data: string): string {
   }
 }
 
-function applyStickyModifier(data: string, sticky: StickyModifier): string {
-  if (!sticky) return data
-  if (sticky === 'ctrl') return toCtrlSequence(data)
-  return `\x1b${data}`
+function hasStickyModifier(sticky: StickyModifiers): boolean {
+  return sticky.ctrl || sticky.alt
+}
+
+function applyStickyModifiers(data: string, sticky: StickyModifiers): string {
+  let output = data
+  if (sticky.ctrl) output = toCtrlSequence(output)
+  if (sticky.alt) output = `\x1b${output}`
+  return output
 }
 
 interface MobileExtraKeysProps {
   onFocusTerminal: () => void
   onSend: (data: string) => void
   onToggleSticky: (modifier: ModifierKey) => void
-  stickyModifier: StickyModifier
+  stickyModifiers: StickyModifiers
 }
 
-function MobileExtraKeys({ onSend, stickyModifier, onToggleSticky, onFocusTerminal }: MobileExtraKeysProps) {
+function MobileExtraKeys({ onSend, stickyModifiers, onToggleSticky, onFocusTerminal }: MobileExtraKeysProps) {
   const toolbarGridStyle = { gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' } as const
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
@@ -222,8 +232,7 @@ function MobileExtraKeys({ onSend, stickyModifier, onToggleSticky, onFocusTermin
           {MOBILE_EXTRA_KEY_ROWS.map((row, rowIndex) => (
             <div key={rowIndex} className="grid w-full gap-0.5" style={toolbarGridStyle}>
               {row.map(key => {
-                const isModifier = key.modifier !== undefined
-                const isActive = isModifier && stickyModifier === key.modifier
+                const isActive = key.modifier ? stickyModifiers[key.modifier] : false
 
                 return (
                   <button
@@ -270,10 +279,10 @@ interface TerminalProps {
 export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isTouchScrolling, setIsTouchScrolling] = useState(false)
-  const [stickyModifier, setStickyModifier] = useState<StickyModifier>(null)
+  const [stickyModifiers, setStickyModifiers] = useState<StickyModifiers>(() => createStickyModifiers())
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const stickyModifierRef = useRef<StickyModifier>(null)
+  const stickyModifiersRef = useRef<StickyModifiers>(createStickyModifiers())
   const wsRef = useRef<WebSocket | null>(null)
   const resizeTimeoutRef = useRef<number | null>(null)
   const mountedRef = useRef(true)
@@ -282,15 +291,16 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
   const { preferTouchUi, hasTouch, hasCoarsePointer } = useInputCapabilities()
   const touchCapable = hasTouch || hasCoarsePointer
 
-  const clearStickyModifier = useCallback(() => {
-    stickyModifierRef.current = null
-    setStickyModifier(null)
+  const clearStickyModifiers = useCallback(() => {
+    const next = createStickyModifiers()
+    stickyModifiersRef.current = next
+    setStickyModifiers(next)
   }, [])
 
   const toggleStickyModifier = useCallback((modifier: ModifierKey) => {
-    setStickyModifier(prev => {
-      const next = prev === modifier ? null : modifier
-      stickyModifierRef.current = next
+    setStickyModifiers(prev => {
+      const next = { ...prev, [modifier]: !prev[modifier] }
+      stickyModifiersRef.current = next
       return next
     })
   }, [])
@@ -301,18 +311,18 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
 
   const sendTerminalData = useCallback(
     (data: string) => {
-      const sticky = stickyModifierRef.current
-      const outgoing = applyStickyModifier(data, sticky)
+      const sticky = stickyModifiersRef.current
+      const outgoing = applyStickyModifiers(data, sticky)
 
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(outgoing)
       }
 
-      if (sticky) {
-        clearStickyModifier()
+      if (hasStickyModifier(sticky)) {
+        clearStickyModifiers()
       }
     },
-    [clearStickyModifier],
+    [clearStickyModifiers],
   )
 
   // 当 tab 第一次变为活动状态时，标记它
@@ -360,7 +370,13 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     })
 
     const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
+    const webLinksAddon = new WebLinksAddon((_event, uri) => {
+      if (isTauri()) {
+        import('@tauri-apps/plugin-opener').then(mod => mod.openUrl(uri)).catch(() => window.open(uri))
+      } else {
+        window.open(uri)
+      }
+    })
 
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(webLinksAddon)
@@ -368,7 +384,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     terminal.open(containerRef.current)
 
     const textarea = terminal.textarea
-    const handleTextareaBlur = () => clearStickyModifier()
+    const handleTextareaBlur = () => clearStickyModifiers()
     if (touchUi && textarea) {
       textarea.setAttribute('autocapitalize', 'none')
       textarea.setAttribute('autocomplete', 'off')
@@ -490,7 +506,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [ptyId, directory, hasBeenActive, clearStickyModifier, sendTerminalData, preferTouchUi])
+  }, [ptyId, directory, hasBeenActive, clearStickyModifiers, sendTerminalData, preferTouchUi])
 
   useEffect(() => {
     const container = containerRef.current
@@ -668,9 +684,9 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
 
   useEffect(() => {
     if (!isActive) {
-      clearStickyModifier()
+      clearStickyModifiers()
     }
-  }, [isActive, clearStickyModifier])
+  }, [isActive, clearStickyModifiers])
 
   // 监听面板 resize 结束事件
   useEffect(() => {
@@ -762,7 +778,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
         />
         {preferTouchUi && (
           <MobileExtraKeys
-            stickyModifier={stickyModifier}
+            stickyModifiers={stickyModifiers}
             onToggleSticky={toggleStickyModifier}
             onSend={sendTerminalData}
             onFocusTerminal={focusTerminal}

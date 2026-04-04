@@ -142,7 +142,13 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
         // 如果失败，尝试 startMcpAuth 获取 URL
         try {
           const result = await startMcpAuth(name, currentDirectory)
-          window.open(result.url, '_blank', 'noopener,noreferrer')
+          if ((await import('../utils/tauri')).isTauri()) {
+            import('@tauri-apps/plugin-opener')
+              .then(mod => mod.openUrl(result.url))
+              .catch(() => window.open(result.url, '_blank', 'noopener,noreferrer'))
+          } else {
+            window.open(result.url, '_blank', 'noopener,noreferrer')
+          }
           await new Promise(r => setTimeout(r, 3000))
           await loadStatus()
         } catch (err2) {
