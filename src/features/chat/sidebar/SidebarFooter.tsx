@@ -333,7 +333,7 @@ export function SidebarFooter({ showLabels, connectionState, stats, hasMessages,
     : null
 
   return (
-    <div className="shrink-0 border-t border-border-200/30 pb-[var(--safe-area-inset-bottom)]">
+    <div className="shrink-0 pb-[var(--safe-area-inset-bottom)]">
       <div ref={containerRef} className="flex flex-col gap-0.5 mx-2 py-2">
         {/* 状态/设置触发按钮 */}
         <button
