@@ -43,13 +43,23 @@ export interface TerminalTab {
 // 旧的 RightPanelView 类型 - 兼容
 export type RightPanelView = 'files' | 'changes'
 
+interface ActiveTabState {
+  bottom: string | null
+  right: string | null
+}
+
+interface PanelLayoutSnapshot {
+  rightPanelOpen: boolean
+  bottomPanelOpen: boolean
+  panelTabs: PanelTab[]
+  activeTabId: ActiveTabState
+}
+
 interface LayoutState {
   // 统一的面板标签系统
   panelTabs: PanelTab[]
-  activeTabId: {
-    bottom: string | null
-    right: string | null
-  }
+  activeTabId: ActiveTabState
+  rememberPanelLayout: boolean
 
   // 侧边栏
   sidebarExpanded: boolean
@@ -72,18 +82,202 @@ const STORAGE_KEY_SIDEBAR = 'opencode-sidebar-expanded'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
+const STORAGE_KEY_REMEMBER_PANEL_LAYOUT = 'opencode-remember-panel-layout'
+const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
 
-class LayoutStore {
+function createDefaultPanelTabs(): PanelTab[] {
+  return [
+    { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
+    { id: 'changes', type: 'changes', position: 'right' },
+  ]
+}
+
+function createDefaultActiveTabId(): ActiveTabState {
+  return {
+    bottom: null,
+    right: 'files',
+  }
+}
+
+function createDefaultPanelLayoutSnapshot(): PanelLayoutSnapshot {
+  return {
+    rightPanelOpen: false,
+    bottomPanelOpen: false,
+    panelTabs: createDefaultPanelTabs(),
+    activeTabId: createDefaultActiveTabId(),
+  }
+}
+
+function isPanelPosition(value: unknown): value is PanelPosition {
+  return value === 'bottom' || value === 'right'
+}
+
+function isPanelTabType(value: unknown): value is PanelTabType {
+  return (
+    value === 'terminal' ||
+    value === 'files' ||
+    value === 'changes' ||
+    value === 'mcp' ||
+    value === 'skill' ||
+    value === 'worktree' ||
+    value === 'web-preview' ||
+    value === 'gateway'
+  )
+}
+
+function normalizePreviewFile(value: unknown): PreviewFile | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const previewFile = value as Record<string, unknown>
+  if (typeof previewFile.path !== 'string' || typeof previewFile.name !== 'string') {
+    return null
+  }
+
+  return {
+    path: previewFile.path,
+    name: previewFile.name,
+  }
+}
+
+function normalizePreviewFiles(value: unknown): PreviewFile[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.map(item => normalizePreviewFile(item)).filter((item): item is PreviewFile => item !== null)
+}
+
+function normalizePanelTab(value: unknown): PanelTab | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const tab = value as Record<string, unknown>
+  if (
+    typeof tab.id !== 'string' ||
+    !isPanelTabType(tab.type) ||
+    !isPanelPosition(tab.position) ||
+    tab.type === 'terminal'
+  ) {
+    return null
+  }
+
+  if (tab.type === 'files') {
+    return {
+      id: tab.id,
+      type: tab.type,
+      position: tab.position,
+      previewFile: normalizePreviewFile(tab.previewFile),
+      previewFiles: normalizePreviewFiles(tab.previewFiles),
+    }
+  }
+
+  if (tab.type === 'web-preview') {
+    return {
+      id: tab.id,
+      type: tab.type,
+      position: tab.position,
+      url: typeof tab.url === 'string' ? tab.url : '',
+    }
+  }
+
+  return {
+    id: tab.id,
+    type: tab.type,
+    position: tab.position,
+  }
+}
+
+function normalizePanelTabs(value: unknown): PanelTab[] {
+  if (!Array.isArray(value)) {
+    return createDefaultPanelTabs()
+  }
+
+  const normalizedTabs = value.map(tab => normalizePanelTab(tab)).filter((tab): tab is PanelTab => tab !== null)
+  return normalizedTabs.length > 0 ? normalizedTabs : createDefaultPanelTabs()
+}
+
+function normalizeActiveTabId(value: unknown, panelTabs: PanelTab[]): ActiveTabState {
+  const defaultActiveTabId = createDefaultActiveTabId()
+  const next = typeof value === 'object' && value !== null ? (value as Partial<Record<PanelPosition, unknown>>) : {}
+
+  const resolve = (position: PanelPosition) => {
+    const tabs = panelTabs.filter(tab => tab.position === position)
+    const candidate = next[position]
+    if (typeof candidate === 'string' && tabs.some(tab => tab.id === candidate)) {
+      return candidate
+    }
+    return tabs[0]?.id ?? defaultActiveTabId[position]
+  }
+
+  return {
+    bottom: resolve('bottom'),
+    right: resolve('right'),
+  }
+}
+
+function createPanelLayoutSnapshot(state: LayoutState): PanelLayoutSnapshot {
+  const panelTabs = state.panelTabs
+    .filter(tab => tab.type !== 'terminal')
+    .map(tab => {
+      if (tab.type === 'files') {
+        return {
+          id: tab.id,
+          type: tab.type,
+          position: tab.position,
+          previewFile: tab.previewFile ?? null,
+          previewFiles: tab.previewFiles ?? [],
+        }
+      }
+
+      if (tab.type === 'web-preview') {
+        return {
+          id: tab.id,
+          type: tab.type,
+          position: tab.position,
+          url: tab.url ?? '',
+        }
+      }
+
+      return {
+        id: tab.id,
+        type: tab.type,
+        position: tab.position,
+      }
+    })
+
+  return {
+    rightPanelOpen: state.rightPanelOpen,
+    bottomPanelOpen: state.bottomPanelOpen,
+    panelTabs,
+    activeTabId: normalizeActiveTabId(state.activeTabId, panelTabs),
+  }
+}
+
+function normalizePanelLayoutSnapshot(value: unknown): PanelLayoutSnapshot {
+  const defaultSnapshot = createDefaultPanelLayoutSnapshot()
+  if (!value || typeof value !== 'object') {
+    return defaultSnapshot
+  }
+
+  const snapshot = value as Record<string, unknown>
+  const panelTabs = normalizePanelTabs(snapshot.panelTabs)
+
+  return {
+    rightPanelOpen: snapshot.rightPanelOpen === true,
+    bottomPanelOpen: snapshot.bottomPanelOpen === true,
+    panelTabs,
+    activeTabId: normalizeActiveTabId(snapshot.activeTabId, panelTabs),
+  }
+}
+
+export class LayoutStore {
   private state: LayoutState = {
-    panelTabs: [
-      // 默认 tabs: files 和 changes 在右侧面板
-      { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
-      { id: 'changes', type: 'changes', position: 'right' },
-    ],
-    activeTabId: {
-      bottom: null,
-      right: 'files',
-    },
+    panelTabs: createDefaultPanelTabs(),
+    activeTabId: createDefaultActiveTabId(),
+    rememberPanelLayout: false,
     sidebarExpanded: true,
     sidebarFolderRecents: false,
     sidebarFolderRecentsShowDiff: true,
@@ -98,6 +292,22 @@ class LayoutStore {
   constructor() {
     // 从 localStorage 恢复状态
     try {
+      const rememberPanelLayout = localStorage.getItem(STORAGE_KEY_REMEMBER_PANEL_LAYOUT)
+      if (rememberPanelLayout !== null) {
+        this.state.rememberPanelLayout = rememberPanelLayout === 'true'
+      }
+
+      if (this.state.rememberPanelLayout) {
+        const savedPanelLayout = localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT)
+        if (savedPanelLayout) {
+          const panelLayoutSnapshot = normalizePanelLayoutSnapshot(JSON.parse(savedPanelLayout))
+          this.state.panelTabs = panelLayoutSnapshot.panelTabs
+          this.state.activeTabId = panelLayoutSnapshot.activeTabId
+          this.state.rightPanelOpen = panelLayoutSnapshot.rightPanelOpen
+          this.state.bottomPanelOpen = panelLayoutSnapshot.bottomPanelOpen
+        }
+      }
+
       // 侧边栏
       const savedSidebar = localStorage.getItem(STORAGE_KEY_SIDEBAR)
       if (savedSidebar !== null) {
@@ -151,7 +361,23 @@ class LayoutStore {
   }
 
   private notify() {
+    this.persistPanelLayout()
     this.subscribers.forEach(fn => fn())
+  }
+
+  private persistPanelLayout() {
+    try {
+      localStorage.setItem(STORAGE_KEY_REMEMBER_PANEL_LAYOUT, String(this.state.rememberPanelLayout))
+
+      if (!this.state.rememberPanelLayout) {
+        localStorage.removeItem(STORAGE_KEY_PANEL_LAYOUT)
+        return
+      }
+
+      localStorage.setItem(STORAGE_KEY_PANEL_LAYOUT, JSON.stringify(createPanelLayoutSnapshot(this.state)))
+    } catch {
+      // ignore
+    }
   }
 
   // ============================================
@@ -160,6 +386,16 @@ class LayoutStore {
 
   getSidebarExpanded(): boolean {
     return this.state.sidebarExpanded
+  }
+
+  getRememberPanelLayout(): boolean {
+    return this.state.rememberPanelLayout
+  }
+
+  setRememberPanelLayout(enabled: boolean) {
+    if (this.state.rememberPanelLayout === enabled) return
+    this.state.rememberPanelLayout = enabled
+    this.notify()
   }
 
   setSidebarExpanded(expanded: boolean) {
