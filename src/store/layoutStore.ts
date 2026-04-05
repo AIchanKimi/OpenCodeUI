@@ -273,6 +273,19 @@ function normalizePanelLayoutSnapshot(value: unknown): PanelLayoutSnapshot {
   }
 }
 
+function isSupportedWebPreviewUrl(url: string): boolean {
+  if (url.startsWith('/')) {
+    return true
+  }
+
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export class LayoutStore {
   private state: LayoutState = {
     panelTabs: createDefaultPanelTabs(),
@@ -586,6 +599,24 @@ export class LayoutStore {
     if (!tab) return
     tab.url = url
     this.notify()
+  }
+
+  openWebPreviewUrl(url: string, position: PanelPosition = 'bottom') {
+    const normalizedUrl = url.trim()
+    if (!normalizedUrl || !isSupportedWebPreviewUrl(normalizedUrl)) {
+      return ''
+    }
+
+    const existingTab = this.state.panelTabs.find(item => item.type === 'web-preview' && item.position === position)
+    if (existingTab) {
+      existingTab.url = normalizedUrl
+      this.state.activeTabId[position] = existingTab.id
+      this.setPanelOpen(position, true)
+      this.notify()
+      return existingTab.id
+    }
+
+    return this.addTab({ type: 'web-preview', position, url: normalizedUrl })
   }
 
   // 移动 tab 到另一个位置

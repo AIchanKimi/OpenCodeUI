@@ -70,6 +70,7 @@
     "stopPreviewAria": "Stop current preview",
     "setPreview": "Set preview for port {{port}}",
     "stopPreviewForPort": "Stop preview for port {{port}}",
+    "openInPreview": "Open route {{port}} in web preview",
     "previewUpdated": "Preview switched to :{{port}}",
     "previewStopped": "Preview stopped",
     "justNow": "just now",

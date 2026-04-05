@@ -70,6 +70,7 @@
     "stopPreviewAria": "停止当前预览",
     "setPreview": "将 {{port}} 设为预览",
     "stopPreviewForPort": "停止 {{port}} 预览",
+    "openInPreview": "在网页预览中打开 {{port}} 端口",
     "previewUpdated": "预览已切换到 :{{port}}",
     "previewStopped": "预览已停止",
     "justNow": "刚刚",

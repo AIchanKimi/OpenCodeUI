@@ -66,6 +66,43 @@ describe('layoutStore web preview tabs', () => {
     expect(layoutStore.getState().panelTabs.find(tab => tab.id === 'files')?.url).toBeUndefined()
   })
 
+  it('opens a url in a bottom web preview tab', () => {
+    const tabId = layoutStore.openWebPreviewUrl('https://example.com/preview', 'bottom')
+    const createdTab = layoutStore.getState().panelTabs.find(tab => tab.id === tabId)
+
+    expect(createdTab).toMatchObject({
+      id: tabId,
+      type: 'web-preview',
+      position: 'bottom',
+      url: 'https://example.com/preview',
+    })
+    expect(layoutStore.getActiveTab('bottom')?.id).toBe(tabId)
+    expect(layoutStore.getState().bottomPanelOpen).toBe(true)
+  })
+
+  it('reuses an existing web preview tab when opening a new url', () => {
+    const firstTabId = layoutStore.openWebPreviewUrl('https://example.com/first', 'bottom')
+    const secondTabId = layoutStore.openWebPreviewUrl('https://example.com/second', 'bottom')
+    const webPreviewTabs = layoutStore
+      .getState()
+      .panelTabs.filter(tab => tab.type === 'web-preview' && tab.position === 'bottom')
+
+    expect(secondTabId).toBe(firstTabId)
+    expect(webPreviewTabs).toHaveLength(1)
+    expect(webPreviewTabs[0]?.url).toBe('https://example.com/second')
+    expect(layoutStore.getActiveTab('bottom')?.id).toBe(secondTabId)
+    expect(layoutStore.getState().bottomPanelOpen).toBe(true)
+  })
+
+  it('ignores unsupported web preview urls', () => {
+    const tabId = layoutStore.openWebPreviewUrl('javascript:alert(1)', 'bottom')
+
+    expect(tabId).toBe('')
+    expect(layoutStore.getState().panelTabs.some(tab => tab.type === 'web-preview' && tab.position === 'bottom')).toBe(
+      false,
+    )
+  })
+
   it('creates a gateway tab on the right and activates it', () => {
     const tabId = layoutStore.addGatewayTab()
     const createdTab = layoutStore.getState().panelTabs.find(tab => tab.id === tabId)

@@ -9,6 +9,7 @@ import {
   type GatewayRoute,
   type GatewayRoutesResponse,
 } from '../api/gateway'
+import { layoutStore } from '../store/layoutStore'
 
 interface GatewayPanelProps {
   isResizing?: boolean
@@ -141,6 +142,10 @@ export const GatewayPanel = memo(function GatewayPanel({ isResizing: _isResizing
     },
     [t],
   )
+
+  const openRouteInWebPreview = useCallback((url: string) => {
+    layoutStore.openWebPreviewUrl(url, 'right')
+  }, [])
 
   const errorBody = useMemo(() => {
     switch (loadState) {
@@ -281,8 +286,22 @@ export const GatewayPanel = memo(function GatewayPanel({ isResizing: _isResizing
               return (
                 <div
                   key={route.token}
+                  onClick={() => openRouteInWebPreview(url)}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') {
+                      return
+                    }
+
+                    event.preventDefault()
+                    openRouteInWebPreview(url)
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={t('gatewayPanel.openInPreview', { port: route.port })}
                   className={`rounded-lg border px-3 py-3 bg-bg-000 transition-colors ${
-                    isPreviewing ? 'border-accent-main-100/40 bg-accent-main-100/5' : 'border-border-200'
+                    isPreviewing
+                      ? 'cursor-pointer border-accent-main-100/40 bg-accent-main-100/5'
+                      : 'cursor-pointer border-border-200 hover:border-border-300 hover:bg-bg-100/80'
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-2">
@@ -293,7 +312,10 @@ export const GatewayPanel = memo(function GatewayPanel({ isResizing: _isResizing
                     <div className="ml-auto flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => void setPreview(isPreviewing ? null : route.port)}
+                        onClick={event => {
+                          event.stopPropagation()
+                          void setPreview(isPreviewing ? null : route.port)
+                        }}
                         disabled={actionLoadingPort === route.port}
                         className={`p-1 rounded transition-colors ${
                           isPreviewing
@@ -310,7 +332,10 @@ export const GatewayPanel = memo(function GatewayPanel({ isResizing: _isResizing
                       </button>
                       <button
                         type="button"
-                        onClick={() => void copyText(url, t('gatewayPanel.copied'))}
+                        onClick={event => {
+                          event.stopPropagation()
+                          void copyText(url, t('gatewayPanel.copied'))
+                        }}
                         className="p-1 rounded text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors"
                         title={t('gatewayPanel.copyUrl')}
                       >
