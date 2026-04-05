@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloadDirectoryArchive, downloadFileAsset } from './file'
+import { downloadDirectoryArchive, downloadFileAsset, saveFileContent } from './file'
 
 const getBinaryMock = vi.fn()
+const putMock = vi.fn()
 
 vi.mock('./http', () => ({
   get: vi.fn(),
   getBinary: (...args: unknown[]) => getBinaryMock(...args),
+  put: (...args: unknown[]) => putMock(...args),
 }))
 
 vi.mock('../store/serverStore', () => ({
@@ -17,6 +19,7 @@ vi.mock('../store/serverStore', () => ({
 describe('downloadDirectoryArchive', () => {
   beforeEach(() => {
     getBinaryMock.mockReset()
+    putMock.mockReset()
   })
 
   it('requests archive endpoint with formatted params and returns blob plus file name', async () => {
@@ -62,6 +65,7 @@ describe('downloadDirectoryArchive', () => {
 describe('downloadFileAsset', () => {
   beforeEach(() => {
     getBinaryMock.mockReset()
+    putMock.mockReset()
   })
 
   it('requests file download endpoint and returns original filename', async () => {
@@ -101,5 +105,39 @@ describe('downloadFileAsset', () => {
     const result = await downloadFileAsset('nested/path/config.json', '/workspace/project')
 
     expect(result.fileName).toBe('config.json')
+  })
+})
+
+describe('saveFileContent', () => {
+  beforeEach(() => {
+    getBinaryMock.mockReset()
+    putMock.mockReset()
+  })
+
+  it('writes file content with optimistic concurrency payload', async () => {
+    putMock.mockResolvedValue({
+      path: 'README.md',
+      savedAt: '2026-04-05T00:00:00.000Z',
+    })
+
+    const result = await saveFileContent('README.md', '# updated', '/workspace/project', {
+      expectedContent: '# old',
+    })
+
+    expect(putMock).toHaveBeenCalledWith(
+      '/file/content',
+      {
+        path: 'README.md',
+        directory: '/workspace/project',
+      },
+      {
+        content: '# updated',
+        expectedContent: '# old',
+      },
+    )
+    expect(result).toEqual({
+      path: 'README.md',
+      savedAt: '2026-04-05T00:00:00.000Z',
+    })
   })
 })

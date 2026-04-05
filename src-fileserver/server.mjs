@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { lstat, realpath, stat } from 'node:fs/promises'
+import { lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path'
@@ -12,6 +12,7 @@ const authPassword = process.env.OPENCODE_SERVER_PASSWORD || ''
 const maxConcurrentArchives = Number(process.env.FILE_SERVICE_MAX_CONCURRENT_ARCHIVES || '3')
 const archiveTimeoutMs = Number(process.env.FILE_SERVICE_ARCHIVE_TIMEOUT_MS || '60000')
 const maxErrorOutput = Number(process.env.FILE_SERVICE_MAX_ERROR_OUTPUT || '4096')
+const maxRequestBodyBytes = Number(process.env.FILE_SERVICE_MAX_REQUEST_BODY_BYTES || '1048576')
 let activeArchiveCount = 0
 
 const mimeTypes = new Map([
@@ -38,6 +39,14 @@ const mimeTypes = new Map([
   ['.webp', 'image/webp'],
   ['.pdf', 'application/pdf'],
   ['.zip', 'application/zip'],
+])
+
+const textMimeTypes = new Set([
+  'application/json; charset=utf-8',
+  'text/javascript; charset=utf-8',
+  'text/x-python; charset=utf-8',
+  'text/yaml; charset=utf-8',
+  'image/svg+xml',
 ])
 
 function writeJson(response, statusCode, payload) {
@@ -152,6 +161,42 @@ function buildContentDisposition(fileName) {
 
 function getMimeType(filePath) {
   return mimeTypes.get(extname(filePath).toLowerCase()) || 'application/octet-stream'
+}
+
+function shouldReadAsText(mimeType) {
+  return mimeType.startsWith('text/') || textMimeTypes.has(mimeType)
+}
+
+async function readJsonBody(request) {
+  const chunks = []
+  let totalLength = 0
+
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    totalLength += buffer.length
+    if (totalLength > maxRequestBodyBytes) {
+      throw new Error('Request body too large')
+    }
+    chunks.push(buffer)
+  }
+
+  if (chunks.length === 0) {
+    return {}
+  }
+
+  const rawBody = Buffer.concat(chunks).toString('utf8')
+  if (!rawBody.trim()) {
+    return {}
+  }
+
+  return JSON.parse(rawBody)
+}
+
+function getClientError(statusCode, fallbackMessage) {
+  return {
+    statusCode,
+    error: fallbackMessage,
+  }
 }
 
 function streamArchive(targetPath, request, response) {
@@ -270,6 +315,50 @@ function streamFile(targetPath, request, response) {
   })
 }
 
+async function saveTextFile(url, request, response) {
+  const targetPath = await resolveFileTarget(url)
+  const body = await readJsonBody(request)
+
+  if (typeof body.content !== 'string') {
+    throw new Error('Request content must be a string')
+  }
+
+  const currentContent = await readFile(targetPath, 'utf8')
+  if (typeof body.expectedContent === 'string' && body.expectedContent !== currentContent) {
+    writeJson(response, 409, { error: 'File content changed on disk' })
+    return
+  }
+
+  await writeFile(targetPath, body.content, 'utf8')
+
+  writeJson(response, 200, {
+    path: url.searchParams.get('path') || basename(targetPath),
+    savedAt: new Date().toISOString(),
+  })
+}
+
+async function readFileContent(url, response) {
+  const targetPath = await resolveFileTarget(url)
+  const mimeType = getMimeType(targetPath)
+  const buffer = await readFile(targetPath)
+
+  if (shouldReadAsText(mimeType)) {
+    writeJson(response, 200, {
+      type: 'text',
+      content: buffer.toString('utf8'),
+      mimeType,
+    })
+    return
+  }
+
+  writeJson(response, 200, {
+    type: 'text',
+    content: buffer.toString('base64'),
+    encoding: 'base64',
+    mimeType,
+  })
+}
+
 const server = http.createServer(async (request, response) => {
   if (!request.url) {
     writeJson(response, 400, { error: 'Missing request url' })
@@ -290,8 +379,11 @@ const server = http.createServer(async (request, response) => {
       streamArchive(targetPath, request, response)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Archive generation failed'
-      const statusCode = message === 'Target path is not a directory' ? 400 : 403
-      writeJson(response, statusCode, { error: message })
+      const clientError = getClientError(
+        message === 'Target path is not a directory' ? 400 : 403,
+        'Invalid archive request',
+      )
+      writeJson(response, clientError.statusCode, { error: clientError.error })
     }
     return
   }
@@ -302,8 +394,36 @@ const server = http.createServer(async (request, response) => {
       streamFile(targetPath, request, response)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'File download failed'
-      const statusCode = message === 'Target path is not a file' ? 400 : 403
-      writeJson(response, statusCode, { error: message })
+      const clientError = getClientError(message === 'Target path is not a file' ? 400 : 403, 'Invalid file request')
+      writeJson(response, clientError.statusCode, { error: clientError.error })
+    }
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname === '/file/content') {
+    try {
+      await readFileContent(url, response)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'File read failed'
+      const clientError = getClientError(message === 'Target path is not a file' ? 400 : 403, 'Invalid file request')
+      writeJson(response, clientError.statusCode, { error: clientError.error })
+    }
+    return
+  }
+
+  if (request.method === 'PUT' && url.pathname === '/file/content') {
+    try {
+      await saveTextFile(url, request, response)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'File write failed'
+      const statusCode =
+        message === 'Target path is not a file' ||
+        error instanceof SyntaxError ||
+        message === 'Request content must be a string' ||
+        message === 'Request body too large'
+          ? 400
+          : 403
+      writeJson(response, statusCode, { error: statusCode === 400 ? 'Invalid write request' : 'Access denied' })
     }
     return
   }

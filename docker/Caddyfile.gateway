@@ -6,6 +6,31 @@
 :6658 {
 	route {
 		# 目录归档下载（独立文件服务）
+		@file_content_write {
+			method PUT
+			path /api/file/content /api/file/content*
+		}
+		handle @file_content_write {
+			request_body {
+				max_size 1MB
+			}
+			uri strip_prefix /api
+			reverse_proxy opencode-file-service:4097 {
+				flush_interval -1
+			}
+		}
+
+		@file_content_read {
+			method GET
+			path /api/file/content /api/file/content*
+		}
+		handle @file_content_read {
+			uri strip_prefix /api
+			reverse_proxy opencode-file-service:4097 {
+				flush_interval -1
+			}
+		}
+
 		@file_download path /api/file/download /api/file/download*
 		handle @file_download {
 			uri strip_prefix /api

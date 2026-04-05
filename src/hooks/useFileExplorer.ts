@@ -36,8 +36,9 @@ export interface UseFileExplorerResult {
   previewContent: FileContent | null
   previewLoading: boolean
   previewError: string | null
-  loadPreview: (path: string) => Promise<void>
+  loadPreview: (path: string, options?: { forceRefresh?: boolean }) => Promise<void>
   clearPreview: () => void
+  updatePreviewContent: (path: string, content: FileContent) => void
 
   // 文件状态
   fileStatus: Map<string, FileStatusItem>
@@ -232,7 +233,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 
   // 加载文件预览
   const loadPreview = useCallback(
-    async (path: string) => {
+    async (path: string, options: { forceRefresh?: boolean } = {}) => {
       if (!directory) return
 
       const loadId = ++previewLoadIdRef.current
@@ -240,7 +241,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       setPreviewLoading(true)
       setPreviewError(null)
 
-      const cached = previewCacheRef.current.get(path)
+      const cached = options.forceRefresh ? null : previewCacheRef.current.get(path)
       if (cached) {
         if (loadId === previewLoadIdRef.current) {
           setPreviewContent(cached)
@@ -272,6 +273,15 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     setPreviewContent(null)
     setPreviewError(null)
     setPreviewLoading(false)
+  }, [])
+
+  const updatePreviewContent = useCallback((path: string, content: FileContent) => {
+    previewCacheRef.current.set(path, content)
+    setPreviewContent(current => {
+      if (!current) return content
+      return content
+    })
+    setPreviewError(null)
   }, [])
 
   // 刷新
@@ -310,6 +320,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     previewError,
     loadPreview,
     clearPreview,
+    updatePreviewContent,
     fileStatus,
     refresh,
     loadChildren,

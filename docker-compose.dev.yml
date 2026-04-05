@@ -108,7 +108,7 @@ services:
     container_name: opencode-file-service
     restart: unless-stopped
     volumes:
-      - ${WORKSPACE:-./workspace}:/workspace:ro
+      - ${WORKSPACE:-./workspace}:/workspace
     environment:
       - FILE_SERVICE_BASE_PATH=/workspace
       - FILE_SERVICE_PORT=4097

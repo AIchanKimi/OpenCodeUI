@@ -57,6 +57,16 @@ export interface FileContent {
   mimeType?: string
 }
 
+export interface FileWriteRequest {
+  content: string
+  expectedContent?: string
+}
+
+export interface FileWriteResponse {
+  path: string
+  savedAt: string
+}
+
 /**
  * 文件状态 - 匹配 OpenAPI File schema
  */
