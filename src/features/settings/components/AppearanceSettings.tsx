@@ -328,7 +328,8 @@ export function AppearanceSettings() {
     glassEffect,
     setGlassEffect,
   } = useTheme()
-  const { sidebarFolderRecents, sidebarFolderRecentsShowDiff, sidebarShowChildSessions } = useLayoutStore()
+  const { rememberPanelLayout, sidebarFolderRecents, sidebarFolderRecentsShowDiff, sidebarShowChildSessions } =
+    useLayoutStore()
 
   return (
     <div>
@@ -419,6 +420,17 @@ export function AppearanceSettings() {
       </SettingsSection>
 
       <SettingsSection title={t('appearance.sidebar')}>
+        <SettingRow
+          label={t('appearance.rememberPanelLayout')}
+          description={t('appearance.rememberPanelLayoutDesc')}
+          onClick={() => layoutStore.setRememberPanelLayout(!rememberPanelLayout)}
+        >
+          <Toggle
+            enabled={rememberPanelLayout}
+            onChange={() => layoutStore.setRememberPanelLayout(!rememberPanelLayout)}
+          />
+        </SettingRow>
+
         <SettingRow
           label={t('appearance.folderStyleRecents')}
           description={t('appearance.folderStyleRecentsDesc')}
