@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloadDirectoryArchive, downloadFileAsset, saveFileContent } from './file'
+import { downloadDirectoryArchive, downloadFileAsset, getFileServiceAvailability, saveFileContent } from './file'
 
 const getBinaryMock = vi.fn()
+const unifiedFetchMock = vi.fn()
 const putMock = vi.fn()
 
 vi.mock('./http', () => ({
   get: vi.fn(),
   getBinary: (...args: unknown[]) => getBinaryMock(...args),
+  buildUrl: vi.fn((path: string) => `http://example.test${path}`),
+  getAuthHeader: vi.fn(() => ({ Authorization: 'Basic test' })),
   put: (...args: unknown[]) => putMock(...args),
+  unifiedFetch: (...args: unknown[]) => unifiedFetchMock(...args),
 }))
 
 vi.mock('../store/serverStore', () => ({
@@ -19,6 +23,7 @@ vi.mock('../store/serverStore', () => ({
 describe('downloadDirectoryArchive', () => {
   beforeEach(() => {
     getBinaryMock.mockReset()
+    unifiedFetchMock.mockReset()
     putMock.mockReset()
   })
 
@@ -59,6 +64,38 @@ describe('downloadDirectoryArchive', () => {
     const result = await downloadDirectoryArchive('nested/path/assets', '/workspace/project')
 
     expect(result.fileName).toBe('assets.zip')
+  })
+})
+
+describe('getFileServiceAvailability', () => {
+  beforeEach(() => {
+    getBinaryMock.mockReset()
+    unifiedFetchMock.mockReset()
+    putMock.mockReset()
+  })
+
+  it('returns true when file service health endpoint responds ok', async () => {
+    unifiedFetchMock.mockResolvedValue(new Response('{"ok":true}', { status: 200 }))
+
+    await expect(getFileServiceAvailability(true)).resolves.toBe(true)
+    expect(unifiedFetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns false when file service health endpoint is unavailable', async () => {
+    unifiedFetchMock.mockResolvedValue(new Response('not found', { status: 404 }))
+
+    await expect(getFileServiceAvailability(true)).resolves.toBe(false)
+  })
+
+  it('returns false when endpoint responds with non-json html shell', async () => {
+    unifiedFetchMock.mockResolvedValue(
+      new Response('<!doctype html><html><body>app</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      }),
+    )
+
+    await expect(getFileServiceAvailability(true)).resolves.toBe(false)
   })
 })
 

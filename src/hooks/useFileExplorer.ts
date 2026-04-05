@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listDirectory, getFileContent, getFileStatus, getSessionDiff } from '../api'
+import { listDirectory, getFileContent, getFileServiceAvailability, getFileStatus, getSessionDiff } from '../api'
 import type { FileNode, FileContent, FileStatusItem, FileDiff } from '../api/types'
 
 export interface FileTreeNode extends FileNode {
@@ -36,6 +36,7 @@ export interface UseFileExplorerResult {
   previewContent: FileContent | null
   previewLoading: boolean
   previewError: string | null
+  fileServiceAvailable: boolean
   loadPreview: (path: string, options?: { forceRefresh?: boolean }) => Promise<void>
   clearPreview: () => void
   updatePreviewContent: (path: string, content: FileContent) => void
@@ -64,6 +65,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   const [previewContent, setPreviewContent] = useState<FileContent | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [fileServiceAvailable, setFileServiceAvailable] = useState(false)
   const previewCacheRef = useRef<Map<string, FileContent>>(new Map())
   const previewLoadIdRef = useRef(0)
 
@@ -300,6 +302,25 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   }, [autoLoad, directory, loadRoot])
 
   useEffect(() => {
+    let cancelled = false
+
+    if (!directory) {
+      setFileServiceAvailable(false)
+      return
+    }
+
+    getFileServiceAvailability(true).then(available => {
+      if (!cancelled) {
+        setFileServiceAvailable(available)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [directory])
+
+  useEffect(() => {
     previewCacheRef.current.clear()
     previewLoadIdRef.current += 1
     setPreviewContent(null)
@@ -318,6 +339,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     previewContent,
     previewLoading,
     previewError,
+    fileServiceAvailable,
     loadPreview,
     clearPreview,
     updatePreviewContent,

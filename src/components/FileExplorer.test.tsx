@@ -13,6 +13,7 @@ const saveFileContentMock = vi.fn()
 const downloadBlobMock = vi.fn()
 const updateFilePreviewMock = vi.fn()
 let previewContentMock: FileContent | null = null
+let fileServiceAvailableMock = true
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -36,6 +37,7 @@ vi.mock('../hooks', () => ({
     loadPreview: loadPreviewMock,
     clearPreview: clearPreviewMock,
     updatePreviewContent: updatePreviewContentMock,
+    fileServiceAvailable: fileServiceAvailableMock,
     fileStatus: new Map(),
     refresh: vi.fn(),
   }),
@@ -83,6 +85,7 @@ vi.mock('../store/layoutStore', () => ({
 describe('FileExplorer directory download', () => {
   beforeEach(() => {
     previewContentMock = null
+    fileServiceAvailableMock = true
     toggleExpandMock.mockReset()
     loadPreviewMock.mockReset()
     clearPreviewMock.mockReset()
@@ -178,6 +181,37 @@ describe('FileExplorer directory download', () => {
       'README.md',
       expect.objectContaining({ content: 'hello world' }),
     )
+  })
+
+  it('hides download actions when file service is unavailable', () => {
+    fileServiceAvailableMock = false
+
+    render(<FileExplorer panelTabId="files" directory="/workspace/project" previewFile={null} previewFiles={[]} />)
+
+    expect(screen.queryByLabelText('download src')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('download README.md')).not.toBeInTheDocument()
+  })
+
+  it('falls back to read-only preview when file service is unavailable', () => {
+    fileServiceAvailableMock = false
+    previewContentMock = {
+      type: 'text',
+      content: 'hello',
+      mimeType: 'text/plain',
+    }
+
+    render(
+      <FileExplorer
+        panelTabId="files"
+        directory="/workspace/project"
+        previewFile={{ path: 'README.md', name: 'README.md' }}
+        previewFiles={[{ path: 'README.md', name: 'README.md' }]}
+      />,
+    )
+
+    expect(screen.queryByLabelText('editor README.md')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('common:save README.md')).not.toBeInTheDocument()
+    expect(screen.getByText('hello')).toBeInTheDocument()
   })
 
   it('uses refreshed preview content as save baseline after reload', async () => {

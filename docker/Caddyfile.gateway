@@ -31,6 +31,17 @@
 			}
 		}
 
+		@file_health {
+			method GET
+			path /api/file/health /api/file/health*
+		}
+		handle @file_health {
+			uri strip_prefix /api/file
+			reverse_proxy opencode-file-service:4097 {
+				flush_interval -1
+			}
+		}
+
 		@file_download path /api/file/download /api/file/download*
 		handle @file_download {
 			uri strip_prefix /api

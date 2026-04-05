@@ -118,6 +118,7 @@ export const FileExplorer = memo(function FileExplorer({
     previewContent,
     previewLoading,
     previewError,
+    fileServiceAvailable,
     loadPreview,
     clearPreview,
     updatePreviewContent,
@@ -135,7 +136,7 @@ export const FileExplorer = memo(function FileExplorer({
   }, [previewFile, loadPreview, clearPreview])
 
   useEffect(() => {
-    if (!previewFile || !isEditableTextContent(previewContent)) {
+    if (!fileServiceAvailable || !previewFile || !isEditableTextContent(previewContent)) {
       return
     }
 
@@ -168,7 +169,7 @@ export const FileExplorer = memo(function FileExplorer({
         },
       }
     })
-  }, [previewContent, previewFile])
+  }, [fileServiceAvailable, previewContent, previewFile])
 
   useEffect(() => {
     setEditorDrafts(prev => {
@@ -226,6 +227,10 @@ export const FileExplorer = memo(function FileExplorer({
 
   const handleNodeDownload = useCallback(
     async (node: FileTreeNode) => {
+      if (!fileServiceAvailable) {
+        return
+      }
+
       if (downloadingPathsRef.current.has(node.path)) {
         return
       }
@@ -249,7 +254,7 @@ export const FileExplorer = memo(function FileExplorer({
         setDownloadingPaths(new Set(next))
       }
     },
-    [directory, sessionId, t],
+    [directory, fileServiceAvailable, sessionId, t],
   )
 
   const handleEditorChange = useCallback((path: string, value: string) => {
@@ -271,7 +276,7 @@ export const FileExplorer = memo(function FileExplorer({
   }, [])
 
   const handleSavePreview = useCallback(async () => {
-    if (!previewFile) {
+    if (!fileServiceAvailable || !previewFile) {
       return
     }
 
@@ -325,7 +330,7 @@ export const FileExplorer = memo(function FileExplorer({
 
       notificationStore.push('error', t('common:save'), message, sessionId || 'file-explorer', directory)
     }
-  }, [directory, editorDrafts, previewContent, previewFile, sessionId, t, updatePreviewContent])
+  }, [directory, editorDrafts, fileServiceAvailable, previewContent, previewFile, sessionId, t, updatePreviewContent])
 
   const activeEditorState = previewFile ? (editorDrafts[previewFile.path] ?? null) : null
 
@@ -431,6 +436,7 @@ export const FileExplorer = memo(function FileExplorer({
                   fileStatus={fileStatus}
                   onClick={handleFileClick}
                   onDownload={handleNodeDownload}
+                  showDownload={fileServiceAvailable}
                   isDownloadingPath={path => downloadingPaths.has(path)}
                 />
               ))}
@@ -460,6 +466,7 @@ export const FileExplorer = memo(function FileExplorer({
             previewFiles={previewFiles}
             path={previewFile?.path ?? null}
             content={previewContent}
+            fileServiceAvailable={fileServiceAvailable}
             editorText={activeEditorState?.draftContent ?? null}
             isDirty={Boolean(activeEditorState && activeEditorState.draftContent !== activeEditorState.originalContent)}
             isSaving={activeEditorState?.isSaving ?? false}
@@ -494,6 +501,7 @@ interface FileTreeItemProps {
   fileStatus: Map<string, { status: string }>
   onClick: (node: FileTreeNode) => void
   onDownload: (node: FileTreeNode) => void
+  showDownload: boolean
   isDownloadingPath: (path: string) => boolean
 }
 
@@ -504,6 +512,7 @@ const FileTreeItem = memo(function FileTreeItem({
   fileStatus,
   onClick,
   onDownload,
+  showDownload,
   isDownloadingPath,
 }: FileTreeItemProps) {
   const { t } = useTranslation('common')
@@ -596,20 +605,22 @@ const FileTreeItem = memo(function FileTreeItem({
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={handleDownloadClick}
-          disabled={isDownloadingPath(node.path)}
-          aria-label={`${t('download')} ${node.name}`}
-          title={`${t('download')} ${node.name}`}
-          className="shrink-0 p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
-        >
-          {isDownloadingPath(node.path) ? (
-            <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin block" />
-          ) : (
-            <DownloadIcon size={12} />
-          )}
-        </button>
+        {showDownload ? (
+          <button
+            type="button"
+            onClick={handleDownloadClick}
+            disabled={isDownloadingPath(node.path)}
+            aria-label={`${t('download')} ${node.name}`}
+            title={`${t('download')} ${node.name}`}
+            className="shrink-0 p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
+          >
+            {isDownloadingPath(node.path) ? (
+              <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin block" />
+            ) : (
+              <DownloadIcon size={12} />
+            )}
+          </button>
+        ) : null}
       </div>
 
       {/* Children */}
@@ -624,6 +635,7 @@ const FileTreeItem = memo(function FileTreeItem({
               fileStatus={fileStatus}
               onClick={onClick}
               onDownload={onDownload}
+              showDownload={showDownload}
               isDownloadingPath={isDownloadingPath}
             />
           ))}
@@ -642,6 +654,7 @@ interface FilePreviewProps {
   previewFiles: PreviewFile[]
   path: string | null
   content: FileContent | null
+  fileServiceAvailable: boolean
   editorText: string | null
   isDirty: boolean
   isSaving: boolean
@@ -662,6 +675,7 @@ function FilePreview({
   previewFiles,
   path,
   content,
+  fileServiceAvailable,
   editorText,
   isDirty,
   isSaving,
@@ -683,11 +697,11 @@ function FilePreview({
   // 获取文件名
   const fileName = path?.split(/[/\\]/).pop() || 'Untitled'
   const language = path ? detectLanguage(path) : 'text'
-  const editableText = displayEditableText(editorText, content)
+  const editableText = displayEditableText(editorText, content, fileServiceAvailable)
 
   // 下载当前文件
   const handleDownload = useCallback(() => {
-    if (!path) return
+    if (!fileServiceAvailable || !path) return
 
     downloadFileAsset(path, directory)
       .then(({ blob, fileName: downloadFileName }) => {
@@ -702,7 +716,7 @@ function FilePreview({
         const message = error instanceof Error ? error.message : t('common:error')
         notificationStore.push('error', t('common:download'), message, 'file-preview', directory)
       })
-  }, [content, directory, fileName, path, t])
+  }, [content, directory, fileName, fileServiceAvailable, path, t])
 
   const previewTabItems = useMemo<PreviewTabsBarItem[]>(
     () =>
@@ -835,7 +849,7 @@ function FilePreview({
         rightActions={
           content ? (
             <>
-              {editableText !== null ? (
+              {fileServiceAvailable && editableText !== null ? (
                 <button
                   type="button"
                   onClick={onSave}
@@ -854,13 +868,15 @@ function FilePreview({
               >
                 <MaximizeIcon size={12} />
               </button>
-              <button
-                onClick={handleDownload}
-                className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
-                title={`${t('common:save')} ${fileName}`}
-              >
-                <DownloadIcon size={12} />
-              </button>
+              {fileServiceAvailable ? (
+                <button
+                  onClick={handleDownload}
+                  className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
+                  title={`${t('common:save')} ${fileName}`}
+                >
+                  <DownloadIcon size={12} />
+                </button>
+              ) : null}
             </>
           ) : null
         }
@@ -875,7 +891,7 @@ function FilePreview({
             <AlertCircleIcon size={16} />
             <span className="text-center">{error}</span>
           </div>
-        ) : displayContent?.type === 'text' && editableText !== null ? (
+        ) : displayContent?.type === 'text' && fileServiceAvailable && editableText !== null ? (
           <TextEditorPreview
             fileName={fileName}
             value={editableText}
@@ -917,7 +933,7 @@ function FilePreview({
         onClose={() => setFullscreenOpen(false)}
         title={fileName}
         headerRight={
-          content ? (
+          content && fileServiceAvailable ? (
             <button
               onClick={handleDownload}
               className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-lg transition-colors"
@@ -934,7 +950,15 @@ function FilePreview({
   )
 }
 
-function displayEditableText(editorText: string | null, content: FileContent | null): string | null {
+function displayEditableText(
+  editorText: string | null,
+  content: FileContent | null,
+  fileServiceAvailable: boolean,
+): string | null {
+  if (!fileServiceAvailable) {
+    return null
+  }
+
   if (!isEditableTextContent(content)) {
     return null
   }

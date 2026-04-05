@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useFileExplorer } from './useFileExplorer'
 
 const getFileContentMock = vi.fn()
+const getFileServiceAvailabilityMock = vi.fn()
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -13,6 +14,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../api', () => ({
   listDirectory: vi.fn().mockResolvedValue([]),
   getFileContent: (...args: unknown[]) => getFileContentMock(...args),
+  getFileServiceAvailability: (...args: unknown[]) => getFileServiceAvailabilityMock(...args),
   getFileStatus: vi.fn().mockResolvedValue([]),
   getSessionDiff: vi.fn().mockResolvedValue([]),
 }))
@@ -20,6 +22,8 @@ vi.mock('../api', () => ({
 describe('useFileExplorer', () => {
   beforeEach(() => {
     getFileContentMock.mockReset()
+    getFileServiceAvailabilityMock.mockReset()
+    getFileServiceAvailabilityMock.mockResolvedValue(true)
   })
 
   it('reloads preview content when force refresh is requested', async () => {
@@ -44,5 +48,15 @@ describe('useFileExplorer', () => {
     })
 
     expect(getFileContentMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('exposes file service availability state', async () => {
+    getFileServiceAvailabilityMock.mockResolvedValue(false)
+
+    const { result } = renderHook(() => useFileExplorer({ directory: '/workspace/project', autoLoad: false }))
+
+    await waitFor(() => {
+      expect(result.current.fileServiceAvailable).toBe(false)
+    })
   })
 })
