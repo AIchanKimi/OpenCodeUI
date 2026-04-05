@@ -107,6 +107,10 @@ services:
       dockerfile: docker/Dockerfile.file-service
     container_name: opencode-file-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     volumes:
       - ${WORKSPACE:-./workspace}:/workspace
     environment:
