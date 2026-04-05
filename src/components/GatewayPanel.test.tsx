@@ -58,7 +58,9 @@ describe('GatewayPanel', () => {
     render(<GatewayPanel />)
 
     await waitFor(() => {
-      expect(screen.getByText(`${window.location.origin}/p/xyz789/`)).toBeInTheDocument()
+      const previewOrigin = new URL(window.location.origin)
+      previewOrigin.port = '6659'
+      expect(screen.getByText(`${previewOrigin.origin}/p/xyz789/`)).toBeInTheDocument()
     })
   })
 

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircleIcon, CopyIcon, EyeIcon, LinkIcon, RetryIcon, SearchIcon, ShieldIcon, SpinnerIcon } from './Icons'
+import { GATEWAY_PREVIEW_BASE_URL, GATEWAY_PREVIEW_PORT } from '../constants'
 import {
   getGatewayErrorStatus,
   getGatewayRoutes,
@@ -23,11 +24,39 @@ function formatRelativeTime(createdAt: number, t: (key: string, options?: Record
   return t('gatewayPanel.daysAgo', { count: Math.floor(seconds / 86400) })
 }
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, '')
+}
+
+function getPreviewBaseUrl(): string | null {
+  const configuredBaseUrl = normalizeBaseUrl(GATEWAY_PREVIEW_BASE_URL)
+  if (configuredBaseUrl) {
+    return configuredBaseUrl
+  }
+
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  if (!window.location.origin || window.location.origin === 'null') {
+    return null
+  }
+
+  try {
+    const previewUrl = new URL(window.location.origin)
+    previewUrl.port = GATEWAY_PREVIEW_PORT
+    return normalizeBaseUrl(previewUrl.origin)
+  } catch {
+    return null
+  }
+}
+
 function getRouteUrl(route: GatewayRoute, previewDomain: string | null): string {
   if (route.publicUrl) return route.publicUrl
   if (previewDomain) return `https://${previewDomain}/p/${route.token}/`
-  if (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null') {
-    return `${window.location.origin}/p/${route.token}/`
+  const previewBaseUrl = getPreviewBaseUrl()
+  if (previewBaseUrl) {
+    return `${previewBaseUrl}/p/${route.token}/`
   }
   return `/p/${route.token}/`
 }

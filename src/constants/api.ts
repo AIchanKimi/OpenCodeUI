@@ -13,6 +13,16 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0
  */
 export const GATEWAY_BASE_URL = import.meta.env.VITE_GATEWAY_BASE_URL || ''
 
+/**
+ * Gateway 预览基址。
+ * - 优先使用显式环境变量
+ * - 否则在前端按当前 host 推导到预览端口
+ */
+export const GATEWAY_PREVIEW_BASE_URL = import.meta.env.VITE_GATEWAY_PREVIEW_BASE_URL || ''
+
+/** Gateway 预览端口，默认与 docker compose 的 PREVIEW_PORT 保持一致。 */
+export const GATEWAY_PREVIEW_PORT = import.meta.env.VITE_GATEWAY_PREVIEW_PORT || '6659'
+
 /** SSE 重连延迟序列（毫秒） */
 export const SSE_RECONNECT_DELAYS_MS = [1000, 2000, 3000, 5000, 10000, 30000]
 
