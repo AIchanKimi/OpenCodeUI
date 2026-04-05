@@ -3,9 +3,9 @@
 // 基于 OpenAPI: /file, /find/file, /find/symbol 相关接口
 // ============================================
 
-import { get } from './http'
+import { get, getBinary, put } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { FileNode, FileContent, FileStatusItem, SymbolInfo } from './types'
+import type { FileNode, FileContent, FileStatusItem, FileWriteResponse, SymbolInfo } from './types'
 import { serverStore } from '../store/serverStore'
 
 const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
@@ -103,6 +103,96 @@ export async function getFileContent(path: string, directory?: string): Promise<
     path,
     directory: formatPathForApi(directory),
   })
+}
+
+export async function saveFileContent(
+  path: string,
+  content: string,
+  directory?: string,
+  options: { expectedContent?: string } = {},
+): Promise<FileWriteResponse> {
+  return put<FileWriteResponse>(
+    '/file/content',
+    {
+      path,
+      directory: formatPathForApi(directory),
+    },
+    {
+      content,
+      expectedContent: options.expectedContent,
+    },
+  )
+}
+
+function getArchiveFileNameFromPath(path: string): string {
+  const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  const name = normalizedPath.split('/').filter(Boolean).pop() || 'archive'
+  return `${name}.zip`
+}
+
+function getFileNameFromPath(path: string): string {
+  const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalizedPath.split('/').filter(Boolean).pop() || 'download'
+}
+
+function parseContentDispositionFileName(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return sanitizeDownloadFileName(decodeURIComponent(utf8Match[1]))
+  }
+
+  const fileNameMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+  const fileName = fileNameMatch?.[1] ?? null
+  return sanitizeDownloadFileName(fileName)
+}
+
+function sanitizeDownloadFileName(fileName: string | null): string | null {
+  if (!fileName) return null
+  const normalized = fileName.replace(/\\/g, '/').split('/').pop()?.replace(/\.+/g, '.').trim()
+  return normalized || null
+}
+
+export async function downloadDirectoryArchive(
+  path: string,
+  directory?: string,
+  options: { signal?: AbortSignal; timeout?: number } = {},
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await getBinary(
+    '/file/archive',
+    {
+      path,
+      directory: formatPathForApi(directory),
+    },
+    { signal: options.signal, timeout: options.timeout ?? 0 },
+  )
+
+  return {
+    blob: await response.blob(),
+    fileName:
+      parseContentDispositionFileName(response.headers.get('Content-Disposition')) || getArchiveFileNameFromPath(path),
+  }
+}
+
+export async function downloadFileAsset(
+  path: string,
+  directory?: string,
+  options: { signal?: AbortSignal; timeout?: number } = {},
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await getBinary(
+    '/file/download',
+    {
+      path,
+      directory: formatPathForApi(directory),
+    },
+    { signal: options.signal, timeout: options.timeout ?? 0 },
+  )
+
+  return {
+    blob: await response.blob(),
+    fileName: parseContentDispositionFileName(response.headers.get('Content-Disposition')) || getFileNameFromPath(path),
+  }
 }
 
 /**

@@ -4,12 +4,33 @@
 // 性能优化：使用 CSS 变量 + requestAnimationFrame 处理 resize
 // ============================================
 
-import { memo, useCallback, useMemo, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+  useId,
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { layoutStore, type PreviewFile } from '../store/layoutStore'
-import { ChevronRightIcon, ChevronDownIcon, RetryIcon, AlertCircleIcon, DownloadIcon, MaximizeIcon } from './Icons'
+import {
+  ChevronRightIcon,
+  ChevronDownIcon,
+  RetryIcon,
+  AlertCircleIcon,
+  DownloadIcon,
+  MaximizeIcon,
+  SpinnerIcon,
+} from './Icons'
+import { notificationStore } from '../store/notificationStore'
 import { CodePreview } from './CodePreview'
 import { FullscreenViewer } from './FullscreenViewer'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
@@ -25,12 +46,26 @@ import {
   formatMimeType,
   type PreviewCategory,
 } from '../utils/mimeUtils'
-import { downloadFileContent } from '../utils/downloadUtils'
+import { downloadBlob, downloadFileContent } from '../utils/downloadUtils'
+import { downloadDirectoryArchive, downloadFileAsset, saveFileContent } from '../api/file'
 import type { FileContent } from '../api/types'
 
 // 常量
 const MIN_TREE_HEIGHT = 100
 const MIN_PREVIEW_HEIGHT = 150
+
+interface EditorDraftState {
+  originalContent: string
+  draftContent: string
+  isSaving: boolean
+  saveError: string | null
+}
+
+function isEditableTextContent(content: FileContent | null): content is FileContent {
+  if (!content) return false
+  if (isBinaryContent(content.encoding)) return false
+  return !isTextualMedia(content.mimeType)
+}
 
 interface FileExplorerProps {
   panelTabId: string
@@ -70,6 +105,9 @@ export const FileExplorer = memo(function FileExplorer({
 
   // 综合 resize 状态 - 外部面板 resize 或内部 resize
   const isAnyResizing = isPanelResizing || isResizing
+  const [downloadingPaths, setDownloadingPaths] = useState<Set<string>>(new Set())
+  const downloadingPathsRef = useRef<Set<string>>(new Set())
+  const [editorDrafts, setEditorDrafts] = useState<Record<string, EditorDraftState>>({})
 
   const {
     tree,
@@ -82,6 +120,7 @@ export const FileExplorer = memo(function FileExplorer({
     previewError,
     loadPreview,
     clearPreview,
+    updatePreviewContent,
     fileStatus,
     refresh,
   } = useFileExplorer({ directory, autoLoad: true, sessionId: sessionId || undefined })
@@ -89,11 +128,89 @@ export const FileExplorer = memo(function FileExplorer({
   // 当 previewFile 改变时加载预览
   useEffect(() => {
     if (previewFile) {
-      loadPreview(previewFile.path)
+      loadPreview(previewFile.path, { forceRefresh: true })
     } else {
       clearPreview()
     }
   }, [previewFile, loadPreview, clearPreview])
+
+  useEffect(() => {
+    if (!previewFile || !isEditableTextContent(previewContent)) {
+      return
+    }
+
+    setEditorDrafts(prev => {
+      const existing = prev[previewFile.path]
+      if (existing) {
+        if (existing.originalContent === previewContent.content) {
+          return prev
+        }
+
+        const hasUnsavedChanges = existing.draftContent !== existing.originalContent
+        return {
+          ...prev,
+          [previewFile.path]: {
+            originalContent: previewContent.content,
+            draftContent: hasUnsavedChanges ? existing.draftContent : previewContent.content,
+            isSaving: existing.isSaving,
+            saveError: null,
+          },
+        }
+      }
+
+      return {
+        ...prev,
+        [previewFile.path]: {
+          originalContent: previewContent.content,
+          draftContent: previewContent.content,
+          isSaving: false,
+          saveError: null,
+        },
+      }
+    })
+  }, [previewContent, previewFile])
+
+  useEffect(() => {
+    setEditorDrafts(prev => {
+      const previewPaths = new Set(previewFiles.map(file => file.path))
+      let changed = false
+      const nextDrafts: Record<string, EditorDraftState> = {}
+
+      Object.entries(prev).forEach(([path, state]) => {
+        if (previewPaths.has(path)) {
+          nextDrafts[path] = state
+          return
+        }
+
+        changed = true
+      })
+
+      return changed ? nextDrafts : prev
+    })
+  }, [previewFiles])
+
+  useEffect(() => {
+    previewFiles.forEach(file => {
+      const draftState = editorDrafts[file.path]
+      const nextIsDirty = draftState ? draftState.draftContent !== draftState.originalContent : false
+      const nextIsSaving = draftState?.isSaving ?? false
+      const nextSaveError = draftState?.saveError ?? null
+
+      if (
+        file.isDirty === nextIsDirty &&
+        file.isSaving === nextIsSaving &&
+        (file.saveError ?? null) === nextSaveError
+      ) {
+        return
+      }
+
+      layoutStore.updateFilePreview(panelTabId, file.path, {
+        isDirty: nextIsDirty,
+        isSaving: nextIsSaving,
+        saveError: nextSaveError,
+      })
+    })
+  }, [editorDrafts, panelTabId, previewFiles])
 
   // 处理文件点击
   const handleFileClick = useCallback(
@@ -106,6 +223,111 @@ export const FileExplorer = memo(function FileExplorer({
     },
     [toggleExpand, position],
   )
+
+  const handleNodeDownload = useCallback(
+    async (node: FileTreeNode) => {
+      if (downloadingPathsRef.current.has(node.path)) {
+        return
+      }
+
+      downloadingPathsRef.current = new Set(downloadingPathsRef.current).add(node.path)
+      setDownloadingPaths(new Set(downloadingPathsRef.current))
+
+      try {
+        const { blob, fileName } =
+          node.type === 'directory'
+            ? await downloadDirectoryArchive(node.path, directory)
+            : await downloadFileAsset(node.path, directory)
+        downloadBlob(blob, fileName)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t('common:error')
+        notificationStore.push('error', t('common:download'), message, sessionId || 'file-explorer', directory)
+      } finally {
+        const next = new Set(downloadingPathsRef.current)
+        next.delete(node.path)
+        downloadingPathsRef.current = next
+        setDownloadingPaths(new Set(next))
+      }
+    },
+    [directory, sessionId, t],
+  )
+
+  const handleEditorChange = useCallback((path: string, value: string) => {
+    setEditorDrafts(prev => {
+      const current = prev[path]
+      if (!current || current.draftContent === value) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [path]: {
+          ...current,
+          draftContent: value,
+          saveError: null,
+        },
+      }
+    })
+  }, [])
+
+  const handleSavePreview = useCallback(async () => {
+    if (!previewFile) {
+      return
+    }
+
+    const draftState = editorDrafts[previewFile.path]
+    if (!draftState || draftState.isSaving || draftState.draftContent === draftState.originalContent) {
+      return
+    }
+
+    setEditorDrafts(prev => ({
+      ...prev,
+      [previewFile.path]: {
+        ...draftState,
+        isSaving: true,
+        saveError: null,
+      },
+    }))
+
+    try {
+      await saveFileContent(previewFile.path, draftState.draftContent, directory, {
+        expectedContent: draftState.originalContent,
+      })
+
+      updatePreviewContent(previewFile.path, {
+        ...(previewContent ?? { type: 'text' as const }),
+        type: 'text',
+        content: draftState.draftContent,
+      })
+
+      setEditorDrafts(prev => ({
+        ...prev,
+        [previewFile.path]: {
+          originalContent: draftState.draftContent,
+          draftContent: draftState.draftContent,
+          isSaving: false,
+          saveError: null,
+        },
+      }))
+
+      notificationStore.push('completed', t('common:save'), previewFile.name, sessionId || 'file-explorer', directory)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common:error')
+
+      setEditorDrafts(prev => ({
+        ...prev,
+        [previewFile.path]: {
+          ...(prev[previewFile.path] ?? draftState),
+          isSaving: false,
+          saveError: message,
+        },
+      }))
+
+      notificationStore.push('error', t('common:save'), message, sessionId || 'file-explorer', directory)
+    }
+  }, [directory, editorDrafts, previewContent, previewFile, sessionId, t, updatePreviewContent])
+
+  const activeEditorState = previewFile ? (editorDrafts[previewFile.path] ?? null) : null
 
   // 关闭预览
   const handleClosePreview = useCallback(() => {
@@ -208,6 +430,8 @@ export const FileExplorer = memo(function FileExplorer({
                   expandedPaths={expandedPaths}
                   fileStatus={fileStatus}
                   onClick={handleFileClick}
+                  onDownload={handleNodeDownload}
+                  isDownloadingPath={path => downloadingPaths.has(path)}
                 />
               ))}
             </div>
@@ -232,12 +456,22 @@ export const FileExplorer = memo(function FileExplorer({
       {showPreview && (
         <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: MIN_PREVIEW_HEIGHT }}>
           <FilePreview
+            directory={directory}
             previewFiles={previewFiles}
             path={previewFile?.path ?? null}
             content={previewContent}
+            editorText={activeEditorState?.draftContent ?? null}
+            isDirty={Boolean(activeEditorState && activeEditorState.draftContent !== activeEditorState.originalContent)}
+            isSaving={activeEditorState?.isSaving ?? false}
+            saveError={activeEditorState?.saveError ?? null}
             isLoading={previewLoading}
             error={previewError}
             onClose={handleClosePreview}
+            onEditorChange={value => {
+              if (!previewFile) return
+              handleEditorChange(previewFile.path, value)
+            }}
+            onSave={handleSavePreview}
             onActivatePreview={handleActivatePreview}
             onClosePreview={handleClosePreviewTab}
             onReorderPreview={handleReorderPreviewTabs}
@@ -259,6 +493,8 @@ interface FileTreeItemProps {
   expandedPaths: Set<string>
   fileStatus: Map<string, { status: string }>
   onClick: (node: FileTreeNode) => void
+  onDownload: (node: FileTreeNode) => void
+  isDownloadingPath: (path: string) => boolean
 }
 
 const FileTreeItem = memo(function FileTreeItem({
@@ -267,7 +503,10 @@ const FileTreeItem = memo(function FileTreeItem({
   expandedPaths,
   fileStatus,
   onClick,
+  onDownload,
+  isDownloadingPath,
 }: FileTreeItemProps) {
+  const { t } = useTranslation('common')
   const isExpanded = expandedPaths.has(node.path)
   const isDirectory = node.type === 'directory'
   // node.path 可能用反斜杠（Windows），statusMap key 统一用正斜杠
@@ -303,51 +542,75 @@ const FileTreeItem = memo(function FileTreeItem({
     [node.path, node.absolute, node.name, isDirectory],
   )
 
+  const handleDownloadClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      onDownload(node)
+    },
+    [node, onDownload],
+  )
+
   return (
     <div>
-      <button
-        draggable
-        onDragStart={handleDragStart}
-        onClick={() => onClick(node)}
-        className={`
-          w-full flex items-center gap-1 px-2 py-0.5 text-left
-          hover:bg-bg-200/50 transition-colors text-[12px]
-          text-text-300
-          ${node.ignored ? 'opacity-50' : ''}
-        `}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      >
-        {/* Expand/Collapse Icon */}
-        {isDirectory ? (
-          <span className="w-4 h-4 flex items-center justify-center text-text-400 shrink-0">
-            {isExpanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-          </span>
-        ) : (
-          <span className="w-4 shrink-0" />
-        )}
+      <div className={`group flex items-center gap-1 pr-2 ${node.ignored ? 'opacity-50' : ''}`}>
+        <button
+          draggable
+          onDragStart={handleDragStart}
+          onClick={() => onClick(node)}
+          className={`
+            flex-1 flex items-center gap-1 px-2 py-0.5 text-left
+            hover:bg-bg-200/50 transition-colors text-[12px]
+            text-text-300 min-w-0
+          `}
+          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        >
+          {/* Expand/Collapse Icon */}
+          {isDirectory ? (
+            <span className="w-4 h-4 flex items-center justify-center text-text-400 shrink-0">
+              {isExpanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
+            </span>
+          ) : (
+            <span className="w-4 shrink-0" />
+          )}
 
-        {/* File/Folder Icon - Material Icon Theme */}
-        <img
-          src={getMaterialIconUrl(node.path, isDirectory ? 'directory' : 'file', isExpanded)}
-          alt=""
-          width={16}
-          height={16}
-          className="shrink-0"
-          loading="lazy"
-          decoding="async"
-          onError={e => {
-            e.currentTarget.style.visibility = 'hidden'
-          }}
-        />
+          {/* File/Folder Icon - Material Icon Theme */}
+          <img
+            src={getMaterialIconUrl(node.path, isDirectory ? 'directory' : 'file', isExpanded)}
+            alt=""
+            width={16}
+            height={16}
+            className="shrink-0"
+            loading="lazy"
+            decoding="async"
+            onError={e => {
+              e.currentTarget.style.visibility = 'hidden'
+            }}
+          />
 
-        {/* Name */}
-        <span className={`truncate flex-1 ${statusColor || ''}`}>{node.name}</span>
+          {/* Name */}
+          <span className={`truncate flex-1 ${statusColor || ''}`}>{node.name}</span>
 
-        {/* Loading Indicator */}
-        {node.isLoading && (
-          <span className="w-3 h-3 border border-text-400 border-t-transparent rounded-full animate-spin shrink-0" />
-        )}
-      </button>
+          {/* Loading Indicator */}
+          {node.isLoading && (
+            <span className="w-3 h-3 border border-text-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDownloadClick}
+          disabled={isDownloadingPath(node.path)}
+          aria-label={`${t('download')} ${node.name}`}
+          title={`${t('download')} ${node.name}`}
+          className="shrink-0 p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
+        >
+          {isDownloadingPath(node.path) ? (
+            <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin block" />
+          ) : (
+            <DownloadIcon size={12} />
+          )}
+        </button>
+      </div>
 
       {/* Children */}
       {isDirectory && isExpanded && node.children && (
@@ -360,6 +623,8 @@ const FileTreeItem = memo(function FileTreeItem({
               expandedPaths={expandedPaths}
               fileStatus={fileStatus}
               onClick={onClick}
+              onDownload={onDownload}
+              isDownloadingPath={isDownloadingPath}
             />
           ))}
         </div>
@@ -373,12 +638,19 @@ const FileTreeItem = memo(function FileTreeItem({
 // ============================================
 
 interface FilePreviewProps {
+  directory?: string
   previewFiles: PreviewFile[]
   path: string | null
   content: FileContent | null
+  editorText: string | null
+  isDirty: boolean
+  isSaving: boolean
+  saveError: string | null
   isLoading: boolean
   error: string | null
   onClose: () => void
+  onEditorChange: (value: string) => void
+  onSave: () => void
   onActivatePreview: (path: string) => void
   onClosePreview: (path: string) => void
   onReorderPreview: (draggedPath: string, targetPath: string) => void
@@ -386,12 +658,19 @@ interface FilePreviewProps {
 }
 
 function FilePreview({
+  directory,
   previewFiles,
   path,
   content,
+  editorText,
+  isDirty,
+  isSaving,
+  saveError,
   isLoading,
   error,
   onClose,
+  onEditorChange,
+  onSave,
   onActivatePreview,
   onClosePreview,
   onReorderPreview,
@@ -404,13 +683,26 @@ function FilePreview({
   // 获取文件名
   const fileName = path?.split(/[/\\]/).pop() || 'Untitled'
   const language = path ? detectLanguage(path) : 'text'
+  const editableText = displayEditableText(editorText, content)
 
   // 下载当前文件
   const handleDownload = useCallback(() => {
-    if (content) {
-      downloadFileContent(content, fileName)
-    }
-  }, [content, fileName])
+    if (!path) return
+
+    downloadFileAsset(path, directory)
+      .then(({ blob, fileName: downloadFileName }) => {
+        downloadBlob(blob, downloadFileName)
+      })
+      .catch(error => {
+        if (content && !isBinaryContent(content.encoding)) {
+          downloadFileContent(content, fileName)
+          return
+        }
+
+        const message = error instanceof Error ? error.message : t('common:error')
+        notificationStore.push('error', t('common:download'), message, 'file-preview', directory)
+      })
+  }, [content, directory, fileName, path, t])
 
   const previewTabItems = useMemo<PreviewTabsBarItem[]>(
     () =>
@@ -419,7 +711,12 @@ function FilePreview({
         title: file.path,
         closeTitle: `${t('common:close')} ${file.name}`,
         iconPath: file.path,
-        label: <span className="block min-w-0 flex-1 truncate text-[11px] font-mono">{file.name}</span>,
+        label: (
+          <span className="block min-w-0 flex-1 truncate text-[11px] font-mono">
+            {file.name}
+            {file.isSaving ? ' [..]' : file.isDirty ? ' *' : ''}
+          </span>
+        ),
       })),
     [previewFiles, t],
   )
@@ -506,11 +803,23 @@ function FilePreview({
           />
         )
       case 'text':
-        return <CodePreview code={displayContent.text} language={language || 'text'} />
+        return <CodePreview code={editableText ?? displayContent.text} language={language || 'text'} />
       default:
         return null
     }
-  }, [displayContent, fileName, language, handleDownload])
+  }, [displayContent, editableText, fileName, language, handleDownload])
+
+  const handleEditorKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        onSave()
+      }
+    },
+    [onSave],
+  )
+
+  const canSave = Boolean(path && editableText !== null && isDirty && !isSaving)
 
   return (
     <div className="flex flex-col h-full relative">
@@ -526,6 +835,18 @@ function FilePreview({
         rightActions={
           content ? (
             <>
+              {editableText !== null ? (
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={!canSave}
+                  aria-label={`${t('common:save')} ${fileName}`}
+                  className="px-2 py-1 text-[11px] rounded border border-bg-300 text-text-300 hover:text-text-100 hover:bg-bg-300/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={`${t('common:save')} ${fileName}`}
+                >
+                  {isSaving ? <SpinnerIcon size={12} className="animate-spin" /> : t('common:save')}
+                </button>
+              ) : null}
               <button
                 onClick={() => setFullscreenOpen(true)}
                 className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
@@ -554,6 +875,16 @@ function FilePreview({
             <AlertCircleIcon size={16} />
             <span className="text-center">{error}</span>
           </div>
+        ) : displayContent?.type === 'text' && editableText !== null ? (
+          <TextEditorPreview
+            fileName={fileName}
+            value={editableText}
+            isDirty={isDirty}
+            isSaving={isSaving}
+            saveError={saveError}
+            onChange={onEditorChange}
+            onKeyDown={handleEditorKeyDown}
+          />
         ) : displayContent?.type === 'media' ? (
           <MediaPreview
             category={displayContent.category}
@@ -599,6 +930,61 @@ function FilePreview({
       >
         {fullscreenContent}
       </FullscreenViewer>
+    </div>
+  )
+}
+
+function displayEditableText(editorText: string | null, content: FileContent | null): string | null {
+  if (!isEditableTextContent(content)) {
+    return null
+  }
+
+  return editorText ?? content.content
+}
+
+interface TextEditorPreviewProps {
+  fileName: string
+  value: string
+  isDirty: boolean
+  isSaving: boolean
+  saveError: string | null
+  onChange: (value: string) => void
+  onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
+}
+
+function TextEditorPreview({
+  fileName,
+  value,
+  isDirty,
+  isSaving,
+  saveError,
+  onChange,
+  onKeyDown,
+}: TextEditorPreviewProps) {
+  const { t } = useTranslation(['common'])
+  const editorId = useId()
+
+  return (
+    <div className="flex h-full flex-col bg-bg-100">
+      <label
+        htmlFor={editorId}
+        className="flex items-center justify-between border-b border-bg-300 px-3 py-1 text-[11px] text-text-400"
+      >
+        <span>{fileName}</span>
+        <span>{isSaving ? t('common:loading') : isDirty ? '*' : ''}</span>
+      </label>
+      <textarea
+        id={editorId}
+        aria-label={`editor ${fileName}`}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        spellCheck={false}
+        className="h-full w-full flex-1 resize-none border-0 bg-transparent px-4 py-3 font-mono text-[12px] leading-5 text-text-100 outline-none"
+      />
+      {saveError ? (
+        <div className="border-t border-bg-300 px-3 py-2 text-[11px] text-danger-100">{saveError}</div>
+      ) : null}
     </div>
   )
 }

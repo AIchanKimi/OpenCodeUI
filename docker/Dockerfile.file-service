@@ -1,0 +1,22 @@
+FROM rust:1.94-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /app
+
+COPY src-file-service/Cargo.toml ./Cargo.toml
+COPY src-file-service/src ./src
+
+RUN cargo build --release
+
+FROM alpine:3.22
+
+RUN apk add --no-cache zip
+
+WORKDIR /app
+
+COPY --from=builder /app/target/release/opencodeui-fileserver /usr/local/bin/opencodeui-fileserver
+
+EXPOSE 4097
+
+CMD ["/usr/local/bin/opencodeui-fileserver"]

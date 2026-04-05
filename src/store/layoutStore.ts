@@ -26,6 +26,9 @@ export interface PanelTab {
 export interface PreviewFile {
   path: string
   name: string
+  isDirty?: boolean
+  isSaving?: boolean
+  saveError?: string | null
 }
 
 const MAX_RIGHT_PANEL_WIDTH = 1280
@@ -532,6 +535,24 @@ class LayoutStore {
     const [dragged] = nextPreviewFiles.splice(draggedIndex, 1)
     nextPreviewFiles.splice(targetIndex, 0, dragged)
     tab.previewFiles = nextPreviewFiles
+    this.notify()
+  }
+
+  updateFilePreview(tabId: string, path: string, updates: Partial<PreviewFile>) {
+    const tab = this.state.panelTabs.find(item => item.id === tabId && item.type === 'files')
+    const previewFiles = tab?.previewFiles
+    if (!tab || !previewFiles) return
+
+    const index = previewFiles.findIndex(item => item.path === path)
+    if (index === -1) return
+
+    const nextPreviewFile = { ...previewFiles[index], ...updates }
+    tab.previewFiles = previewFiles.map((item, currentIndex) => (currentIndex === index ? nextPreviewFile : item))
+
+    if (tab.previewFile?.path === path) {
+      tab.previewFile = nextPreviewFile
+    }
+
     this.notify()
   }
 

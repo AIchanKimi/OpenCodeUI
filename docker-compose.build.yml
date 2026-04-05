@@ -21,3 +21,9 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.backend
+
+  file-service:
+    image: opencodeui-file-service:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.file-service

@@ -70,6 +70,8 @@ export type {
 export type {
   FileNode,
   FileContent,
+  FileWriteRequest,
+  FileWriteResponse,
   FileStatusItem,
   FileDiff,
   FilePatch,

@@ -82,6 +82,20 @@ export function downloadFileContent(content: FileContent, fileName: string): voi
   saveData(data, fileName, mimeType)
 }
 
+export function downloadBlob(blob: Blob, fileName: string): void {
+  if (isTauri()) {
+    blob
+      .arrayBuffer()
+      .then(buffer => saveData(new Uint8Array(buffer), fileName, blob.type || 'application/octet-stream'))
+      .catch(err => {
+        console.warn('[downloadUtils] Blob save failed:', err)
+      })
+    return
+  }
+
+  triggerBrowserDownload(blob, fileName)
+}
+
 /**
  * 通用保存：接受原始数据 + 文件名 + MIME 类型
  * - Tauri 环境：弹出原生保存对话框 + fs 写入
