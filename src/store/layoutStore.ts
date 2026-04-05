@@ -6,7 +6,7 @@
 export type PanelPosition = 'bottom' | 'right'
 
 // 面板内容类型
-export type PanelTabType = 'terminal' | 'files' | 'changes' | 'web-preview' | 'mcp' | 'skill' | 'worktree'
+export type PanelTabType = 'terminal' | 'files' | 'changes' | 'web-preview' | 'mcp' | 'skill' | 'worktree' | 'gateway'
 
 // 统一的面板标签
 export interface PanelTab {
@@ -307,6 +307,11 @@ class LayoutStore {
     return this.addSingletonTab('worktree', position, 'worktree')
   }
 
+  // 添加 Gateway 标签（仅右侧）
+  addGatewayTab() {
+    return this.addSingletonTab('gateway', 'right', 'gateway')
+  }
+
   // 移除 tab
   removeTab(tabId: string) {
     const index = this.state.panelTabs.findIndex(t => t.id === tabId)
@@ -351,6 +356,7 @@ class LayoutStore {
   moveTab(tabId: string, toPosition: PanelPosition) {
     const tab = this.state.panelTabs.find(t => t.id === tabId)
     if (!tab || tab.position === toPosition) return
+    if (tab.type === 'gateway' && toPosition !== 'right') return
 
     const fromPosition = tab.position
 

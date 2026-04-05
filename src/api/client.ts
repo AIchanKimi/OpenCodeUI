@@ -31,6 +31,7 @@ export * from './pty'
 export * from './worktree'
 export * from './command'
 export * from './global'
+export * from './gateway'
 export * from './tool'
 export * from './lsp'
 
