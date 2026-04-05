@@ -4,22 +4,41 @@
 
 # ---- 主入口 :6658 — OpenCode 应用 ----
 :6658 {
-	# API（SSE + WebSocket 自动处理）
-	handle_path /api/* {
-		reverse_proxy opencode-backend:4096 {
-			flush_interval -1
+	route {
+		# 目录归档下载（独立文件服务）
+		@file_download path /api/file/download /api/file/download*
+		handle @file_download {
+			uri strip_prefix /api
+			reverse_proxy opencode-file-service:4097 {
+				flush_interval -1
+			}
 		}
-	}
 
-	# Routes UI + Preview API（供面板切换预览端口）
-	@router path /routes /preview/*
-	handle @router {
-		reverse_proxy 127.0.0.1:7070
-	}
+		@file_archive path /api/file/archive /api/file/archive*
+		handle @file_archive {
+			uri strip_prefix /api
+			reverse_proxy opencode-file-service:4097 {
+				flush_interval -1
+			}
+		}
 
-	# 前端（兜底）
-	handle {
-		reverse_proxy opencode-frontend:3000
+		# API（SSE + WebSocket 自动处理）
+		handle_path /api/* {
+			reverse_proxy opencode-backend:4096 {
+				flush_interval -1
+			}
+		}
+
+		# Routes UI + Preview API（供面板切换预览端口）
+		@router path /routes /preview/*
+		handle @router {
+			reverse_proxy 127.0.0.1:7070
+		}
+
+		# 前端（兜底）
+		handle {
+			reverse_proxy opencode-frontend:3000
+		}
 	}
 }
 

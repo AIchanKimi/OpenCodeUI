@@ -3,7 +3,7 @@
 // 基于 OpenAPI: /file, /find/file, /find/symbol 相关接口
 // ============================================
 
-import { get } from './http'
+import { get, getBinary } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { FileNode, FileContent, FileStatusItem, SymbolInfo } from './types'
 import { serverStore } from '../store/serverStore'
@@ -103,6 +103,70 @@ export async function getFileContent(path: string, directory?: string): Promise<
     path,
     directory: formatPathForApi(directory),
   })
+}
+
+function getArchiveFileNameFromPath(path: string): string {
+  const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  const name = normalizedPath.split('/').filter(Boolean).pop() || 'archive'
+  return `${name}.zip`
+}
+
+function getFileNameFromPath(path: string): string {
+  const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalizedPath.split('/').filter(Boolean).pop() || 'download'
+}
+
+function parseContentDispositionFileName(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1])
+  }
+
+  const fileNameMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+  return fileNameMatch?.[1] ?? null
+}
+
+export async function downloadDirectoryArchive(
+  path: string,
+  directory?: string,
+  options: { signal?: AbortSignal; timeout?: number } = {},
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await getBinary(
+    '/file/archive',
+    {
+      path,
+      directory: formatPathForApi(directory),
+    },
+    { signal: options.signal, timeout: options.timeout ?? 0 },
+  )
+
+  return {
+    blob: await response.blob(),
+    fileName:
+      parseContentDispositionFileName(response.headers.get('Content-Disposition')) || getArchiveFileNameFromPath(path),
+  }
+}
+
+export async function downloadFileAsset(
+  path: string,
+  directory?: string,
+  options: { signal?: AbortSignal; timeout?: number } = {},
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await getBinary(
+    '/file/download',
+    {
+      path,
+      directory: formatPathForApi(directory),
+    },
+    { signal: options.signal, timeout: options.timeout ?? 0 },
+  )
+
+  return {
+    blob: await response.blob(),
+    fileName: parseContentDispositionFileName(response.headers.get('Content-Disposition')) || getFileNameFromPath(path),
+  }
 }
 
 /**

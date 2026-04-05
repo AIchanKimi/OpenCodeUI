@@ -1,24 +1,28 @@
 # ============================================
-# OpenCode WebUI - Docker Compose
+# OpenCode WebUI - Docker Compose (Frontend Dev)
 # ============================================
 #
 # 架构:
-#   gateway  (Caddy)  :6658 -> 统一入口（反代 + 端口路由）
-#                      :6659 -> 独立预览端口（前端开发服务专用）
-#   frontend (Caddy)  :3000 -> 静态文件 (GitHub Actions 预构建镜像)
-#   backend  (opencode):4096 -> opencode serve (GitHub Actions 预构建镜像)
+#   gateway  (Caddy) :6658 -> 主入口，继续反代 frontend / backend
+#                     :6659 -> 后端 preview 入口
+#   frontend (Vite)  :3000 -> 本地源码热更新开发服务
+#   backend  (opencode):4096 -> opencode serve
 #
 # 使用方法:
 #   cp .env.example .env    # 填写 API Key
-#   docker compose up -d    # 启动
+#   docker compose -f docker-compose.dev.yml up -d --build
 #
-# 本地构建全部服务 (可选):
-#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# 说明:
+#   - 前端源码通过 bind mount 挂进容器，修改后由 Vite HMR 立即生效
+#   - gateway 仍然通过 opencode-frontend:3000 访问前端，因此主入口保持不变
+#   - 请通过 http://127.0.0.1:6658 访问，不要直接访问 frontend 容器端口
 
 services:
-  # ---- 统一入口：网关 ----
   gateway:
-    image: ghcr.io/lehhair/opencodeui-gateway:latest
+    image: opencodeui-gateway:dev
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
     container_name: opencode-gateway
     restart: unless-stopped
     ports:
@@ -45,17 +49,34 @@ services:
     networks:
       - opencode-net
 
-  # ---- 前端：预构建镜像 ----
   frontend:
-    image: ghcr.io/lehhair/opencodeui-frontend:latest
+    image: node:22-alpine
     container_name: opencode-frontend
     restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - opencode-frontend-node-modules:/app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=development
+      - VITE_API_BASE_URL=/api
+    command: >-
+      sh -c "LOCK_HASH=$$(sha256sum package-lock.json | awk '{print $$1}');
+      CACHED_HASH=$$(cat node_modules/.package-lock.hash 2>/dev/null || true);
+      if [ ! -d node_modules ] || [ \"$$LOCK_HASH\" != \"$$CACHED_HASH\" ]; then
+      npm ci --no-audit --prefer-offline && echo $$LOCK_HASH > node_modules/.package-lock.hash; fi &&
+      npm run dev -- --host 0.0.0.0 --port 3000"
+    expose:
+      - '3000'
     networks:
       - opencode-net
 
-  # ---- 后端：预构建镜像 ----
   backend:
-    image: ghcr.io/lehhair/opencodeui-backend:latest
+    image: opencodeui-backend:dev
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
     container_name: opencode-backend
     restart: unless-stopped
     deploy:
@@ -79,9 +100,8 @@ services:
     networks:
       - opencode-net
 
-  # ---- 文件服务：目录归档下载 ----
   file-service:
-    image: opencodeui-file-service:latest
+    image: opencodeui-file-service:dev
     build:
       context: .
       dockerfile: docker/Dockerfile.file-service
@@ -100,6 +120,7 @@ services:
 volumes:
   opencode-home:
   opencode-router-data:
+  opencode-frontend-node-modules:
 
 networks:
   opencode-net:

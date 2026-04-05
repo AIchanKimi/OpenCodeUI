@@ -4,12 +4,23 @@
 // 性能优化：使用 CSS 变量 + requestAnimationFrame 处理 resize
 // ============================================
 
-import { memo, useCallback, useMemo, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { layoutStore, type PreviewFile } from '../store/layoutStore'
 import { ChevronRightIcon, ChevronDownIcon, RetryIcon, AlertCircleIcon, DownloadIcon, MaximizeIcon } from './Icons'
+import { notificationStore } from '../store/notificationStore'
 import { CodePreview } from './CodePreview'
 import { FullscreenViewer } from './FullscreenViewer'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
@@ -25,7 +36,8 @@ import {
   formatMimeType,
   type PreviewCategory,
 } from '../utils/mimeUtils'
-import { downloadFileContent } from '../utils/downloadUtils'
+import { downloadBlob } from '../utils/downloadUtils'
+import { downloadDirectoryArchive, downloadFileAsset } from '../api/file'
 import type { FileContent } from '../api/types'
 
 // 常量
@@ -70,6 +82,8 @@ export const FileExplorer = memo(function FileExplorer({
 
   // 综合 resize 状态 - 外部面板 resize 或内部 resize
   const isAnyResizing = isPanelResizing || isResizing
+  const [downloadingPaths, setDownloadingPaths] = useState<Set<string>>(new Set())
+  const downloadingPathsRef = useRef<Set<string>>(new Set())
 
   const {
     tree,
@@ -105,6 +119,34 @@ export const FileExplorer = memo(function FileExplorer({
       }
     },
     [toggleExpand, position],
+  )
+
+  const handleNodeDownload = useCallback(
+    async (node: FileTreeNode) => {
+      if (downloadingPathsRef.current.has(node.path)) {
+        return
+      }
+
+      downloadingPathsRef.current = new Set(downloadingPathsRef.current).add(node.path)
+      setDownloadingPaths(new Set(downloadingPathsRef.current))
+
+      try {
+        const { blob, fileName } =
+          node.type === 'directory'
+            ? await downloadDirectoryArchive(node.path, directory)
+            : await downloadFileAsset(node.path, directory)
+        downloadBlob(blob, fileName)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t('common:error')
+        notificationStore.push('error', t('common:download'), message, sessionId || 'file-explorer', directory)
+      } finally {
+        const next = new Set(downloadingPathsRef.current)
+        next.delete(node.path)
+        downloadingPathsRef.current = next
+        setDownloadingPaths(new Set(next))
+      }
+    },
+    [directory, sessionId, t],
   )
 
   // 关闭预览
@@ -208,6 +250,8 @@ export const FileExplorer = memo(function FileExplorer({
                   expandedPaths={expandedPaths}
                   fileStatus={fileStatus}
                   onClick={handleFileClick}
+                  onDownload={handleNodeDownload}
+                  isDownloading={downloadingPaths.has(node.path)}
                 />
               ))}
             </div>
@@ -232,6 +276,7 @@ export const FileExplorer = memo(function FileExplorer({
       {showPreview && (
         <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: MIN_PREVIEW_HEIGHT }}>
           <FilePreview
+            directory={directory}
             previewFiles={previewFiles}
             path={previewFile?.path ?? null}
             content={previewContent}
@@ -259,6 +304,8 @@ interface FileTreeItemProps {
   expandedPaths: Set<string>
   fileStatus: Map<string, { status: string }>
   onClick: (node: FileTreeNode) => void
+  onDownload: (node: FileTreeNode) => void
+  isDownloading: boolean
 }
 
 const FileTreeItem = memo(function FileTreeItem({
@@ -267,7 +314,10 @@ const FileTreeItem = memo(function FileTreeItem({
   expandedPaths,
   fileStatus,
   onClick,
+  onDownload,
+  isDownloading,
 }: FileTreeItemProps) {
+  const { t } = useTranslation('common')
   const isExpanded = expandedPaths.has(node.path)
   const isDirectory = node.type === 'directory'
   // node.path 可能用反斜杠（Windows），statusMap key 统一用正斜杠
@@ -303,51 +353,75 @@ const FileTreeItem = memo(function FileTreeItem({
     [node.path, node.absolute, node.name, isDirectory],
   )
 
+  const handleDownloadClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      onDownload(node)
+    },
+    [node, onDownload],
+  )
+
   return (
     <div>
-      <button
-        draggable
-        onDragStart={handleDragStart}
-        onClick={() => onClick(node)}
-        className={`
-          w-full flex items-center gap-1 px-2 py-0.5 text-left
-          hover:bg-bg-200/50 transition-colors text-[12px]
-          text-text-300
-          ${node.ignored ? 'opacity-50' : ''}
-        `}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      >
-        {/* Expand/Collapse Icon */}
-        {isDirectory ? (
-          <span className="w-4 h-4 flex items-center justify-center text-text-400 shrink-0">
-            {isExpanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-          </span>
-        ) : (
-          <span className="w-4 shrink-0" />
-        )}
+      <div className={`group flex items-center gap-1 pr-2 ${node.ignored ? 'opacity-50' : ''}`}>
+        <button
+          draggable
+          onDragStart={handleDragStart}
+          onClick={() => onClick(node)}
+          className={`
+            flex-1 flex items-center gap-1 px-2 py-0.5 text-left
+            hover:bg-bg-200/50 transition-colors text-[12px]
+            text-text-300 min-w-0
+          `}
+          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        >
+          {/* Expand/Collapse Icon */}
+          {isDirectory ? (
+            <span className="w-4 h-4 flex items-center justify-center text-text-400 shrink-0">
+              {isExpanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
+            </span>
+          ) : (
+            <span className="w-4 shrink-0" />
+          )}
 
-        {/* File/Folder Icon - Material Icon Theme */}
-        <img
-          src={getMaterialIconUrl(node.path, isDirectory ? 'directory' : 'file', isExpanded)}
-          alt=""
-          width={16}
-          height={16}
-          className="shrink-0"
-          loading="lazy"
-          decoding="async"
-          onError={e => {
-            e.currentTarget.style.visibility = 'hidden'
-          }}
-        />
+          {/* File/Folder Icon - Material Icon Theme */}
+          <img
+            src={getMaterialIconUrl(node.path, isDirectory ? 'directory' : 'file', isExpanded)}
+            alt=""
+            width={16}
+            height={16}
+            className="shrink-0"
+            loading="lazy"
+            decoding="async"
+            onError={e => {
+              e.currentTarget.style.visibility = 'hidden'
+            }}
+          />
 
-        {/* Name */}
-        <span className={`truncate flex-1 ${statusColor || ''}`}>{node.name}</span>
+          {/* Name */}
+          <span className={`truncate flex-1 ${statusColor || ''}`}>{node.name}</span>
 
-        {/* Loading Indicator */}
-        {node.isLoading && (
-          <span className="w-3 h-3 border border-text-400 border-t-transparent rounded-full animate-spin shrink-0" />
-        )}
-      </button>
+          {/* Loading Indicator */}
+          {node.isLoading && (
+            <span className="w-3 h-3 border border-text-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDownloadClick}
+          disabled={isDownloading}
+          aria-label={`${t('download')} ${node.name}`}
+          title={`${t('download')} ${node.name}`}
+          className="shrink-0 p-1 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
+        >
+          {isDownloading ? (
+            <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin block" />
+          ) : (
+            <DownloadIcon size={12} />
+          )}
+        </button>
+      </div>
 
       {/* Children */}
       {isDirectory && isExpanded && node.children && (
@@ -360,6 +434,8 @@ const FileTreeItem = memo(function FileTreeItem({
               expandedPaths={expandedPaths}
               fileStatus={fileStatus}
               onClick={onClick}
+              onDownload={onDownload}
+              isDownloading={isDownloading}
             />
           ))}
         </div>
@@ -373,6 +449,7 @@ const FileTreeItem = memo(function FileTreeItem({
 // ============================================
 
 interface FilePreviewProps {
+  directory?: string
   previewFiles: PreviewFile[]
   path: string | null
   content: FileContent | null
@@ -386,6 +463,7 @@ interface FilePreviewProps {
 }
 
 function FilePreview({
+  directory,
   previewFiles,
   path,
   content,
@@ -407,10 +485,17 @@ function FilePreview({
 
   // 下载当前文件
   const handleDownload = useCallback(() => {
-    if (content) {
-      downloadFileContent(content, fileName)
-    }
-  }, [content, fileName])
+    if (!path) return
+
+    downloadFileAsset(path, directory)
+      .then(({ blob, fileName: downloadFileName }) => {
+        downloadBlob(blob, downloadFileName)
+      })
+      .catch(error => {
+        const message = error instanceof Error ? error.message : t('common:error')
+        notificationStore.push('error', t('common:download'), message, 'file-preview', directory)
+      })
+  }, [directory, path, t])
 
   const previewTabItems = useMemo<PreviewTabsBarItem[]>(
     () =>

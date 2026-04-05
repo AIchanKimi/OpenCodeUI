@@ -106,18 +106,11 @@ export interface RequestOptions {
 
 const DEFAULT_TIMEOUT = 30_000
 
-/**
- * 通用 HTTP 请求函数
- *
- * 如果活动服务器配置了密码，会自动添加 Authorization header
- * 注意：跨域场景下 Authorization header 会触发 CORS 预检请求，
- * 需要后端正确处理 OPTIONS 请求
- */
-export async function request<T>(
+async function requestResponse(
   path: string,
   params: Record<string, QueryValue> = {},
   options: RequestOptions = {},
-): Promise<T> {
+): Promise<Response> {
   const { method = 'GET', body, headers = {}, timeout = DEFAULT_TIMEOUT, signal } = options
 
   const requestHeaders: Record<string, string> = {
@@ -125,7 +118,6 @@ export async function request<T>(
     ...headers,
   }
 
-  // 超时控制：合并外部 signal 和 timeout
   const controller = new AbortController()
   let timeoutId: ReturnType<typeof setTimeout> | undefined
 
@@ -133,7 +125,6 @@ export async function request<T>(
     timeoutId = setTimeout(() => controller.abort(new Error(`Request timed out after ${timeout}ms`)), timeout)
   }
 
-  // 外部 signal 取消时也中止
   if (signal) {
     if (signal.aborted) {
       controller.abort(signal.reason)
@@ -172,20 +163,45 @@ export async function request<T>(
       throw new Error(errorMsg)
     }
 
-    // 204 No Content
-    if (response.status === 204) {
-      return undefined as T
-    }
-
-    const text = await response.text()
-    if (!text) {
-      return undefined as T
-    }
-
-    return JSON.parse(text)
+    return response
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId)
   }
+}
+
+/**
+ * 通用 HTTP 请求函数
+ *
+ * 如果活动服务器配置了密码，会自动添加 Authorization header
+ * 注意：跨域场景下 Authorization header 会触发 CORS 预检请求，
+ * 需要后端正确处理 OPTIONS 请求
+ */
+export async function request<T>(
+  path: string,
+  params: Record<string, QueryValue> = {},
+  options: RequestOptions = {},
+): Promise<T> {
+  const response = await requestResponse(path, params, options)
+
+  // 204 No Content
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  const text = await response.text()
+  if (!text) {
+    return undefined as T
+  }
+
+  return JSON.parse(text)
+}
+
+export async function requestBinary(
+  path: string,
+  params: Record<string, QueryValue> = {},
+  options: RequestOptions = {},
+): Promise<Response> {
+  return requestResponse(path, params, options)
 }
 
 /**
@@ -193,6 +209,14 @@ export async function request<T>(
  */
 export async function get<T>(path: string, params: Record<string, QueryValue> = {}): Promise<T> {
   return request<T>(path, params, { method: 'GET' })
+}
+
+export async function getBinary(
+  path: string,
+  params: Record<string, QueryValue> = {},
+  options: RequestOptions = {},
+): Promise<Response> {
+  return requestBinary(path, params, { ...options, method: 'GET' })
 }
 
 /**
