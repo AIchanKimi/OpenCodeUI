@@ -3,15 +3,18 @@
 // 基于 OpenAPI: /file, /find/file, /find/symbol 相关接口
 // ============================================
 
-import { get, getBinary, put } from './http'
+import { buildUrl, get, getAuthHeader, getBinary, put, unifiedFetch } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { FileNode, FileContent, FileStatusItem, FileWriteResponse, SymbolInfo } from './types'
 import { serverStore } from '../store/serverStore'
 
 const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
+const FILE_SERVICE_AVAILABILITY_TTL_MS = 30_000
 
 const rootDirectoryCache = new Map<string, { data: FileNode[]; expiresAt: number }>()
 const rootDirectoryInflight = new Map<string, Promise<FileNode[]>>()
+const fileServiceAvailabilityCache = new Map<string, { available: boolean; expiresAt: number }>()
+const fileServiceAvailabilityInflight = new Map<string, Promise<boolean>>()
 
 function isRootDirectoryPath(path: string): boolean {
   return path === '' || path === '.' || path === './'
@@ -91,6 +94,56 @@ export async function listDirectory(path: string, directory?: string): Promise<F
 
 export async function prefetchRootDirectory(directory?: string): Promise<void> {
   await listDirectory('.', directory)
+}
+
+export async function getFileServiceAvailability(forceRefresh: boolean = false): Promise<boolean> {
+  const key = serverStore.getActiveServerId()
+  const now = Date.now()
+
+  if (!forceRefresh) {
+    const cached = fileServiceAvailabilityCache.get(key)
+    if (cached && cached.expiresAt > now) {
+      return cached.available
+    }
+
+    const inflight = fileServiceAvailabilityInflight.get(key)
+    if (inflight) {
+      return inflight
+    }
+  }
+
+  const request = unifiedFetch(buildUrl('/file/health'), {
+    method: 'GET',
+    headers: {
+      ...getAuthHeader(),
+    },
+  })
+    .then(async response => {
+      if (!response.ok) {
+        return false
+      }
+
+      try {
+        const payload = (await response.json()) as { ok?: boolean }
+        return payload.ok === true
+      } catch {
+        return false
+      }
+    })
+    .catch(() => false)
+    .then(available => {
+      fileServiceAvailabilityCache.set(key, {
+        available,
+        expiresAt: Date.now() + FILE_SERVICE_AVAILABILITY_TTL_MS,
+      })
+      return available
+    })
+    .finally(() => {
+      fileServiceAvailabilityInflight.delete(key)
+    })
+
+  fileServiceAvailabilityInflight.set(key, request)
+  return request
 }
 
 /**
