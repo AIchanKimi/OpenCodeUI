@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
-import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { attachAbortHandlers } from './streaming.mjs'
 
 const port = Number(process.env.FILE_SERVICE_PORT || '4097')
 const basePath = resolve(process.env.FILE_SERVICE_BASE_PATH || '/workspace')
@@ -199,6 +201,43 @@ function getClientError(statusCode, fallbackMessage) {
   }
 }
 
+async function createArchiveFile(targetPath) {
+  const archiveDirectory = await mkdtemp(join(tmpdir(), 'opencodeui-archive-'))
+  const archivePath = join(archiveDirectory, `${basename(targetPath) || 'archive'}.zip`)
+
+  return await new Promise((resolvePromise, rejectPromise) => {
+    const zipProcess = spawn('zip', ['-yr', archivePath, basename(targetPath)], {
+      cwd: dirname(targetPath),
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+
+    let stderr = ''
+    zipProcess.stderr.on('data', chunk => {
+      if (stderr.length >= maxErrorOutput) {
+        return
+      }
+      stderr += chunk.toString().slice(0, maxErrorOutput - stderr.length)
+    })
+
+    const archiveTimeout = setTimeout(() => {
+      if (!zipProcess.killed) {
+        zipProcess.kill('SIGKILL')
+      }
+    }, archiveTimeoutMs)
+
+    zipProcess.on('close', code => {
+      clearTimeout(archiveTimeout)
+      if (code === 0) {
+        resolvePromise({ archiveDirectory, archivePath })
+        return
+      }
+
+      rm(archiveDirectory, { recursive: true, force: true }).catch(() => {})
+      rejectPromise(new Error(stderr.trim() || 'Failed to create archive'))
+    })
+  })
+}
+
 function streamArchive(targetPath, request, response) {
   if (activeArchiveCount >= maxConcurrentArchives) {
     writeJson(response, 429, { error: 'Too many concurrent archive requests' })
@@ -207,64 +246,61 @@ function streamArchive(targetPath, request, response) {
 
   activeArchiveCount += 1
   const outputName = `${basename(targetPath) || 'archive'}.zip`
-  const zipProcess = spawn('zip', ['-yr', '-', basename(targetPath)], {
-    cwd: dirname(targetPath),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
 
-  let stderr = ''
-  zipProcess.stderr.on('data', chunk => {
-    if (stderr.length >= maxErrorOutput) {
-      return
-    }
-    stderr += chunk.toString().slice(0, maxErrorOutput - stderr.length)
-  })
-
-  const archiveTimeout = setTimeout(() => {
-    if (!zipProcess.killed) {
-      zipProcess.kill('SIGKILL')
-    }
-  }, archiveTimeoutMs)
-
-  response.writeHead(200, {
-    'Content-Type': 'application/zip',
-    'Content-Disposition': buildContentDisposition(outputName),
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  })
-
-  zipProcess.stdout.pipe(response)
-
-  const stopProcess = () => {
-    if (!zipProcess.killed) {
-      zipProcess.kill('SIGTERM')
-    }
-  }
-
-  request.on('close', stopProcess)
-  response.on('close', stopProcess)
-
-  zipProcess.on('close', code => {
-    clearTimeout(archiveTimeout)
-    activeArchiveCount = Math.max(0, activeArchiveCount - 1)
-    request.off('close', stopProcess)
-    response.off('close', stopProcess)
-
-    if (code === 0) {
-      if (!response.writableEnded) {
-        response.end()
+  createArchiveFile(targetPath)
+    .then(async ({ archiveDirectory, archivePath }) => {
+      const archiveInfo = await stat(archivePath)
+      const archiveStream = createReadStream(archivePath)
+      const cleanup = () => {
+        archiveStream.destroy()
+        rm(archiveDirectory, { recursive: true, force: true }).catch(() => {})
       }
-      return
-    }
+      const detachAbortHandlers = attachAbortHandlers(request, response, cleanup)
 
-    if (!response.headersSent) {
-      console.error(`[file-service] archive failed (${code}): ${stderr.trim() || 'no stderr output'}`)
-      writeJson(response, 500, { error: 'Failed to create archive' })
-      return
-    }
+      response.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': buildContentDisposition(outputName),
+        'Content-Length': String(archiveInfo.size),
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      })
 
-    response.destroy(new Error('Failed to create archive'))
-  })
+      archiveStream.pipe(response)
+
+      archiveStream.on('error', error => {
+        detachAbortHandlers()
+        cleanup()
+        console.error('[file-service] archive stream failed:', error)
+        if (!response.headersSent) {
+          writeJson(response, 500, { error: 'Failed to create archive' })
+          return
+        }
+        response.destroy(new Error('Failed to create archive'))
+      })
+
+      response.on('finish', () => {
+        detachAbortHandlers()
+        rm(archiveDirectory, { recursive: true, force: true }).catch(() => {})
+      })
+
+      response.on('close', () => {
+        if (!response.writableEnded) {
+          detachAbortHandlers()
+          cleanup()
+        }
+      })
+    })
+    .catch(error => {
+      console.error('[file-service] archive failed:', error)
+      if (!response.headersSent) {
+        writeJson(response, 500, { error: 'Failed to create archive' })
+        return
+      }
+      response.destroy(new Error('Failed to create archive'))
+    })
+    .finally(() => {
+      activeArchiveCount = Math.max(0, activeArchiveCount - 1)
+    })
 }
 
 function streamFile(targetPath, request, response) {
@@ -275,8 +311,7 @@ function streamFile(targetPath, request, response) {
     fileStream.destroy()
   }
 
-  request.on('close', stopStream)
-  response.on('close', stopStream)
+  const detachAbortHandlers = attachAbortHandlers(request, response, stopStream)
 
   stat(targetPath)
     .then(info => {
@@ -291,16 +326,14 @@ function streamFile(targetPath, request, response) {
       fileStream.pipe(response)
     })
     .catch(error => {
-      request.off('close', stopStream)
-      response.off('close', stopStream)
+      detachAbortHandlers()
       fileStream.destroy()
       console.error('[file-service] file stat failed:', error)
       writeJson(response, 500, { error: 'Failed to download file' })
     })
 
   fileStream.on('error', error => {
-    request.off('close', stopStream)
-    response.off('close', stopStream)
+    detachAbortHandlers()
     console.error('[file-service] file stream failed:', error)
     if (!response.headersSent) {
       writeJson(response, 500, { error: 'Failed to download file' })
@@ -310,8 +343,7 @@ function streamFile(targetPath, request, response) {
   })
 
   fileStream.on('close', () => {
-    request.off('close', stopStream)
-    response.off('close', stopStream)
+    detachAbortHandlers()
   })
 }
 
