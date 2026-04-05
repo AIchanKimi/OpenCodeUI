@@ -18,6 +18,7 @@ const McpPanel = lazy(() => import('./McpPanel').then(module => ({ default: modu
 const SkillPanel = lazy(() => import('./SkillPanel').then(module => ({ default: module.SkillPanel })))
 const WorktreePanel = lazy(() => import('./WorktreePanel').then(module => ({ default: module.WorktreePanel })))
 const WebPreviewPanel = lazy(() => import('./WebPreviewPanel').then(module => ({ default: module.WebPreviewPanel })))
+const GatewayPanel = lazy(() => import('./GatewayPanel').then(module => ({ default: module.GatewayPanel })))
 
 function PanelFallback() {
   const { t } = useTranslation(['components', 'common'])
@@ -141,6 +142,12 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId }: Rig
           return (
             <Suspense fallback={<PanelFallback />}>
               <WorktreePanel isResizing={isPanelResizing} />
+            </Suspense>
+          )
+        case 'gateway':
+          return (
+            <Suspense fallback={<PanelFallback />}>
+              <GatewayPanel isResizing={isPanelResizing} />
             </Suspense>
           )
         default:

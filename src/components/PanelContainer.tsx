@@ -17,8 +17,10 @@ import {
   PlugIcon,
   TeachIcon,
   GitWorktreeIcon,
+  LinkIcon,
 } from './Icons'
 import { layoutStore, useLayoutStore, type PanelTab, type PanelPosition, type PanelTabType } from '../store/layoutStore'
+import { useGatewayAvailability } from '../hooks/useGatewayAvailability'
 
 // ============================================
 // Types
@@ -40,6 +42,7 @@ const TAB_ICONS: Record<PanelTabType, React.ReactNode> = {
   mcp: <PlugIcon size={12} />,
   skill: <TeachIcon size={12} />,
   worktree: <GitWorktreeIcon size={12} />,
+  gateway: <LinkIcon size={12} />,
 }
 
 // Tab 显示名称
@@ -72,6 +75,8 @@ function getTabLabel(tab: PanelTab, tabs: PanelTab[], t: (key: string) => string
       return t('panelContainer.skills')
     case 'worktree':
       return t('panelContainer.worktrees')
+    case 'gateway':
+      return t('panelContainer.gateway')
     default:
       return t('panelContainer.tab')
   }
@@ -94,6 +99,8 @@ export const PanelContainer = memo(function PanelContainer({
   const tabs = layout.panelTabs.filter(t => t.position === position)
   const activeTabId = layout.activeTabId[position]
   const activeTab = tabs.find(t => t.id === activeTabId) ?? tabs[0] ?? null
+  const { status: gatewayStatus } = useGatewayAvailability({ enabled: position === 'right' })
+  const showGatewayEntry = position === 'right' && (gatewayStatus === 'available' || gatewayStatus === 'unauthorized')
 
   // 拖拽排序状态
   const [draggedId, setDraggedId] = useState<string | null>(null)
@@ -190,10 +197,15 @@ export const PanelContainer = memo(function PanelContainer({
   // 移动到另一个面板
   const handleMoveToOtherPanel = useCallback(() => {
     if (!contextMenu) return
+    const tab = tabs.find(item => item.id === contextMenu.tabId)
+    if (tab?.type === 'gateway') {
+      setContextMenu(null)
+      return
+    }
     const targetPosition: PanelPosition = position === 'bottom' ? 'right' : 'bottom'
     layoutStore.moveTab(contextMenu.tabId, targetPosition)
     setContextMenu(null)
-  }, [contextMenu, position])
+  }, [contextMenu, position, tabs])
 
   // 拖拽处理
   const handleDragStart = useCallback((tabId: string) => {
@@ -222,6 +234,7 @@ export const PanelContainer = memo(function PanelContainer({
   }
 
   const otherPanelLabel = position === 'bottom' ? t('panelContainer.moveToRight') : t('panelContainer.moveToBottom')
+  const contextMenuTab = contextMenu ? (tabs.find(item => item.id === contextMenu.tabId) ?? null) : null
 
   return (
     <>
@@ -306,12 +319,14 @@ export const PanelContainer = memo(function PanelContainer({
             className="fixed z-[9999] bg-bg-100 border border-border-200 rounded-lg shadow-lg p-1 min-w-[160px]"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
-            <button
-              onClick={handleMoveToOtherPanel}
-              className="w-full px-2.5 py-1.5 text-left text-xs text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
-            >
-              {otherPanelLabel}
-            </button>
+            {contextMenuTab?.type !== 'gateway' && (
+              <button
+                onClick={handleMoveToOtherPanel}
+                className="w-full px-2.5 py-1.5 text-left text-xs text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
+              >
+                {otherPanelLabel}
+              </button>
+            )}
           </div>,
           document.body,
         )}
@@ -412,6 +427,20 @@ export const PanelContainer = memo(function PanelContainer({
               </span>
               {t('panelContainer.worktrees')}
             </button>
+            {showGatewayEntry && (
+              <button
+                onClick={() => {
+                  layoutStore.addGatewayTab()
+                  setAddMenuPos(null)
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
+              >
+                <span className="opacity-60 shrink-0">
+                  <LinkIcon size={12} />
+                </span>
+                {t('panelContainer.gateway')}
+              </button>
+            )}
           </div>,
           document.body,
         )}

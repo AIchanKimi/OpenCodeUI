@@ -59,4 +59,17 @@ describe('layoutStore web preview tabs', () => {
     expect(layoutStore.getState().panelTabs.find(tab => tab.id === tabId)?.url).toBe('https://example.com/')
     expect(layoutStore.getState().panelTabs.find(tab => tab.id === 'files')?.url).toBeUndefined()
   })
+
+  it('creates a gateway tab on the right and activates it', () => {
+    const tabId = layoutStore.addGatewayTab()
+    const createdTab = layoutStore.getState().panelTabs.find(tab => tab.id === tabId)
+
+    expect(createdTab).toMatchObject({
+      id: tabId,
+      type: 'gateway',
+      position: 'right',
+    })
+    expect(layoutStore.getActiveTab('right')?.id).toBe(tabId)
+    expect(layoutStore.getState().rightPanelOpen).toBe(true)
+  })
 })
