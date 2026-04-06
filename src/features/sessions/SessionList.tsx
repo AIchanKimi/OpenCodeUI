@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon } from '../../components/Icons'
+import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, CheckIcon } from '../../components/Icons'
 import { formatRelativeTime } from '../../utils/dateUtils'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
@@ -32,10 +32,16 @@ interface SessionListProps {
   /** 按父 ID 分组的直接挂出来的子 session */
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
+  // ---- 编辑模式 ----
+  isEditMode?: boolean
+  selectedSessionIds?: Set<string>
+  onToggleSessionSelection?: (sessionId: string, options?: { shiftKey?: boolean }) => void
 }
 
 // 时间分组类型
 type TimeGroup = 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older'
+
+const SESSION_GROUP_ORDER: TimeGroup[] = ['today', 'yesterday', 'previous7Days', 'previous30Days', 'older']
 
 export function SessionList({
   sessions,
@@ -58,6 +64,9 @@ export function SessionList({
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
+  isEditMode = false,
+  selectedSessionIds,
+  onToggleSessionSelection,
 }: SessionListProps) {
   const { t } = useTranslation(['commands', 'common', 'chat'])
   const { preferTouchUi } = useInputCapabilities()
@@ -169,7 +178,8 @@ export function SessionList({
           </div>
         ) : showGroups ? (
           // Grouped View
-          Object.entries(groupedSessions).map(([group, groupSessions]) => {
+          SESSION_GROUP_ORDER.map(group => {
+            const groupSessions = groupedSessions[group]
             if (groupSessions.length === 0) return null
             return (
               <div key={group}>
@@ -189,6 +199,13 @@ export function SessionList({
                         density={density}
                         showStats={showStats}
                         showDirectory={showDirectory}
+                        isEditMode={isEditMode}
+                        isChecked={selectedSessionIds?.has(session.id)}
+                        onToggleCheck={
+                          onToggleSessionSelection
+                            ? options => onToggleSessionSelection(session.id, options)
+                            : undefined
+                        }
                       />
                       {onSelectChildSession &&
                         (expandedChildSessionIds?.has(session.id) || inlineChildSessions?.has(session.id)) && (
@@ -198,6 +215,9 @@ export function SessionList({
                             fetchAll={expandedChildSessionIds?.has(session.id)}
                             children={inlineChildSessions?.get(session.id)}
                             onSelect={onSelectChildSession}
+                            isEditMode={isEditMode}
+                            selectedSessionIds={selectedSessionIds}
+                            onToggleSessionSelection={onToggleSessionSelection}
                           />
                         )}
                     </div>
@@ -225,6 +245,11 @@ export function SessionList({
                     density={density}
                     showStats={showStats}
                     showDirectory={showDirectory}
+                    isEditMode={isEditMode}
+                    isChecked={selectedSessionIds?.has(session.id)}
+                    onToggleCheck={
+                      onToggleSessionSelection ? options => onToggleSessionSelection(session.id, options) : undefined
+                    }
                   />
                   {hasChildren && onSelectChildSession && (
                     <SessionChildrenSlot
@@ -233,6 +258,9 @@ export function SessionList({
                       fetchAll={shouldFetchAll}
                       children={inlineChildren}
                       onSelect={onSelectChildSession}
+                      isEditMode={isEditMode}
+                      selectedSessionIds={selectedSessionIds}
+                      onToggleSessionSelection={onToggleSessionSelection}
                     />
                   )}
                 </div>
@@ -280,6 +308,10 @@ export interface SessionListItemProps {
   density?: 'default' | 'compact' | 'minimal'
   showStats?: boolean
   showDirectory?: boolean
+  // ---- 编辑模式 ----
+  isEditMode?: boolean
+  isChecked?: boolean
+  onToggleCheck?: (options?: { shiftKey?: boolean }) => void
 }
 
 export function SessionListItem({
@@ -292,6 +324,9 @@ export function SessionListItem({
   density = 'default',
   showStats = true,
   showDirectory = false,
+  isEditMode = false,
+  isChecked = false,
+  onToggleCheck,
 }: SessionListItemProps) {
   const { t } = useTranslation(['commands', 'common', 'chat'])
   const [isEditing, setIsEditing] = useState(false)
@@ -414,6 +449,7 @@ export function SessionListItem({
   }, [])
 
   const handleClick = () => {
+    if (isEditMode) return
     // 如果操作按钮已显示，点击空白区域收起它，不触发 select
     if (showActions) {
       setShowActions(false)
@@ -421,6 +457,16 @@ export function SessionListItem({
     }
     notificationStore.markSessionNotificationsRead(session.id, 'completed')
     onSelect()
+  }
+
+  const handleCheckClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onToggleCheck?.({ shiftKey: e.shiftKey })
+  }
+
+  const handleCheckMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
   }
 
   if (isEditing) {
@@ -458,26 +504,51 @@ export function SessionListItem({
       <div
         ref={itemRef}
         onClick={handleClick}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onTouchStart={isEditMode ? undefined : handleTouchStart}
+        onTouchMove={isEditMode ? undefined : handleTouchMove}
+        onTouchEnd={isEditMode ? undefined : handleTouchEnd}
         className={`group relative flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-default transition-colors duration-150 select-none ${
-          isSelected ? 'bg-bg-200/80 text-text-100' : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
-        } ${showActions ? 'bg-bg-200/40' : ''}`}
+          isSelected && !isEditMode
+            ? 'bg-bg-200/80 text-text-100'
+            : isEditMode && isChecked
+              ? 'text-text-100'
+              : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
+        } ${showActions && !isEditMode ? 'bg-bg-200/40' : ''}`}
       >
-        {/* 活跃状态圆点 / 已完成未读圆点 */}
-        <span className="relative shrink-0 flex items-center justify-center w-3 h-3" title={statusIndicatorTitle}>
-          {activeStatus ? (
-            <>
-              <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
-              {activeStatus.pulse && (
-                <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot} animate-ping opacity-50`} />
-              )}
-            </>
-          ) : hasUnreadCompletedNotification ? (
-            <span className="absolute w-1.5 h-1.5 rounded-full bg-accent-main-100" />
-          ) : null}
-        </span>
+        {/* 选中左侧色条 */}
+        {isEditMode && isChecked && (
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent-main-100" />
+        )}
+        {/* 编辑模式：checkbox；普通模式：活跃状态圆点 */}
+        {isEditMode ? (
+          <button
+            type="button"
+            aria-pressed={isChecked}
+            data-compact
+            data-selection-kind="session"
+            data-selection-id={session.id}
+            onMouseDown={handleCheckMouseDown}
+            onClick={handleCheckClick}
+            className={`shrink-0 flex items-center justify-center w-3.5 h-3.5 rounded-full cursor-pointer transition-colors ${
+              isChecked ? 'bg-accent-main-100' : 'border border-text-500/50 hover:border-text-400'
+            }`}
+          >
+            {isChecked && <CheckIcon size={9} className="text-white" />}
+          </button>
+        ) : (
+          <span className="relative shrink-0 flex items-center justify-center w-3 h-3" title={statusIndicatorTitle}>
+            {activeStatus ? (
+              <>
+                <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
+                {activeStatus.pulse && (
+                  <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot} animate-ping opacity-50`} />
+                )}
+              </>
+            ) : hasUnreadCompletedNotification ? (
+              <span className="absolute w-1.5 h-1.5 rounded-full bg-accent-main-100" />
+            ) : null}
+          </span>
+        )}
 
         <div
           className={`flex min-w-0 flex-1 items-center gap-1.5 transition-[padding] duration-200 ${
@@ -511,29 +582,31 @@ export function SessionListItem({
           )}
         </div>
 
-        {/* 操作按钮 */}
-        <div
-          className={`absolute right-2 z-10 shrink-0 flex items-center gap-0.5 transition-opacity duration-150 ${
-            actionsVisible
-              ? 'opacity-100 pointer-events-auto'
-              : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
-          }`}
-        >
-          <button
-            onClick={handleStartEdit}
-            className="p-1 rounded hover:bg-bg-300 text-text-500 hover:text-text-200 transition-colors focus:outline-none"
-            title={t('sessions.rename')}
+        {/* 操作按钮 — 编辑模式下隐藏 */}
+        {!isEditMode && (
+          <div
+            className={`absolute right-2 z-10 shrink-0 flex items-center gap-0.5 transition-opacity duration-150 ${
+              actionsVisible
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
+            }`}
           >
-            <PencilIcon className="w-3 h-3" />
-          </button>
-          <button
-            onClick={handleDelete}
-            className="p-1 rounded hover:bg-danger-bg text-text-500 hover:text-danger-100 transition-colors focus:outline-none"
-            title={t('common:delete')}
-          >
-            <TrashIcon className="w-3 h-3" />
-          </button>
-        </div>
+            <button
+              onClick={handleStartEdit}
+              className="p-1 rounded hover:bg-bg-300 text-text-500 hover:text-text-200 transition-colors focus:outline-none"
+              title={t('sessions.rename')}
+            >
+              <PencilIcon className="w-3 h-3" />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="p-1 rounded hover:bg-danger-bg text-text-500 hover:text-danger-100 transition-colors focus:outline-none"
+              title={t('common:delete')}
+            >
+              <TrashIcon className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -545,15 +618,36 @@ export function SessionListItem({
     <div
       ref={itemRef}
       onClick={handleClick}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={isEditMode ? undefined : handleTouchStart}
+      onTouchMove={isEditMode ? undefined : handleTouchMove}
+      onTouchEnd={isEditMode ? undefined : handleTouchEnd}
       className={`group relative flex items-start ${isCompact ? 'px-3 py-2' : 'px-3 py-2.5'} rounded-lg cursor-default transition-all duration-200 border border-transparent select-none ${
-        isSelected ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50' : 'hover:bg-bg-200/50'
-      } ${showActions ? 'bg-bg-200/50' : ''}`}
+        isSelected && !isEditMode ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50' : 'hover:bg-bg-200/50'
+      } ${showActions && !isEditMode ? 'bg-bg-200/50' : ''}`}
     >
+      {/* 选中左侧色条 */}
+      {isEditMode && isChecked && (
+        <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-accent-main-100" />
+      )}
+      {/* 编辑模式 checkbox */}
+      {isEditMode && (
+        <button
+          type="button"
+          aria-pressed={isChecked}
+          data-compact
+          data-selection-kind="session"
+          data-selection-id={session.id}
+          onMouseDown={handleCheckMouseDown}
+          onClick={handleCheckClick}
+          className={`shrink-0 flex items-center justify-center w-4 h-4 mt-0.5 mr-2 rounded-full cursor-pointer transition-colors ${
+            isChecked ? 'bg-accent-main-100' : 'border border-text-500/50 hover:border-text-400'
+          }`}
+        >
+          {isChecked && <CheckIcon size={11} className="text-white" />}
+        </button>
+      )}
       <div
-        className={`flex-1 min-w-0 transition-[padding] duration-200 ${showActions ? 'pr-[60px]' : 'pr-1 group-hover:pr-[60px]'}`}
+        className={`flex-1 min-w-0 transition-[padding] duration-200 ${!isEditMode && showActions ? 'pr-[60px]' : !isEditMode ? 'pr-1 group-hover:pr-[60px]' : 'pr-1'}`}
       >
         {/* Row 1: Title */}
         <p
@@ -618,29 +712,31 @@ export function SessionListItem({
         </div>
       </div>
 
-      {/* Actions: hover on desktop, long-press on mobile */}
-      <div
-        className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 transition-all duration-200 z-10 ${
-          actionsVisible
-            ? 'opacity-100 pointer-events-auto'
-            : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
-        }`}
-      >
-        <button
-          onClick={handleStartEdit}
-          className="p-1.5 rounded-md hover:bg-bg-300 active:bg-bg-300 text-text-400 hover:text-text-100 transition-colors focus:outline-none"
-          title={t('sessions.rename')}
+      {/* Actions: hover on desktop, long-press on mobile — 编辑模式下隐藏 */}
+      {!isEditMode && (
+        <div
+          className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 transition-all duration-200 z-10 ${
+            actionsVisible
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'
+          }`}
         >
-          <PencilIcon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleDelete}
-          className="p-1.5 rounded-md hover:bg-danger-bg active:bg-danger-bg text-text-400 hover:text-danger-100 active:text-danger-100 transition-colors focus:outline-none"
-          title={t('common:delete')}
-        >
-          <TrashIcon className="w-3.5 h-3.5" />
-        </button>
-      </div>
+          <button
+            onClick={handleStartEdit}
+            className="p-1.5 rounded-md hover:bg-bg-300 active:bg-bg-300 text-text-400 hover:text-text-100 transition-colors focus:outline-none"
+            title={t('sessions.rename')}
+          >
+            <PencilIcon className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleDelete}
+            className="p-1.5 rounded-md hover:bg-danger-bg active:bg-danger-bg text-text-400 hover:text-danger-100 active:text-danger-100 transition-colors focus:outline-none"
+            title={t('common:delete')}
+          >
+            <TrashIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
