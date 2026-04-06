@@ -147,14 +147,15 @@ export function useSessionState(sessionId: string | null): SessionStateSnapshot 
 
     const state = messageStore.getSessionState(sessionId)
     if (!state) return null
+    const visibleMessages = messageStore.getVisibleMessages(sessionId)
 
     // 构建 snapshot 并缓存
     const snapshot: SessionStateSnapshot = {
-      messages: state.messages,
+      messages: visibleMessages,
       isStreaming: state.isStreaming,
       loadState: state.loadState,
       revertState: state.revertState,
-      canUndo: !state.isStreaming && state.messages.some(m => m.info.role === 'user'),
+      canUndo: messageStore.canUndo(sessionId),
       canRedo: !state.isStreaming && (state.revertState?.history.length ?? 0) > 0,
       redoSteps: state.revertState?.history.length ?? 0,
       revertedContent: state.revertState?.history?.[0] ?? null,

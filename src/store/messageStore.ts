@@ -577,7 +577,7 @@ class MessageStore {
     if (!sessionId) return false
     const state = this.sessions.get(sessionId)
     if (!state || state.isStreaming) return false
-    return state.messages.some(m => m.info.role === 'user')
+    return this.getVisibleMessages(sessionId).some(m => m.info.role === 'user')
   }
 
   canRedo(sessionId: string | null): boolean {

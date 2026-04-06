@@ -45,7 +45,7 @@ import {
 import { getMessageText, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
-import { UNDO_SCROLL_DELAY_MS, STORAGE_KEY_SELECTED_AGENT } from '../constants'
+import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import type { ChatAreaHandle } from '../features/chat'
 
 const handleError = createErrorHandler('session')
@@ -674,10 +674,6 @@ export function useChatSession({
 
       await animateUndo(messageIdsToRemove)
       await handleUndo(userMessageId)
-
-      setTimeout(() => {
-        chatAreaRef.current?.scrollToLastMessage()
-      }, UNDO_SCROLL_DELAY_MS)
     },
     [messages, animateUndo, handleUndo], // eslint-disable-line react-hooks/exhaustive-deps -- chatAreaRef is a stable ref
   )
