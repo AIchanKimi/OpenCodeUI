@@ -171,6 +171,53 @@ describe('LayoutStore panel and terminal layout', () => {
     expect(restored.panelTabs.some(tab => tab.id === 'term-1')).toBe(false)
   })
 
+  it('restores web preview tabs with their url', () => {
+    const store = new LayoutStore()
+
+    const tabId = store.openWebPreviewUrl('https://example.com/preview', 'bottom')
+    const snapshot = JSON.parse(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT) ?? 'null')
+
+    expect(snapshot.panelTabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: tabId,
+          type: 'web-preview',
+          position: 'bottom',
+          url: 'https://example.com/preview',
+        }),
+      ]),
+    )
+
+    const restored = new LayoutStore().getState()
+    expect(restored.panelTabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: tabId,
+          type: 'web-preview',
+          position: 'bottom',
+          url: 'https://example.com/preview',
+        }),
+      ]),
+    )
+  })
+
+  it('restores gateway tabs after reload', () => {
+    const store = new LayoutStore()
+
+    store.addGatewayTab()
+
+    const restored = new LayoutStore().getState()
+    expect(restored.panelTabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'gateway',
+          type: 'gateway',
+          position: 'right',
+        }),
+      ]),
+    )
+  })
+
   it('keeps bottom and right panels open when syncing a directory with no terminal sessions', () => {
     const store = new LayoutStore()
 

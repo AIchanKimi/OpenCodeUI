@@ -7,7 +7,7 @@ export type PanelPosition = 'bottom' | 'right'
 
 // 面板内容类型
 export type PanelTabType = 'terminal' | 'files' | 'changes' | 'web-preview' | 'mcp' | 'skill' | 'worktree' | 'gateway'
-type PersistedPanelTabType = Exclude<PanelTabType, 'terminal' | 'web-preview' | 'gateway'>
+type PersistedPanelTabType = Exclude<PanelTabType, 'terminal'>
 
 // 统一的面板标签
 export interface PanelTab {
@@ -84,6 +84,7 @@ interface PersistedPanelTab {
   type: PersistedPanelTabType
   position: PanelPosition
   title?: string
+  url?: string
 }
 
 interface PersistedPanelLayout {
@@ -105,7 +106,15 @@ interface PersistedTerminalLayoutMap {
 }
 
 const PANEL_POSITIONS: PanelPosition[] = ['bottom', 'right']
-const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = ['files', 'changes', 'mcp', 'skill', 'worktree']
+const PERSISTED_PANEL_TAB_TYPES: PersistedPanelTabType[] = [
+  'files',
+  'changes',
+  'web-preview',
+  'mcp',
+  'skill',
+  'worktree',
+  'gateway',
+]
 
 function createDefaultPanelTabs(): PanelTab[] {
   return [
@@ -141,6 +150,16 @@ function normalizePersistedPanelTab(tab: PersistedPanelTab): PanelTab {
     }
   }
 
+  if (tab.type === 'web-preview') {
+    return {
+      id: tab.id,
+      type: 'web-preview',
+      position: tab.position,
+      title: tab.title,
+      url: tab.url ?? '',
+    }
+  }
+
   return {
     id: tab.id,
     type: tab.type,
@@ -172,7 +191,12 @@ function sanitizePersistedPanelLayout(raw: unknown): PersistedPanelLayout | null
   if (!raw || typeof raw !== 'object') return null
 
   const data = raw as Partial<PersistedPanelLayout>
-  if (data.version !== 1 || !Array.isArray(data.panelTabs) || !data.activeTabId || typeof data.activeTabId !== 'object') {
+  if (
+    data.version !== 1 ||
+    !Array.isArray(data.panelTabs) ||
+    !data.activeTabId ||
+    typeof data.activeTabId !== 'object'
+  ) {
     return null
   }
 
@@ -184,15 +208,23 @@ function sanitizePersistedPanelLayout(raw: unknown): PersistedPanelLayout | null
     if (typeof tab.id !== 'string' || !tab.id || seenIds.has(tab.id)) continue
     if (!isPersistedPanelTabType(tab.type) || !isPanelPosition(tab.position)) continue
     if (tab.title !== undefined && typeof tab.title !== 'string') continue
+    if (tab.url !== undefined && typeof tab.url !== 'string') continue
     seenIds.add(tab.id)
-    panelTabs.push({ id: tab.id, type: tab.type, position: tab.position, title: tab.title })
+    panelTabs.push({ id: tab.id, type: tab.type, position: tab.position, title: tab.title, url: tab.url })
   }
 
-  const normalizedPanelTabs = panelTabs.length > 0 ? panelTabs.map(normalizePersistedPanelTab) : createDefaultPanelTabs()
+  const normalizedPanelTabs =
+    panelTabs.length > 0 ? panelTabs.map(normalizePersistedPanelTab) : createDefaultPanelTabs()
 
   return {
     version: 1,
-    panelTabs: normalizedPanelTabs.map(tab => ({ id: tab.id, type: tab.type as PersistedPanelTabType, position: tab.position, title: tab.title })),
+    panelTabs: normalizedPanelTabs.map(tab => ({
+      id: tab.id,
+      type: tab.type as PersistedPanelTabType,
+      position: tab.position,
+      title: tab.title,
+      url: tab.type === 'web-preview' ? (tab.url ?? '') : undefined,
+    })),
     activeTabId: normalizeActiveTabId(data.activeTabId, normalizedPanelTabs),
     rightPanelOpen: data.rightPanelOpen === true,
     bottomPanelOpen: data.bottomPanelOpen === true,
@@ -349,6 +381,7 @@ export class LayoutStore {
             type: tab.type,
             position: tab.position,
             title: tab.title,
+            url: tab.type === 'web-preview' ? (tab.url ?? '') : undefined,
           })),
         activeTabId: { ...this.state.activeTabId },
         rightPanelOpen: this.state.rightPanelOpen,
