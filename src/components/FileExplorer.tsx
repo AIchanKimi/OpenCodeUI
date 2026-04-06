@@ -11,15 +11,14 @@ import {
   useEffect,
   useRef,
   useState,
-  useId,
   type DragEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
+import { useHorizontalSplitResize } from '../hooks/useHorizontalSplitResize'
 import { layoutStore, type PreviewFile } from '../store/layoutStore'
 import {
   ChevronRightIcon,
@@ -49,10 +48,14 @@ import {
 import { downloadBlob, downloadFileContent } from '../utils/downloadUtils'
 import { downloadDirectoryArchive, downloadFileAsset, saveFileContent } from '../api/file'
 import type { FileContent } from '../api/types'
+import { FileTextEditor } from './file-text-editor'
 
 // 常量
 const MIN_TREE_HEIGHT = 100
 const MIN_PREVIEW_HEIGHT = 150
+const MIN_TREE_WIDTH = 200
+const MIN_PREVIEW_WIDTH = 360
+const HORIZONTAL_LAYOUT_BREAKPOINT = 1000
 
 interface EditorDraftState {
   originalContent: string
@@ -89,12 +92,13 @@ export const FileExplorer = memo(function FileExplorer({
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
+  const [isHorizontalLayout, setIsHorizontalLayout] = useState(false)
   const {
     splitHeight: treeHeight,
-    isResizing,
+    isResizing: isVerticalResizing,
     resetSplitHeight,
-    handleResizeStart,
-    handleTouchResizeStart,
+    handleResizeStart: handleVerticalResizeStart,
+    handleTouchResizeStart: handleVerticalTouchResizeStart,
   } = useVerticalSplitResize({
     containerRef,
     primaryRef: treeRef,
@@ -102,9 +106,56 @@ export const FileExplorer = memo(function FileExplorer({
     minPrimaryHeight: MIN_TREE_HEIGHT,
     minSecondaryHeight: MIN_PREVIEW_HEIGHT,
   })
+  const {
+    splitWidth: treeWidth,
+    isResizing: isHorizontalResizing,
+    resetSplitWidth,
+    handleResizeStart: handleHorizontalResizeStart,
+    handleTouchResizeStart: handleHorizontalTouchResizeStart,
+  } = useHorizontalSplitResize({
+    containerRef,
+    primaryRef: treeRef,
+    cssVariableName: '--tree-width',
+    minPrimaryWidth: MIN_TREE_WIDTH,
+    minSecondaryWidth: MIN_PREVIEW_WIDTH,
+  })
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const updateLayout = (width: number) => {
+      setIsHorizontalLayout(width >= HORIZONTAL_LAYOUT_BREAKPOINT)
+    }
+
+    updateLayout(container.clientWidth)
+
+    const resizeObserver = new ResizeObserver(entries => {
+      const entry = entries[0]
+      const nextWidth = entry?.contentRect.width ?? container.clientWidth
+      updateLayout(nextWidth)
+    })
+
+    resizeObserver.observe(container)
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isHorizontalLayout) {
+      resetSplitHeight()
+      return
+    }
+
+    resetSplitWidth()
+  }, [isHorizontalLayout, resetSplitHeight, resetSplitWidth])
 
   // 综合 resize 状态 - 外部面板 resize 或内部 resize
-  const isAnyResizing = isPanelResizing || isResizing
+  const isAnyResizing = isPanelResizing || isVerticalResizing || isHorizontalResizing
   const [downloadingPaths, setDownloadingPaths] = useState<Set<string>>(new Set())
   const downloadingPathsRef = useRef<Set<string>>(new Set())
   const [editorDrafts, setEditorDrafts] = useState<Record<string, EditorDraftState>>({})
@@ -338,7 +389,8 @@ export const FileExplorer = memo(function FileExplorer({
   const handleClosePreview = useCallback(() => {
     layoutStore.closeAllFilePreviews(panelTabId)
     resetSplitHeight()
-  }, [panelTabId, resetSplitHeight])
+    resetSplitWidth()
+  }, [panelTabId, resetSplitHeight, resetSplitWidth])
 
   const handleActivatePreview = useCallback(
     (path: string) => {
@@ -383,17 +435,24 @@ export const FileExplorer = memo(function FileExplorer({
     )
   }
 
+  const activeResizeStart = isHorizontalLayout ? handleHorizontalResizeStart : handleVerticalResizeStart
+  const activeTouchResizeStart = isHorizontalLayout ? handleHorizontalTouchResizeStart : handleVerticalTouchResizeStart
+  const isResizing = isHorizontalLayout ? isHorizontalResizing : isVerticalResizing
+
   return (
-    <div ref={containerRef} className="flex flex-col h-full">
-      {/* File Tree - 使用 CSS 变量控制高度 */}
+    <div ref={containerRef} className={`flex h-full min-h-0 min-w-0 ${isHorizontalLayout ? 'flex-row' : 'flex-col'}`}>
+      {/* File Tree - 使用 CSS 变量控制主区域尺寸 */}
       <div
         ref={treeRef}
         className="overflow-hidden flex flex-col shrink-0"
         style={
           {
             '--tree-height': treeHeight !== null ? `${treeHeight}px` : '40%',
-            height: showPreview ? 'var(--tree-height)' : '100%',
-            minHeight: showPreview ? MIN_TREE_HEIGHT : undefined,
+            '--tree-width': treeWidth !== null ? `${treeWidth}px` : `${MIN_TREE_WIDTH}px`,
+            width: showPreview && isHorizontalLayout ? 'var(--tree-width)' : '100%',
+            height: showPreview && !isHorizontalLayout ? 'var(--tree-height)' : '100%',
+            minHeight: showPreview && !isHorizontalLayout ? MIN_TREE_HEIGHT : undefined,
+            minWidth: showPreview && isHorizontalLayout ? MIN_TREE_WIDTH : undefined,
           } as React.CSSProperties
         }
       >
@@ -449,18 +508,22 @@ export const FileExplorer = memo(function FileExplorer({
       {showPreview && (
         <div
           className={`
-            h-1.5 cursor-row-resize shrink-0 relative
+            shrink-0 relative
             hover:bg-accent-main-100/50 active:bg-accent-main-100 transition-colors
+            ${isHorizontalLayout ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize'}
             ${isResizing ? 'bg-accent-main-100' : 'bg-bg-200/60'}
           `}
-          onMouseDown={handleResizeStart}
-          onTouchStart={handleTouchResizeStart}
+          onMouseDown={activeResizeStart}
+          onTouchStart={activeTouchResizeStart}
         />
       )}
 
       {/* Preview Area */}
       {showPreview && (
-        <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: MIN_PREVIEW_HEIGHT }}>
+        <div
+          className="flex-1 flex flex-col min-h-0 min-w-0"
+          style={isHorizontalLayout ? { minWidth: MIN_PREVIEW_WIDTH } : { minHeight: MIN_PREVIEW_HEIGHT }}
+        >
           <FilePreview
             directory={directory}
             previewFiles={previewFiles}
@@ -698,6 +761,7 @@ function FilePreview({
   const fileName = path?.split(/[/\\]/).pop() || 'Untitled'
   const language = path ? detectLanguage(path) : 'text'
   const editableText = displayEditableText(editorText, content, fileServiceAvailable)
+  const showEditableText = displayContentType(content) === 'text' && editableText !== null
 
   // 下载当前文件
   const handleDownload = useCallback(() => {
@@ -737,65 +801,93 @@ function FilePreview({
 
   // 处理内容类型分发
   const displayContent = useMemo(() => {
-    if (!content) return null
-
-    const category = getPreviewCategory(content.mimeType)
-
-    // 文本型可渲染媒体（如 SVG）— 同时提供渲染和源码
-    // 优先级最高：即使以 base64 传输，也支持解码为文本查看
-    if (isTextualMedia(content.mimeType)) {
-      const isBase64 = isBinaryContent(content.encoding)
-      const text = isBase64 ? decodeBase64Text(content.content) : content.content
-      const dataUrl = isBase64
-        ? buildDataUrl(content.mimeType!, content.content)
-        : buildTextDataUrl(content.mimeType!, content.content)
-      return {
-        type: 'textMedia' as const,
-        text,
-        dataUrl,
-        category: category!,
-        mimeType: content.mimeType!,
-      }
-    }
-
-    // 二进制 + 可预览的媒体类型
-    if (isBinaryContent(content.encoding) && category) {
-      return {
-        type: 'media' as const,
-        category,
-        dataUrl: buildDataUrl(content.mimeType!, content.content),
-        mimeType: content.mimeType!,
-      }
-    }
-
-    // 二进制 + 不可预览
-    if (isBinaryContent(content.encoding)) {
-      return {
-        type: 'binary' as const,
-        mimeType: content.mimeType || 'application/octet-stream',
-      }
-    }
-
-    // diff 渲染交给 Changes 面板，Files 预览只显示文件内容
-    // if (content.patch && content.patch.hunks.length > 0) {
-    //   return {
-    //     type: 'diff' as const,
-    //     hunks: content.patch.hunks,
-    //   }
-    // }
-
-    // 显示文件内容
-    return {
-      type: 'text' as const,
-      text: content.content,
-    }
+    return buildDisplayContent(content)
   }, [content])
 
-  // 全屏内容
-  const fullscreenContent = useMemo((): ReactNode => {
-    if (!displayContent) return null
-    switch (displayContent.type) {
-      case 'media':
+  const canSave = path !== null && editableText !== null && isDirty && !isSaving
+
+  const renderSaveButton = useCallback(
+    (size: 'compact' | 'fullscreen' = 'compact') => {
+      if (!fileServiceAvailable || editableText === null) {
+        return null
+      }
+
+      return (
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave}
+          aria-label={`${t('common:save')} ${fileName}`}
+          className={
+            size === 'fullscreen'
+              ? 'px-2.5 py-1.5 text-[11px] rounded border border-bg-300 text-text-300 hover:text-text-100 hover:bg-bg-300/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+              : 'px-2 py-1 text-[11px] rounded border border-bg-300 text-text-300 hover:text-text-100 hover:bg-bg-300/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+          }
+          title={`${t('common:save')} ${fileName}`}
+        >
+          {isSaving ? <SpinnerIcon size={12} className="animate-spin" /> : t('common:save')}
+        </button>
+      )
+    },
+    [canSave, editableText, fileName, fileServiceAvailable, isSaving, onSave, t],
+  )
+
+  const renderDownloadButton = useCallback(
+    (size: 'compact' | 'fullscreen' = 'compact') => {
+      if (!fileServiceAvailable) {
+        return null
+      }
+
+      return (
+        <button
+          onClick={handleDownload}
+          className={
+            size === 'fullscreen'
+              ? 'p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-lg transition-colors'
+              : 'p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors'
+          }
+          title={`${t('common:save')} ${fileName}`}
+        >
+          <DownloadIcon size={size === 'fullscreen' ? 14 : 12} />
+        </button>
+      )
+    },
+    [fileName, fileServiceAvailable, handleDownload, t],
+  )
+
+  const renderContent = useCallback(
+    (isFullscreen: boolean) => {
+      if (isLoading) {
+        return (
+          <div className="flex items-center justify-center h-full text-text-400 text-xs">{t('common:loading')}</div>
+        )
+      }
+
+      if (error) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full text-danger-100 text-xs gap-1 px-4">
+            <AlertCircleIcon size={16} />
+            <span className="text-center">{error}</span>
+          </div>
+        )
+      }
+
+      if (displayContent?.type === 'text' && showEditableText) {
+        return (
+          <FileTextEditor
+            fileName={fileName}
+            value={editableText}
+            language={language || 'text'}
+            isDirty={isDirty}
+            isSaving={isSaving}
+            saveError={saveError}
+            onChange={onEditorChange}
+            onSave={onSave}
+          />
+        )
+      }
+
+      if (displayContent?.type === 'media') {
         return (
           <MediaPreview
             category={displayContent.category}
@@ -804,36 +896,59 @@ function FilePreview({
             fileName={fileName}
           />
         )
-      case 'binary':
+      }
+
+      if (displayContent?.type === 'binary') {
         return <BinaryPlaceholder mimeType={displayContent.mimeType} fileName={fileName} onDownload={handleDownload} />
-      case 'textMedia':
+      }
+
+      if (displayContent?.type === 'textMedia') {
         return (
           <TextMediaPreview
             dataUrl={displayContent.dataUrl}
             text={displayContent.text}
             language={language || 'xml'}
             fileName={fileName}
-            isResizing={false}
+            isResizing={!isFullscreen && isResizing}
           />
         )
-      case 'text':
-        return <CodePreview code={editableText ?? displayContent.text} language={language || 'text'} />
-      default:
-        return null
-    }
-  }, [displayContent, editableText, fileName, language, handleDownload])
-
-  const handleEditorKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        onSave()
       }
+
+      if (displayContent?.type === 'text') {
+        return (
+          <CodePreview
+            code={displayContent.text}
+            language={language || 'text'}
+            isResizing={!isFullscreen && isResizing}
+          />
+        )
+      }
+
+      return (
+        <div className="flex items-center justify-center h-full text-text-400 text-xs">{t('common:noContent')}</div>
+      )
     },
-    [onSave],
+    [
+      displayContent,
+      editableText,
+      error,
+      fileName,
+      handleDownload,
+      isDirty,
+      isLoading,
+      isResizing,
+      isSaving,
+      language,
+      onEditorChange,
+      onSave,
+      saveError,
+      showEditableText,
+      t,
+    ],
   )
 
-  const canSave = Boolean(path && editableText !== null && isDirty && !isSaving)
+  // 全屏内容
+  const fullscreenContent = useMemo((): ReactNode => renderContent(true), [renderContent])
 
   return (
     <div className="flex flex-col h-full relative">
@@ -849,18 +964,7 @@ function FilePreview({
         rightActions={
           content ? (
             <>
-              {fileServiceAvailable && editableText !== null ? (
-                <button
-                  type="button"
-                  onClick={onSave}
-                  disabled={!canSave}
-                  aria-label={`${t('common:save')} ${fileName}`}
-                  className="px-2 py-1 text-[11px] rounded border border-bg-300 text-text-300 hover:text-text-100 hover:bg-bg-300/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title={`${t('common:save')} ${fileName}`}
-                >
-                  {isSaving ? <SpinnerIcon size={12} className="animate-spin" /> : t('common:save')}
-                </button>
-              ) : null}
+              {renderSaveButton()}
               <button
                 onClick={() => setFullscreenOpen(true)}
                 className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
@@ -868,64 +972,15 @@ function FilePreview({
               >
                 <MaximizeIcon size={12} />
               </button>
-              {fileServiceAvailable ? (
-                <button
-                  onClick={handleDownload}
-                  className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
-                  title={`${t('common:save')} ${fileName}`}
-                >
-                  <DownloadIcon size={12} />
-                </button>
-              ) : null}
+              {renderDownloadButton()}
             </>
           ) : null
         }
       />
 
       {/* Preview Content */}
-      <div ref={scrollRef} className="flex-1 overflow-auto panel-scrollbar">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full text-text-400 text-xs">{t('common:loading')}</div>
-        ) : error ? (
-          <div className="flex flex-col items-center justify-center h-full text-danger-100 text-xs gap-1 px-4">
-            <AlertCircleIcon size={16} />
-            <span className="text-center">{error}</span>
-          </div>
-        ) : displayContent?.type === 'text' && fileServiceAvailable && editableText !== null ? (
-          <TextEditorPreview
-            fileName={fileName}
-            value={editableText}
-            isDirty={isDirty}
-            isSaving={isSaving}
-            saveError={saveError}
-            onChange={onEditorChange}
-            onKeyDown={handleEditorKeyDown}
-          />
-        ) : displayContent?.type === 'media' ? (
-          <MediaPreview
-            category={displayContent.category}
-            dataUrl={displayContent.dataUrl}
-            mimeType={displayContent.mimeType}
-            fileName={fileName}
-          />
-        ) : displayContent?.type === 'binary' ? (
-          <BinaryPlaceholder mimeType={displayContent.mimeType} fileName={fileName} onDownload={handleDownload} />
-        ) : displayContent?.type === 'textMedia' ? (
-          <TextMediaPreview
-            dataUrl={displayContent.dataUrl}
-            text={displayContent.text}
-            language={language || 'xml'}
-            fileName={fileName}
-            isResizing={isResizing}
-          />
-        ) : // diff 渲染已移至 Changes 面板
-        // ) : displayContent?.type === 'diff' ? (
-        //   <DiffPreview hunks={displayContent.hunks} isResizing={isResizing} />
-        displayContent?.type === 'text' ? (
-          <CodePreview code={displayContent.text} language={language || 'text'} isResizing={isResizing} />
-        ) : (
-          <div className="flex items-center justify-center h-full text-text-400 text-xs">{t('common:noContent')}</div>
-        )}
+      <div ref={scrollRef} className="flex-1 overflow-auto panel-scrollbar min-h-0 min-w-0">
+        {fullscreenOpen && showEditableText ? null : renderContent(false)}
       </div>
 
       <FullscreenViewer
@@ -933,14 +988,11 @@ function FilePreview({
         onClose={() => setFullscreenOpen(false)}
         title={fileName}
         headerRight={
-          content && fileServiceAvailable ? (
-            <button
-              onClick={handleDownload}
-              className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-lg transition-colors"
-              title={`${t('common:save')} ${fileName}`}
-            >
-              <DownloadIcon size={14} />
-            </button>
+          content ? (
+            <>
+              {renderSaveButton('fullscreen')}
+              {renderDownloadButton('fullscreen')}
+            </>
           ) : null
         }
       >
@@ -948,6 +1000,66 @@ function FilePreview({
       </FullscreenViewer>
     </div>
   )
+}
+
+function displayContentType(content: FileContent | null) {
+  if (!content) return null
+
+  if (isTextualMedia(content.mimeType)) {
+    return 'textMedia' as const
+  }
+
+  if (isBinaryContent(content.encoding) && getPreviewCategory(content.mimeType)) {
+    return 'media' as const
+  }
+
+  if (isBinaryContent(content.encoding)) {
+    return 'binary' as const
+  }
+
+  return 'text' as const
+}
+
+function buildDisplayContent(content: FileContent | null) {
+  if (!content) return null
+
+  const category = getPreviewCategory(content.mimeType)
+
+  if (isTextualMedia(content.mimeType)) {
+    const isBase64 = isBinaryContent(content.encoding)
+    const text = isBase64 ? decodeBase64Text(content.content) : content.content
+    const dataUrl = isBase64
+      ? buildDataUrl(content.mimeType!, content.content)
+      : buildTextDataUrl(content.mimeType!, content.content)
+    return {
+      type: 'textMedia' as const,
+      text,
+      dataUrl,
+      category: category!,
+      mimeType: content.mimeType!,
+    }
+  }
+
+  if (isBinaryContent(content.encoding) && category) {
+    return {
+      type: 'media' as const,
+      category,
+      dataUrl: buildDataUrl(content.mimeType!, content.content),
+      mimeType: content.mimeType!,
+    }
+  }
+
+  if (isBinaryContent(content.encoding)) {
+    return {
+      type: 'binary' as const,
+      mimeType: content.mimeType || 'application/octet-stream',
+    }
+  }
+
+  return {
+    type: 'text' as const,
+    text: content.content,
+  }
 }
 
 function displayEditableText(
@@ -964,53 +1076,6 @@ function displayEditableText(
   }
 
   return editorText ?? content.content
-}
-
-interface TextEditorPreviewProps {
-  fileName: string
-  value: string
-  isDirty: boolean
-  isSaving: boolean
-  saveError: string | null
-  onChange: (value: string) => void
-  onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
-}
-
-function TextEditorPreview({
-  fileName,
-  value,
-  isDirty,
-  isSaving,
-  saveError,
-  onChange,
-  onKeyDown,
-}: TextEditorPreviewProps) {
-  const { t } = useTranslation(['common'])
-  const editorId = useId()
-
-  return (
-    <div className="flex h-full flex-col bg-bg-100">
-      <label
-        htmlFor={editorId}
-        className="flex items-center justify-between border-b border-bg-300 px-3 py-1 text-[11px] text-text-400"
-      >
-        <span>{fileName}</span>
-        <span>{isSaving ? t('common:loading') : isDirty ? '*' : ''}</span>
-      </label>
-      <textarea
-        id={editorId}
-        aria-label={`editor ${fileName}`}
-        value={value}
-        onChange={event => onChange(event.target.value)}
-        onKeyDown={onKeyDown}
-        spellCheck={false}
-        className="h-full w-full flex-1 resize-none border-0 bg-transparent px-4 py-3 font-mono text-[12px] leading-5 text-text-100 outline-none"
-      />
-      {saveError ? (
-        <div className="border-t border-bg-300 px-3 py-2 text-[11px] text-danger-100">{saveError}</div>
-      ) : null}
-    </div>
-  )
 }
 
 // ============================================
