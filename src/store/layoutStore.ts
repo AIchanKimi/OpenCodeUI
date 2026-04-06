@@ -32,6 +32,7 @@ export interface PreviewFile {
 }
 
 const MAX_RIGHT_PANEL_WIDTH = 1280
+const DEFAULT_RIGHT_PANEL_WIDTH = 560
 
 // 兼容旧的 TerminalTab 类型
 export interface TerminalTab {
@@ -296,7 +297,7 @@ export class LayoutStore {
     sidebarFolderRecentsShowDiff: true,
     sidebarShowChildSessions: false,
     rightPanelOpen: false,
-    rightPanelWidth: 450,
+    rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
     bottomPanelOpen: false,
     bottomPanelHeight: 250,
   }
@@ -347,7 +348,7 @@ export class LayoutStore {
       if (savedWidth) {
         const width = parseInt(savedWidth)
         if (!isNaN(width) && width >= 160 && width <= MAX_RIGHT_PANEL_WIDTH) {
-          this.state.rightPanelWidth = width
+          this.state.rightPanelWidth = width === 450 ? DEFAULT_RIGHT_PANEL_WIDTH : width
         }
       }
 

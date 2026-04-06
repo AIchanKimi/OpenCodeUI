@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileExplorer } from './FileExplorer'
 import type { FileContent } from '../api/types'
@@ -14,6 +14,8 @@ const downloadBlobMock = vi.fn()
 const updateFilePreviewMock = vi.fn()
 let previewContentMock: FileContent | null = null
 let fileServiceAvailableMock = true
+let resizeObserverCallback: ResizeObserverCallback | null = null
+let mockContainerWidth = 1200
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -53,6 +55,35 @@ vi.mock('../hooks/useVerticalSplitResize', () => ({
   }),
 }))
 
+vi.mock('../hooks/useHorizontalSplitResize', () => ({
+  useHorizontalSplitResize: () => ({
+    splitWidth: null,
+    isResizing: false,
+    resetSplitWidth: vi.fn(),
+    handleResizeStart: vi.fn(),
+    handleTouchResizeStart: vi.fn(),
+  }),
+}))
+
+vi.mock('@uiw/react-codemirror', () => ({
+  default: ({ value, onChange, className, extensions }: Record<string, unknown>) => (
+    <textarea
+      aria-label={String(
+        (extensions as Array<{ value?: Record<string, string> }>)?.[2]?.value?.['aria-label'] || 'editor',
+      )}
+      data-testid={String(
+        (extensions as Array<{ value?: Record<string, string> }>)?.[2]?.value?.['data-testid'] || 'editor',
+      )}
+      className={`cm-editor ${String(className || '')}`.trim()}
+      value={String(value || '')}
+      onChange={event => {
+        const changeHandler = onChange as ((nextValue: string) => void) | undefined
+        changeHandler?.((event.target as HTMLTextAreaElement).value)
+      }}
+    />
+  ),
+}))
+
 vi.mock('../api/file', async () => {
   const actual = await vi.importActual('../api/file')
   return {
@@ -82,10 +113,42 @@ vi.mock('../store/layoutStore', () => ({
   },
 }))
 
+function installResizeObserverMock() {
+  class ResizeObserverMock {
+    constructor(callback: ResizeObserverCallback) {
+      resizeObserverCallback = callback
+    }
+
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+}
+
+function triggerResize(width: number) {
+  mockContainerWidth = width
+  resizeObserverCallback?.(
+    [
+      {
+        contentRect: {
+          width,
+          height: 600,
+        },
+      } as ResizeObserverEntry,
+    ],
+    {} as ResizeObserver,
+  )
+}
+
 describe('FileExplorer directory download', () => {
   beforeEach(() => {
     previewContentMock = null
     fileServiceAvailableMock = true
+    resizeObserverCallback = null
+    mockContainerWidth = 1200
+    installResizeObserverMock()
     toggleExpandMock.mockReset()
     loadPreviewMock.mockReset()
     clearPreviewMock.mockReset()
@@ -95,6 +158,13 @@ describe('FileExplorer directory download', () => {
     saveFileContentMock.mockReset()
     downloadBlobMock.mockReset()
     updateFilePreviewMock.mockReset()
+
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() {
+        return mockContainerWidth
+      },
+    })
   })
 
   it('renders download actions for both directories and files', () => {
@@ -259,6 +329,54 @@ describe('FileExplorer directory download', () => {
       expect(saveFileContentMock).toHaveBeenCalledWith('README.md', 'v3', '/workspace/project', {
         expectedContent: 'v2',
       })
+    })
+  })
+
+  it('shows editable fullscreen content when file service is available for text files', async () => {
+    previewContentMock = {
+      type: 'text',
+      content: 'hello',
+      mimeType: 'text/plain',
+    }
+
+    render(
+      <FileExplorer
+        panelTabId="files"
+        directory="/workspace/project"
+        previewFile={{ path: 'README.md', name: 'README.md' }}
+        previewFiles={[{ path: 'README.md', name: 'README.md' }]}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle('contentBlock.fullscreen'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getAllByLabelText('editor README.md')).toHaveLength(1)
+    })
+  })
+
+  it('keeps files tab vertical in narrow containers and switches horizontal in wide containers', async () => {
+    mockContainerWidth = 600
+
+    const { container } = render(
+      <FileExplorer
+        panelTabId="files"
+        directory="/workspace/project"
+        previewFile={{ path: 'README.md', name: 'README.md' }}
+        previewFiles={[{ path: 'README.md', name: 'README.md' }]}
+      />,
+    )
+
+    const root = container.firstElementChild
+    expect(root).toHaveClass('flex-col')
+
+    act(() => {
+      triggerResize(1200)
+    })
+
+    await waitFor(() => {
+      expect(root).toHaveClass('flex-row')
     })
   })
 })
