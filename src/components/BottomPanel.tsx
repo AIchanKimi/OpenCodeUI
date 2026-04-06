@@ -40,6 +40,10 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
   const [isRestoring, setIsRestoring] = useState(false)
   const normalizedDirectory = directory ? normalizeToForwardSlash(directory) : undefined
 
+  useEffect(() => {
+    layoutStore.setCurrentTerminalDirectory(normalizedDirectory)
+  }, [normalizedDirectory])
+
   // 追踪面板 resize 状态
   const [isPanelResizing, setIsPanelResizing] = useState(false)
   useEffect(() => {
@@ -67,25 +71,19 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
       try {
         setIsRestoring(true)
 
-        // 先清掉所有旧的终端 tab
-        const oldTabs = layoutStore.getTerminalTabs()
-        for (const tab of oldTabs) {
-          layoutStore.removeTerminalTab(tab.id)
-        }
-
         // 拉取新目录下的 PTY 会话
         const sessions = await listPtySessions(normalizedDirectory)
         if (restoreRequestIdRef.current !== requestId) return
         logger.log('[BottomPanel] PTY sessions for', normalizedDirectory, ':', sessions)
 
-        for (const pty of sessions) {
-          const tab: TerminalTab = {
+        layoutStore.syncTerminalSessions(
+          normalizedDirectory,
+          sessions.map(pty => ({
             id: pty.id,
             title: pty.title || 'Terminal',
             status: pty.status === 'running' || pty.running ? 'connecting' : 'exited',
-          }
-          layoutStore.addTerminalTab(tab, false)
-        }
+          })),
+        )
       } catch (error) {
         uiErrorHandler('restore terminal sessions', error)
       } finally {

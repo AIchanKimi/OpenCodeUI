@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LayoutStore, layoutStore } from './layoutStore'
 
-const STORAGE_KEY_REMEMBER_PANEL_LAYOUT = 'opencode-remember-panel-layout'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
 
 function resetLayoutStore() {
@@ -30,7 +29,6 @@ function resetLayoutStore() {
   state.rightPanelOpen = false
   state.bottomPanelHeight = 250
   state.rightPanelWidth = 450
-  state.rememberPanelLayout = false
 }
 
 describe('layoutStore web preview tabs', () => {
@@ -91,7 +89,6 @@ describe('layoutStore web preview tabs', () => {
     expect(webPreviewTabs).toHaveLength(1)
     expect(webPreviewTabs[0]?.url).toBe('https://example.com/second')
     expect(layoutStore.getActiveTab('bottom')?.id).toBe(secondTabId)
-    expect(layoutStore.getState().bottomPanelOpen).toBe(true)
   })
 
   it('ignores unsupported web preview urls', () => {
@@ -101,6 +98,16 @@ describe('layoutStore web preview tabs', () => {
     expect(layoutStore.getState().panelTabs.some(tab => tab.type === 'web-preview' && tab.position === 'bottom')).toBe(
       false,
     )
+  })
+})
+
+describe('layoutStore gateway tabs', () => {
+  beforeEach(() => {
+    resetLayoutStore()
+  })
+
+  afterEach(() => {
+    resetLayoutStore()
   })
 
   it('creates a gateway tab on the right and activates it', () => {
@@ -126,166 +133,85 @@ describe('layoutStore web preview tabs', () => {
   })
 })
 
-describe('LayoutStore panel layout persistence', () => {
+describe('LayoutStore panel and terminal layout', () => {
   beforeEach(() => {
     localStorage.clear()
   })
 
-  it('defaults to disabled panel layout memory', () => {
-    const store = new LayoutStore()
-
-    expect(store.getRememberPanelLayout()).toBe(false)
-    expect(store.getState().rightPanelOpen).toBe(false)
-    expect(store.getState().bottomPanelOpen).toBe(false)
-    expect(store.getState().activeTabId).toEqual({ bottom: null, right: 'files' })
-    expect(store.getState().panelTabs.map(tab => tab.id)).toEqual(['files', 'changes'])
+  afterEach(() => {
+    localStorage.clear()
   })
 
-  it('persists panel layout when memory is enabled', () => {
+  it('persists global panel layout without persisting terminal tabs', () => {
     const store = new LayoutStore()
 
-    store.setRememberPanelLayout(true)
-    store.toggleRightPanel('changes')
-    store.addMcpTab('right')
-    store.openBottomPanel()
-
-    expect(localStorage.getItem(STORAGE_KEY_REMEMBER_PANEL_LAYOUT)).toBe('true')
+    store.addMcpTab('bottom')
+    store.addTerminalTab({ id: 'term-1', title: 'Terminal 1', status: 'connected' }, true, 'right')
+    store.openRightPanel('changes')
 
     const snapshot = JSON.parse(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT) ?? 'null')
     expect(snapshot).toMatchObject({
+      version: 1,
       rightPanelOpen: true,
       bottomPanelOpen: true,
-      activeTabId: { bottom: null, right: 'mcp' },
     })
-    expect(snapshot.panelTabs).toEqual([
-      { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
-      { id: 'changes', type: 'changes', position: 'right' },
-      { id: 'mcp', type: 'mcp', position: 'right' },
-    ])
-  })
-
-  it('ignores saved layout snapshots when memory is disabled', () => {
-    localStorage.setItem(
-      STORAGE_KEY_PANEL_LAYOUT,
-      JSON.stringify({
-        rightPanelOpen: true,
-        bottomPanelOpen: true,
-        activeTabId: { bottom: 'worktree', right: 'changes' },
-        panelTabs: [
-          { id: 'changes', type: 'changes', position: 'right' },
-          { id: 'worktree', type: 'worktree', position: 'bottom' },
-        ],
-      }),
+    expect(snapshot.panelTabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'files', type: 'files', position: 'right' }),
+        expect.objectContaining({ id: 'changes', type: 'changes', position: 'right' }),
+        expect.objectContaining({ id: 'mcp', type: 'mcp', position: 'bottom' }),
+      ]),
     )
+    expect(snapshot.panelTabs.some((tab: { id: string }) => tab.id === 'term-1')).toBe(false)
 
-    const store = new LayoutStore()
-
-    expect(store.getRememberPanelLayout()).toBe(false)
-    expect(store.getState().rightPanelOpen).toBe(false)
-    expect(store.getState().bottomPanelOpen).toBe(false)
-    expect(store.getState().activeTabId).toEqual({ bottom: null, right: 'files' })
-    expect(store.getState().panelTabs.map(tab => tab.id)).toEqual(['files', 'changes'])
+    const restored = new LayoutStore().getState()
+    expect(restored.rightPanelOpen).toBe(true)
+    expect(restored.bottomPanelOpen).toBe(true)
+    expect(restored.panelTabs.some(tab => tab.id === 'mcp' && tab.position === 'bottom')).toBe(true)
+    expect(restored.panelTabs.some(tab => tab.id === 'term-1')).toBe(false)
   })
 
-  it('restores saved layout snapshots when memory is enabled', () => {
-    localStorage.setItem(STORAGE_KEY_REMEMBER_PANEL_LAYOUT, 'true')
-    localStorage.setItem(
-      STORAGE_KEY_PANEL_LAYOUT,
-      JSON.stringify({
-        rightPanelOpen: true,
-        bottomPanelOpen: true,
-        activeTabId: { bottom: 'skill', right: 'changes' },
-        panelTabs: [
-          { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
-          { id: 'changes', type: 'changes', position: 'right' },
-          { id: 'skill', type: 'skill', position: 'bottom' },
-        ],
-      }),
-    )
-
+  it('keeps bottom and right panels open when syncing a directory with no terminal sessions', () => {
     const store = new LayoutStore()
 
-    expect(store.getRememberPanelLayout()).toBe(true)
-    expect(store.getState().rightPanelOpen).toBe(true)
-    expect(store.getState().bottomPanelOpen).toBe(true)
-    expect(store.getState().activeTabId).toEqual({ bottom: 'skill', right: 'changes' })
-    expect(store.getState().panelTabs).toEqual([
-      { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
-      { id: 'changes', type: 'changes', position: 'right' },
-      { id: 'skill', type: 'skill', position: 'bottom' },
-    ])
-  })
-
-  it('removes saved layout snapshots when memory is turned off', () => {
-    const store = new LayoutStore()
-
-    store.setRememberPanelLayout(true)
     store.openBottomPanel()
+    store.openRightPanel('files')
+    store.syncTerminalSessions('dir-a', [])
 
-    expect(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT)).not.toBeNull()
-
-    store.setRememberPanelLayout(false)
-
-    expect(localStorage.getItem(STORAGE_KEY_REMEMBER_PANEL_LAYOUT)).toBe('false')
-    expect(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT)).toBeNull()
+    expect(store.getState().bottomPanelOpen).toBe(true)
+    expect(store.getState().rightPanelOpen).toBe(true)
+    expect(store.getTerminalTabs('bottom')).toEqual([])
+    expect(store.getTerminalTabs('right')).toEqual([])
   })
 
-  it('falls back to the default layout when the saved snapshot is corrupted', () => {
-    localStorage.setItem(STORAGE_KEY_REMEMBER_PANEL_LAYOUT, 'true')
-    localStorage.setItem(STORAGE_KEY_PANEL_LAYOUT, '{invalid-json')
-
+  it('restores terminal positions for each directory when switching between projects', () => {
     const store = new LayoutStore()
 
-    expect(store.getRememberPanelLayout()).toBe(true)
-    expect(store.getState().rightPanelOpen).toBe(false)
-    expect(store.getState().bottomPanelOpen).toBe(false)
-    expect(store.getState().activeTabId).toEqual({ bottom: null, right: 'files' })
-    expect(store.getState().panelTabs.map(tab => tab.id)).toEqual(['files', 'changes'])
-  })
-
-  it('filters terminal tabs out of saved layout snapshots', () => {
-    const store = new LayoutStore()
-
-    store.setRememberPanelLayout(true)
-    store.addTerminalTab({ id: 'terminal-1', title: 'Terminal', status: 'connected' }, true, 'right')
-    store.addSkillTab('bottom')
-
-    const snapshot = JSON.parse(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT) ?? 'null')
-    expect(snapshot.panelTabs).toEqual([
-      { id: 'files', type: 'files', position: 'right', previewFile: null, previewFiles: [] },
-      { id: 'changes', type: 'changes', position: 'right' },
-      { id: 'skill', type: 'skill', position: 'bottom' },
+    store.syncTerminalSessions('dir-a', [
+      { id: 'term-a1', title: 'A1', status: 'connected' },
+      { id: 'term-a2', title: 'A2', status: 'connected' },
     ])
-    expect(snapshot.activeTabId).toEqual({ bottom: 'skill', right: 'files' })
+    store.moveTab('term-a2', 'right')
+
+    store.syncTerminalSessions('dir-b', [{ id: 'term-b1', title: 'B1', status: 'connected' }])
+    store.syncTerminalSessions('dir-a', [
+      { id: 'term-a1', title: 'A1', status: 'connected' },
+      { id: 'term-a2', title: 'A2', status: 'connected' },
+    ])
+
+    expect(store.getTerminalTabs('bottom').map(tab => tab.id)).toEqual(['term-a1'])
+    expect(store.getTerminalTabs('right').map(tab => tab.id)).toEqual(['term-a2'])
   })
 
-  it('persists web preview tabs in saved layout snapshots', () => {
+  it('falls back to a valid right tab when a stale terminal active id disappears after sync', () => {
     const store = new LayoutStore()
 
-    store.setRememberPanelLayout(true)
-    const tabId = store.addWebPreviewTab('right')
-    store.updateWebPreviewUrl(tabId, 'https://example.com/')
+    store.syncTerminalSessions('dir-a', [{ id: 'term-a1', title: 'A1', status: 'connected' }])
+    store.moveTab('term-a1', 'right')
+    store.setActiveTab('right', 'term-a1')
 
-    const snapshot = JSON.parse(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT) ?? 'null')
-    expect(snapshot.panelTabs).toContainEqual({
-      id: tabId,
-      type: 'web-preview',
-      position: 'right',
-      url: 'https://example.com/',
-    })
-  })
+    store.syncTerminalSessions('dir-b', [])
 
-  it('persists gateway tabs in saved layout snapshots', () => {
-    const store = new LayoutStore()
-
-    store.setRememberPanelLayout(true)
-    store.addGatewayTab()
-
-    const snapshot = JSON.parse(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT) ?? 'null')
-    expect(snapshot.panelTabs).toContainEqual({
-      id: 'gateway',
-      type: 'gateway',
-      position: 'right',
-    })
+    expect(store.getState().activeTabId.right).toBe('files')
   })
 })

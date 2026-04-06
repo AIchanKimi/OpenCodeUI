@@ -133,8 +133,6 @@
     },
     "sidebar": "Sidebar",
     "sidebarDesc": "Sidebar layout and recent chats",
-    "rememberPanelLayout": "Remember Panel Layout",
-    "rememberPanelLayoutDesc": "Restore the right and bottom panels plus open tabs when the page opens again",
     "folderStyleRecents": "Folder-Style Recents",
     "folderStyleRecentsDesc": "Group recent chats by project folder while keeping the default list available",
     "folderStyleRecentsShowDiff": "Show Diff In Folder View",
