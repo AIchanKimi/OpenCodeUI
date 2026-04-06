@@ -205,7 +205,8 @@ body,
     'Segoe UI Emoji';
   --font-sans: var(--font-ui-sans);
   --font-ui-serif: 'Georgia', 'Noto Serif', serif;
-  --font-mono: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-mono:
+    ui-monospace, 'FiraCode Nerd Font Mono', 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
 /* ============================================
