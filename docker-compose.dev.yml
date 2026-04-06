@@ -61,11 +61,30 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - NODE_ENV=development
       - VITE_API_BASE_URL=/api
+      - NPM_REGISTRY=${NPM_REGISTRY:-https://registry.npmjs.org/}
+      - NPM_REGISTRY_FALLBACK=${NPM_REGISTRY_FALLBACK:-https://registry.npmmirror.com/}
     command: >-
-      sh -c "LOCK_HASH=$$(sha256sum package-lock.json | awk '{print $$1}');
+      sh -c "set -eu;
+      LOCK_HASH=$$(sha256sum package-lock.json | awk '{print $$1}');
       CACHED_HASH=$$(cat node_modules/.package-lock.hash 2>/dev/null || true);
       if [ ! -d node_modules ] || [ \"$$LOCK_HASH\" != \"$$CACHED_HASH\" ]; then
-      npm ci --no-audit --prefer-offline && echo $$LOCK_HASH > node_modules/.package-lock.hash; fi &&
+      npm config set registry \"$$NPM_REGISTRY\";
+      npm config set fetch-retries 5;
+      npm config set fetch-retry-factor 2;
+      npm config set fetch-retry-mintimeout 10000;
+      npm config set fetch-retry-maxtimeout 120000;
+      npm config set audit false;
+      npm config set fund false;
+      if npm ci --no-audit --prefer-offline; then
+      echo $$LOCK_HASH > node_modules/.package-lock.hash;
+      else
+      echo \"npm ci failed on $$NPM_REGISTRY, retrying with $$NPM_REGISTRY_FALLBACK\";
+      npm cache clean --force;
+      npm config set registry \"$$NPM_REGISTRY_FALLBACK\";
+      npm ci --no-audit || { echo \"npm ci failed on both registries\"; exit 1; };
+      echo $$LOCK_HASH > node_modules/.package-lock.hash;
+      fi;
+      fi &&
       npm run dev -- --host 0.0.0.0 --port 3000"
     expose:
       - '3000'
