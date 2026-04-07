@@ -272,6 +272,7 @@ const UserMessageView = memo(function UserMessageView({
   const syntheticParts = parts.filter((p): p is TextPart => p.type === 'text' && !!p.synthetic)
   const fileParts = parts.filter((p): p is FilePart => p.type === 'file')
   const agentParts = parts.filter((p): p is AgentPart => p.type === 'agent')
+  const compactionParts = parts.filter((p): p is CompactionPart => p.type === 'compaction')
 
   const hasSystemContext = syntheticParts.length > 0
   const messageText = textParts.map(p => p.text).join('')
@@ -326,6 +327,14 @@ const UserMessageView = memo(function UserMessageView({
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {compactionParts.length > 0 && (
+          <div className="w-full mt-1">
+            {compactionParts.map(part => (
+              <CompactionPartView key={part.id} part={part} />
+            ))}
           </div>
         )}
 

@@ -37,7 +37,7 @@ vi.mock('./parts', () => ({
   StepFinishPartView: () => null,
   SubtaskPartView: () => null,
   RetryPartView: () => null,
-  CompactionPartView: () => null,
+  CompactionPartView: () => <div>History compacted</div>,
   MessageErrorView: () => null,
 }))
 
@@ -75,6 +75,21 @@ function createAssistantMessage(): Message {
   }
 }
 
+function createUserMessage(): Message {
+  return {
+    info: {
+      id: 'user-1',
+      sessionID: 'session-1',
+      role: 'user',
+      time: { created: 1 },
+      agent: 'build',
+      model: { modelID: 'model-1', providerID: 'provider-1' },
+    },
+    parts: [],
+    isStreaming: false,
+  }
+}
+
 describe('MessageRenderer assistant fork', () => {
   it('passes the explicit fork target id when forking an assistant message', async () => {
     const onFork = vi.fn()
@@ -106,5 +121,22 @@ describe('MessageRenderer assistant fork', () => {
 
     expect(screen.queryByRole('button', { name: /fork|分叉/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /copy/i })).toBeNull()
+  })
+
+  it('renders compaction parts inside user messages', () => {
+    const message = createUserMessage()
+    message.parts = [
+      {
+        id: 'compaction-1',
+        sessionID: 'session-1',
+        messageID: 'user-1',
+        type: 'compaction',
+        auto: true,
+      },
+    ]
+
+    render(<MessageRenderer message={message} />)
+
+    expect(screen.getByText('History compacted')).toBeInTheDocument()
   })
 })

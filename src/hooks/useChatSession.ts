@@ -45,7 +45,7 @@ import {
 import { getMessageText, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { serverStorage } from '../utils/perServerStorage'
-import { UNDO_SCROLL_DELAY_MS, STORAGE_KEY_SELECTED_AGENT } from '../constants'
+import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import type { ChatAreaHandle } from '../features/chat'
 
 const handleError = createErrorHandler('session')
@@ -635,15 +635,26 @@ export function useChatSession({
             handleError('execute command', new Error('No model selected'))
             return false
           }
-          await summarizeSession(
+
+          // Commands should count as sent once they are accepted for execution.
+          // Do not keep the draft alive until the long-running compaction finishes.
+          void summarizeSession(
             sessionId,
             { providerID: currentModel.providerId, modelID: currentModel.id },
             effectiveDirectory,
-          )
+          ).catch(err => {
+            handleError('execute command', err)
+          })
+
           return true
         }
 
-        await executeCommand(sessionId, command, args, effectiveDirectory)
+        // Keep command submission semantics aligned with normal messages:
+        // once the command is dispatched, clear the draft immediately.
+        void executeCommand(sessionId, command, args, effectiveDirectory).catch(err => {
+          handleError('execute command', err)
+        })
+
         return true
       } catch (err) {
         handleError('execute command', err)
@@ -663,10 +674,6 @@ export function useChatSession({
 
       await animateUndo(messageIdsToRemove)
       await handleUndo(userMessageId)
-
-      setTimeout(() => {
-        chatAreaRef.current?.scrollToLastMessage()
-      }, UNDO_SCROLL_DELAY_MS)
     },
     [messages, animateUndo, handleUndo], // eslint-disable-line react-hooks/exhaustive-deps -- chatAreaRef is a stable ref
   )

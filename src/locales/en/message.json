@@ -97,7 +97,7 @@
     "retryAttempt": "Retry attempt {{attempt}}",
     "retryable": "Retryable",
     "statusCode": "Status: {{code}}",
-    "contextCompacted": "Context {{auto}}compacted",
+    "contextCompacted": "History compacted",
     "autoPrefix": "auto-",
     "filesChanged": "{{count}} file changed",
     "filesChanged_other": "{{count}} files changed"

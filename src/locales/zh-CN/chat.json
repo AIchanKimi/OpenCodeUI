@@ -145,7 +145,7 @@
     "moveFolderUp": "上移文件夹",
     "moveFolderDown": "下移文件夹",
     "noChatsInFolder": "此文件夹中没有对话",
-    "showMoreChats": "显示更多对话",
+    "showMoreChats": "展开更多会话",
     "selectedSessions": "已选 {{count}} 个会话",
     "selectedProjects": "已选 {{count}} 个项目",
     "selectItems": "选择要管理的项目",

@@ -111,7 +111,12 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId }: Rig
           }
           return (
             <Suspense fallback={<PanelFallback />}>
-              <ChangesContent activeTab={activeTab} sessionId={sessionId} isPanelResizing={isPanelResizing} />
+              <ChangesContent
+                activeTab={activeTab}
+                directory={normalizedDirectory}
+                sessionId={sessionId}
+                isPanelResizing={isPanelResizing}
+              />
             </Suspense>
           )
         case 'web-preview':
@@ -237,12 +242,14 @@ const FilesContent = memo(function FilesContent({
 
 interface ChangesContentProps {
   activeTab: PanelTab
+  directory?: string
   sessionId: string
   isPanelResizing?: boolean
 }
 
 const ChangesContent = memo(function ChangesContent({
   activeTab,
+  directory,
   sessionId,
   isPanelResizing = false,
 }: ChangesContentProps) {
@@ -253,7 +260,7 @@ const ChangesContent = memo(function ChangesContent({
     <>
       {changeTabs.map(tab => (
         <div key={tab.id} className={tab.id === activeTab.id ? 'h-full' : 'hidden'}>
-          <SessionChangesPanel sessionId={sessionId} isResizing={isPanelResizing} />
+          <SessionChangesPanel sessionId={sessionId} directory={directory} isResizing={isPanelResizing} />
         </div>
       ))}
     </>

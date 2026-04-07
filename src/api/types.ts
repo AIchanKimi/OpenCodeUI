@@ -95,6 +95,9 @@ export type {
   TodoItem,
 } from '../types/api/event'
 
+// VCS types
+export type { VcsInfo, VcsDiffMode } from '../types/api/vcs'
+
 // ============================================
 // UI Types (from types/ui.ts)
 // ============================================

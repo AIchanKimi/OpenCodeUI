@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RetryIcon, CompactIcon, PatchIcon, ChevronDownIcon, FileIcon } from '../../../components/Icons'
+import { RetryIcon, PatchIcon, ChevronDownIcon, FileIcon } from '../../../components/Icons'
 import { useDelayedRender } from '../../../hooks/useDelayedRender'
 import type { RetryPart, CompactionPart, PatchPart } from '../../../types/message'
 
@@ -73,14 +73,13 @@ interface CompactionPartViewProps {
 
 export const CompactionPartView = memo(function CompactionPartView({ part }: CompactionPartViewProps) {
   const { t } = useTranslation('message')
-  const isAuto = part.auto
+  void part
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-500">
-      <div className="flex-1 h-px bg-border-200" />
-      <CompactIcon className="w-3.5 h-3.5" />
-      <span>{t('system.contextCompacted', { auto: isAuto ? t('system.autoPrefix') : '' })}</span>
-      <div className="flex-1 h-px bg-border-200" />
+      <span className="flex-1 h-px bg-border-200/70" />
+      <span className="shrink-0 text-[11px] leading-none text-text-400">{t('system.contextCompacted')}</span>
+      <span className="flex-1 h-px bg-border-200/70" />
     </div>
   )
 })
