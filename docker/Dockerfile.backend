@@ -5,14 +5,19 @@
 
 FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=/root
 
 # 基础依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    gnupg \
+    less \
+    openssh-client \
     unzip \
+    vim \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,15 +38,21 @@ RUN curl -fsSL https://opencode.ai/install | bash \
     && opencode --version
 
 # 工作目录
-RUN mkdir -p /workspace
-WORKDIR /workspace
+RUN mkdir -p /root/workspace \
+    /root/.config/opencode \
+    /root/.cache/opencode \
+    /root/.local/share/opencode \
+    /root/.local/state/opencode \
+    /root/.ssh \
+    /root/.agents
+WORKDIR /root/workspace
 
 ENV MISE_DATA_DIR=/root/.local/share/mise \
     MISE_CONFIG_DIR=/root/.config/mise \
     MISE_STATE_DIR=/root/.local/state/mise \
     OPENCODE_DISABLE_AUTOUPDATE=true \
     OPENCODE_DISABLE_TERMINAL_TITLE=true \
-    WORKSPACE=/workspace
+    WORKSPACE=/root/workspace
 
 ENV PATH="/root/.local/bin:/root/.cargo/bin:/root/.local/share/mise/shims:/root/.local/share/mise/bin:${PATH}"
 

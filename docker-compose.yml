@@ -63,9 +63,14 @@ services:
         limits:
           memory: 4G
     volumes:
-      - ${WORKSPACE:-./workspace}:/workspace
-      - opencode-home:/root
-    working_dir: /workspace
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/.agents:/root/.agents
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/.config/opencode:/root/.config/opencode
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/.cache/opencode:/root/.cache/opencode
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/.local/share/opencode:/root/.local/share/opencode
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/.local/state/opencode:/root/.local/state/opencode
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/.ssh:/root/.ssh:ro
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/workspace:/root/workspace
+    working_dir: /root/workspace
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -74,8 +79,14 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - XAI_API_KEY=${XAI_API_KEY:-}
+      - HTTP_PROXY=${OPENCODE_HTTP_PROXY:-}
+      - HTTPS_PROXY=${OPENCODE_HTTPS_PROXY:-}
+      - ALL_PROXY=${OPENCODE_ALL_PROXY:-}
+      - NO_PROXY=${OPENCODE_NO_PROXY:-127.0.0.1,localhost,host.docker.internal}
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
       - OPENCODE_SERVER_USERNAME=${OPENCODE_SERVER_USERNAME:-opencode}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     networks:
       - opencode-net
 
@@ -92,7 +103,7 @@ services:
         limits:
           memory: 1G
     volumes:
-      - ${WORKSPACE:-./workspace}:/workspace
+      - ${OPENCODE_USER_HOME:-./data/opencode-user}/workspace:/workspace
     environment:
       - FILE_SERVICE_BASE_PATH=/workspace
       - FILE_SERVICE_PORT=4097
@@ -102,7 +113,6 @@ services:
       - opencode-net
 
 volumes:
-  opencode-home:
   opencode-router-data:
 
 networks:

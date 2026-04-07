@@ -119,27 +119,39 @@ docker compose up -d
 
 访问 `http://localhost:6658`。
 
-### 环境持久化（简化版）
+### 环境持久化
 
-现在后端只保留一个核心持久化卷：`opencode-home`（挂载到 `/root`）。
+后端现在按旧单容器环境的目录结构挂载宿主机目录，而不是把整个 `/root` 打成一个大卷。
 
-后端入口脚本会在启动时自动校验并补齐 `opencode` / `mise`，避免容器重建后工具链丢失。
+默认使用 `.env` 中的 `OPENCODE_USER_HOME=./data/opencode-user`，并映射以下子目录：
 
-- OpenCode 配置与会话缓存
-- npm / cargo / pip 等用户态缓存
-- 通过 `mise` 安装的 Node / Python 多版本运行时
+- `.agents` -> `/root/.agents`
+- `.config/opencode` -> `/root/.config/opencode`
+- `.cache/opencode` -> `/root/.cache/opencode`
+- `.local/share/opencode` -> `/root/.local/share/opencode`
+- `.local/state/opencode` -> `/root/.local/state/opencode`
+- `.ssh` -> `/root/.ssh`（默认只读挂载）
+- `workspace` -> `/root/workspace`
 
-容器重建后，上述内容都会保留，不需要再拆成多个小卷。
+这样 compose backend 的目录布局会和旧的单容器 OpenCode 环境保持一致，同时 `file-service` 也会复用同一个 `workspace` 子目录。
 
-从旧版本升级时，原来的 `opencode-data/opencode-config/opencode-cache/opencode-npm/opencode-cargo/opencode-local/opencode-opt` 会变成孤立卷，可在确认数据已迁移后手动清理。
+如果你要复用旧单容器目录，例如 `/home/adstation/opencode-portal/data/users/3`，只需要在 `.env` 里把 `OPENCODE_USER_HOME` 改成对应绝对路径。
 
-首次进入后端容器可直接安装并固化运行时版本：
+首次启动前，建议先创建目录结构，避免不同 Docker/Compose 版本对 bind mount 自动建目录的行为差异：
 
 ```bash
-docker compose exec backend mise use -g node@22 python@3.12
-docker compose exec backend node -v
-docker compose exec backend python -V
+mkdir -p ./data/opencode-user/.agents
+mkdir -p ./data/opencode-user/.config/opencode
+mkdir -p ./data/opencode-user/.cache/opencode
+mkdir -p ./data/opencode-user/.local/share/opencode
+mkdir -p ./data/opencode-user/.local/state/opencode
+mkdir -p ./data/opencode-user/.ssh
+mkdir -p ./data/opencode-user/workspace
 ```
+
+如果使用 `host.docker.internal:host-gateway`，Linux 环境需要 Docker 20.10 或更新版本。
+
+后端入口脚本仍会在启动时自动校验并补齐 `opencode` / `mise`，但不再依赖整目录 `/root` 的持久化。
 
 `gateway` 仍保留单独卷 `opencode-router-data`，用于存放动态路由状态。
 
@@ -156,8 +168,14 @@ OPENAI_API_KEY=
 GATEWAY_PORT=6658
 PREVIEW_PORT=6659
 
-# 工作目录（挂载到容器 /workspace）
-WORKSPACE=./workspace
+# 旧单容器用户目录（内部含 workspace 和其他 OpenCode 子目录）
+OPENCODE_USER_HOME=./data/opencode-user
+
+# 可选代理
+# OPENCODE_HTTP_PROXY=http://host.docker.internal:7890
+# OPENCODE_HTTPS_PROXY=http://host.docker.internal:7890
+# OPENCODE_ALL_PROXY=http://host.docker.internal:7890
+OPENCODE_NO_PROXY=127.0.0.1,localhost,host.docker.internal
 
 # 公网部署务必设置
 OPENCODE_SERVER_USERNAME=opencode
