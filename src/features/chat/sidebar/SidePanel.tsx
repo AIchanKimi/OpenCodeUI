@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect, useRef } from 'react'
+import { useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../../sessions'
 import { FolderRecentList } from './FolderRecentList'
@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { ActiveSessionItem } from './ActiveSessionItem'
 import { NotificationItem } from './NotificationItem'
 import { SidebarFooter } from './SidebarFooter'
+import { buildActiveSessionTree } from './activeSessionTree'
 import { getParentPath } from './sidebarUtils'
 import {
   SidebarIcon,
@@ -327,6 +328,11 @@ export function SidePanel({
     findParentId,
   ])
 
+  const activeSessionTree = useMemo(
+    () => buildActiveSessionTree(busySessions, findParentId),
+    [busySessions, findParentId],
+  )
+
   const projects = useMemo<ProjectItem[]>(() => {
     const list: ProjectItem[] = [
       {
@@ -431,6 +437,26 @@ export function SidePanel({
       }
     },
     [addDirectory, onSelectSession, onCloseMobile],
+  )
+
+  const renderActiveSessionNode = useCallback(
+    (entry: (typeof busySessions)[number], level = 0): ReactNode => {
+      const resolvedSession = sessionLookup.get(entry.sessionId)
+      const childEntries = activeSessionTree.childrenByParent.get(entry.sessionId) ?? []
+
+      return (
+        <div key={entry.sessionId} style={level > 0 ? { marginLeft: level * 12 } : undefined}>
+          <ActiveSessionItem
+            entry={entry}
+            resolvedSession={resolvedSession}
+            isSelected={entry.sessionId === selectedSessionId}
+            onSelect={handleSelectActive}
+          />
+          {childEntries.map(childEntry => renderActiveSessionNode(childEntry, level + 1))}
+        </div>
+      )
+    },
+    [activeSessionTree.childrenByParent, handleSelectActive, selectedSessionId, sessionLookup],
   )
 
   const handleRename = useCallback(
@@ -887,34 +913,7 @@ export function SidePanel({
               ) : (
                 <div className="space-y-0.5">
                   {/* Busy sessions — 子 session 挂在父下面 */}
-                  {busySessions
-                    .filter(e => !childSessionStore.getSessionInfo(e.sessionId)?.parentID)
-                    .map(entry => {
-                      const resolvedSession = sessionLookup.get(entry.sessionId)
-                      const childEntries = busySessions.filter(
-                        c => childSessionStore.getSessionInfo(c.sessionId)?.parentID === entry.sessionId,
-                      )
-                      return (
-                        <div key={entry.sessionId}>
-                          <ActiveSessionItem
-                            entry={entry}
-                            resolvedSession={resolvedSession}
-                            isSelected={entry.sessionId === selectedSessionId}
-                            onSelect={handleSelectActive}
-                          />
-                          {childEntries.map(ce => (
-                            <div key={ce.sessionId} className="ml-3">
-                              <ActiveSessionItem
-                                entry={ce}
-                                resolvedSession={sessionLookup.get(ce.sessionId)}
-                                isSelected={ce.sessionId === selectedSessionId}
-                                onSelect={handleSelectActive}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })}
+                  {activeSessionTree.rootEntries.map(entry => renderActiveSessionNode(entry))}
 
                   {/* Divider + actions between busy and notifications */}
                   {notifications.length > 0 && (

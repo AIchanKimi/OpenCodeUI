@@ -1,4 +1,5 @@
 export * from './sessionHelpers'
+export * from './activeScope'
 export * from './errorHandling'
 export * from './clipboard'
 export { getInitials } from './stringUtils'

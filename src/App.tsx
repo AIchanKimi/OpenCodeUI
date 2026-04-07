@@ -26,7 +26,7 @@ import {
   canUseSplitPane,
   useChatViewportController,
 } from './features/chat/chatViewport'
-import { uiErrorHandler, isSameDirectory } from './utils'
+import { uiErrorHandler, isSameDirectory, collectActiveDirectories } from './utils'
 import { initNotificationSound } from './utils/notificationSoundBridge'
 import { createPtySession } from './api/pty'
 import type { TerminalTab } from './store/layoutStore'
@@ -51,7 +51,7 @@ function App() {
     navigateHome: navigateRouteHome,
     replaceSession,
   } = router
-  const { currentDirectory, sidebarExpanded, setSidebarExpanded } = useDirectory()
+  const { currentDirectory, savedDirectories, sidebarExpanded, setSidebarExpanded } = useDirectory()
   const { rightPanelOpen, rightPanelWidth } = useLayoutStore()
   const { surfaceRef, value: chatViewport } = useChatViewportController({
     sidebarExpanded,
@@ -79,21 +79,18 @@ function App() {
 
   useViewportHeight()
 
-  const activeDirectories = useMemo(() => {
-    const directories: string[] = []
-
-    const pushDirectory = (directory?: string) => {
-      if (!directory) return
-      if (directories.some(existing => isSameDirectory(existing, directory))) return
-      directories.push(directory)
-    }
-
-    pushDirectory(routeDirectory)
-    pushDirectory(currentDirectory)
-    paneControllers.forEach(controller => pushDirectory(controller.effectiveDirectory))
-
-    return directories
-  }, [routeDirectory, currentDirectory, paneControllers])
+  const activeDirectories = useMemo(
+    () =>
+      collectActiveDirectories({
+        routeDirectory,
+        currentDirectory,
+        paneDirectories: paneControllers
+          .map(controller => controller.effectiveDirectory)
+          .filter((directory): directory is string => Boolean(directory)),
+        projectDirectories: savedDirectories.map(directory => directory.path),
+      }),
+    [routeDirectory, currentDirectory, paneControllers, savedDirectories],
+  )
 
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。
   useGlobalEvents(activeDirectories)
