@@ -11,8 +11,14 @@ const downloadDirectoryArchiveMock = vi.fn()
 const downloadFileAssetMock = vi.fn()
 const saveFileContentMock = vi.fn()
 const downloadBlobMock = vi.fn()
+const downloadFileContentMock = vi.fn()
 const updateFilePreviewMock = vi.fn()
+let treeMock = [
+  { path: 'src', name: 'src', type: 'directory', absolute: '/workspace/project/src' },
+  { path: 'README.md', name: 'README.md', type: 'file', absolute: '/workspace/project/README.md' },
+]
 let previewContentMock: FileContent | null = null
+let previewErrorMock: string | null = null
 let fileServiceAvailableMock = true
 let resizeObserverCallback: ResizeObserverCallback | null = null
 let mockContainerWidth = 1200
@@ -25,17 +31,14 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../hooks', () => ({
   useFileExplorer: () => ({
-    tree: [
-      { path: 'src', name: 'src', type: 'directory', absolute: '/workspace/project/src' },
-      { path: 'README.md', name: 'README.md', type: 'file', absolute: '/workspace/project/README.md' },
-    ],
+    tree: treeMock,
     isLoading: false,
     error: null,
     expandedPaths: new Set<string>(),
     toggleExpand: toggleExpandMock,
     previewContent: previewContentMock,
     previewLoading: false,
-    previewError: null,
+    previewError: previewErrorMock,
     loadPreview: loadPreviewMock,
     clearPreview: clearPreviewMock,
     updatePreviewContent: updatePreviewContentMock,
@@ -99,6 +102,7 @@ vi.mock('../utils/downloadUtils', async () => {
   return {
     ...actual,
     downloadBlob: (...args: unknown[]) => downloadBlobMock(...args),
+    downloadFileContent: (...args: unknown[]) => downloadFileContentMock(...args),
   }
 })
 
@@ -144,7 +148,12 @@ function triggerResize(width: number) {
 
 describe('FileExplorer directory download', () => {
   beforeEach(() => {
+    treeMock = [
+      { path: 'src', name: 'src', type: 'directory', absolute: '/workspace/project/src' },
+      { path: 'README.md', name: 'README.md', type: 'file', absolute: '/workspace/project/README.md' },
+    ]
     previewContentMock = null
+    previewErrorMock = null
     fileServiceAvailableMock = true
     resizeObserverCallback = null
     mockContainerWidth = 1200
@@ -157,6 +166,7 @@ describe('FileExplorer directory download', () => {
     downloadFileAssetMock.mockReset()
     saveFileContentMock.mockReset()
     downloadBlobMock.mockReset()
+    downloadFileContentMock.mockReset()
     updateFilePreviewMock.mockReset()
 
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
@@ -282,6 +292,60 @@ describe('FileExplorer directory download', () => {
     expect(screen.queryByLabelText('editor README.md')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('common:save README.md')).not.toBeInTheDocument()
     expect(screen.getByText('hello')).toBeInTheDocument()
+  })
+
+  it('supports downloading workspace children when browsing from root', async () => {
+    treeMock = [
+      { path: 'workspace', name: 'workspace', type: 'directory', absolute: '/root/workspace' },
+      { path: 'workspace/demo/test.txt', name: 'test.txt', type: 'file', absolute: '/root/workspace/demo/test.txt' },
+      { path: 'outside.txt', name: 'outside.txt', type: 'file', absolute: '/root/outside.txt' },
+    ]
+    downloadFileAssetMock.mockResolvedValue({
+      blob: new Blob(['hello world'], { type: 'text/plain' }),
+      fileName: 'test.txt',
+    })
+
+    render(<FileExplorer panelTabId="files" directory="/root" previewFile={null} previewFiles={[]} />)
+
+    expect(screen.getByLabelText('download workspace')).toBeInTheDocument()
+    expect(screen.getByLabelText('download test.txt')).toBeInTheDocument()
+    expect(screen.queryByLabelText('download outside.txt')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('download test.txt'))
+
+    await waitFor(() => {
+      expect(downloadFileAssetMock).toHaveBeenCalledWith('workspace/demo/test.txt', '/root')
+    })
+  })
+
+  it('falls back to read-only preview and content download when current path is outside workspace', async () => {
+    previewContentMock = {
+      type: 'text',
+      content: 'outside root file',
+      mimeType: 'text/plain',
+    }
+
+    render(
+      <FileExplorer
+        panelTabId="files"
+        directory="/root"
+        previewFile={{ path: 'outside.txt', name: 'outside.txt' }}
+        previewFiles={[{ path: 'outside.txt', name: 'outside.txt' }]}
+      />,
+    )
+
+    expect(screen.queryByLabelText('editor outside.txt')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('common:save outside.txt')).not.toBeInTheDocument()
+    expect(screen.getByTitle('common:download outside.txt')).toBeInTheDocument()
+    expect(screen.getByText('outside root file')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTitle('common:download outside.txt'))
+
+    await waitFor(() => {
+      expect(downloadFileAssetMock).not.toHaveBeenCalled()
+      expect(downloadBlobMock).not.toHaveBeenCalled()
+      expect(downloadFileContentMock).toHaveBeenCalledWith(previewContentMock, 'outside.txt')
+    })
   })
 
   it('uses refreshed preview content as save baseline after reload', async () => {

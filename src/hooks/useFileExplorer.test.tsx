@@ -97,6 +97,22 @@ describe('useFileExplorer', () => {
     expect(getFileContent).toHaveBeenCalledTimes(2)
   })
 
+  it('loads preview content for unsupported root paths via api fallback without surfacing preview errors', async () => {
+    getFileContent.mockResolvedValueOnce({ type: 'text', content: 'outside root file' })
+
+    const { result } = renderHook(() => useFileExplorer({ directory: '/root', autoLoad: false }))
+
+    await act(async () => {
+      await result.current.loadPreview('outside.txt')
+    })
+
+    await waitFor(() => {
+      expect(result.current.previewContent?.content).toBe('outside root file')
+    })
+    expect(result.current.previewError).toBeNull()
+    expect(getFileContent).toHaveBeenCalledWith('outside.txt', '/root')
+  })
+
   it('exposes file service availability state', async () => {
     getFileServiceAvailability.mockResolvedValue(false)
 

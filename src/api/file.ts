@@ -15,6 +15,15 @@ const rootDirectoryCache = new Map<string, { data: FileNode[]; expiresAt: number
 const rootDirectoryInflight = new Map<string, Promise<FileNode[]>>()
 const fileServiceAvailabilityCache = new Map<string, { available: boolean; expiresAt: number }>()
 const fileServiceAvailabilityInflight = new Map<string, Promise<boolean>>()
+const LEGACY_DOCKER_WORKSPACE_PREFIX = '/root/workspace'
+const LEGACY_DOCKER_ROOT_PREFIX = '/root'
+const FILE_SERVICE_WORKSPACE_PREFIX = '/workspace'
+
+interface FileServiceRequestTarget {
+  directory?: string
+  path: string
+  supported: boolean
+}
 
 function isRootDirectoryPath(path: string): boolean {
   return path === '' || path === '.' || path === './'
@@ -22,6 +31,65 @@ function isRootDirectoryPath(path: string): boolean {
 
 function getRootDirectoryCacheKey(directory?: string): string {
   return `${serverStore.getActiveServerId()}::${formatPathForApi(directory) ?? ''}`
+}
+
+function normalizeDirectoryForFileService(directory?: string): string | undefined {
+  const formattedDirectory = formatPathForApi(directory)
+
+  if (!formattedDirectory) {
+    return formattedDirectory
+  }
+
+  if (formattedDirectory === LEGACY_DOCKER_WORKSPACE_PREFIX) {
+    return FILE_SERVICE_WORKSPACE_PREFIX
+  }
+
+  if (formattedDirectory.startsWith(`${LEGACY_DOCKER_WORKSPACE_PREFIX}/`)) {
+    return `${FILE_SERVICE_WORKSPACE_PREFIX}${formattedDirectory.slice(LEGACY_DOCKER_WORKSPACE_PREFIX.length)}`
+  }
+
+  return formattedDirectory
+}
+
+function stripWorkspacePrefix(path: string): string {
+  if (path === 'workspace') {
+    return '.'
+  }
+
+  if (path.startsWith('workspace/')) {
+    return path.slice('workspace/'.length)
+  }
+
+  return path
+}
+
+function resolveFileServiceRequestTarget(path: string, directory?: string): FileServiceRequestTarget {
+  const normalizedDirectory = normalizeDirectoryForFileService(directory)
+
+  if (!normalizedDirectory) {
+    return { directory: normalizedDirectory, path, supported: true }
+  }
+
+  if (
+    normalizedDirectory === LEGACY_DOCKER_ROOT_PREFIX ||
+    normalizedDirectory.startsWith(`${LEGACY_DOCKER_ROOT_PREFIX}/`)
+  ) {
+    if (path === 'workspace' || path.startsWith('workspace/')) {
+      return {
+        directory: FILE_SERVICE_WORKSPACE_PREFIX,
+        path: stripWorkspacePrefix(path),
+        supported: true,
+      }
+    }
+
+    return { directory: normalizedDirectory, path, supported: false }
+  }
+
+  return { directory: normalizedDirectory, path, supported: true }
+}
+
+export function isFileServicePathSupported(path: string, directory?: string): boolean {
+  return resolveFileServiceRequestTarget(path, directory).supported
 }
 
 async function fetchDirectory(path: string, directory?: string): Promise<FileNode[]> {
@@ -152,9 +220,18 @@ export async function getFileServiceAvailability(forceRefresh: boolean = false):
  * @param directory 工作目录（项目目录）
  */
 export async function getFileContent(path: string, directory?: string): Promise<FileContent> {
+  const target = resolveFileServiceRequestTarget(path, directory)
+
+  if (!target.supported) {
+    return get<FileContent>('/backend/file/content', {
+      path,
+      directory: formatPathForApi(directory),
+    })
+  }
+
   return get<FileContent>('/file/content', {
-    path,
-    directory: formatPathForApi(directory),
+    path: target.path,
+    directory: target.directory,
   })
 }
 
@@ -164,11 +241,13 @@ export async function saveFileContent(
   directory?: string,
   options: { expectedContent?: string } = {},
 ): Promise<FileWriteResponse> {
+  const target = resolveFileServiceRequestTarget(path, directory)
+
   return put<FileWriteResponse>(
     '/file/content',
     {
-      path,
-      directory: formatPathForApi(directory),
+      path: target.path,
+      directory: target.directory,
     },
     {
       content,
@@ -212,11 +291,13 @@ export async function downloadDirectoryArchive(
   directory?: string,
   options: { signal?: AbortSignal; timeout?: number } = {},
 ): Promise<{ blob: Blob; fileName: string }> {
+  const target = resolveFileServiceRequestTarget(path, directory)
+
   const response = await getBinary(
     '/file/archive',
     {
-      path,
-      directory: formatPathForApi(directory),
+      path: target.path,
+      directory: target.directory,
     },
     { signal: options.signal, timeout: options.timeout ?? 0 },
   )
@@ -233,11 +314,13 @@ export async function downloadFileAsset(
   directory?: string,
   options: { signal?: AbortSignal; timeout?: number } = {},
 ): Promise<{ blob: Blob; fileName: string }> {
+  const target = resolveFileServiceRequestTarget(path, directory)
+
   const response = await getBinary(
     '/file/download',
     {
-      path,
-      directory: formatPathForApi(directory),
+      path: target.path,
+      directory: target.directory,
     },
     { signal: options.signal, timeout: options.timeout ?? 0 },
   )
