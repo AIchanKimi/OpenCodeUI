@@ -1,23 +1,11 @@
-// ============================================
-// Tool API Types
-// 基于 @opencode-ai/sdk 类型
-// ============================================
+import type {
+  ToolIds as SDKToolIds,
+  ToolList as SDKToolList,
+  ToolListItem as SDKToolListItem,
+} from '@opencode-ai/sdk/v2/client'
 
-/**
- * 工具 ID 列表 — SDK 返回 string[]
- */
-export type ToolIDs = string[]
+export type ToolIDs = SDKToolIds
 
-/**
- * 工具列表项
- */
-export interface ToolListItem {
-  id: string
-  description: string
-  parameters?: unknown
-}
+export type ToolListItem = SDKToolListItem
 
-/**
- * 工具列表 — SDK 返回 ToolListItem[]
- */
-export type ToolList = ToolListItem[]
+export type ToolList = SDKToolList

@@ -13,7 +13,7 @@ import { formatPathForApi } from '../utils/directoryUtils'
 export async function getVcsInfo(directory?: string): Promise<VcsInfo | null> {
   try {
     const sdk = getSDKClient()
-    return unwrap(await sdk.vcs.get({ directory: formatPathForApi(directory) })) as VcsInfo
+    return unwrap(await sdk.vcs.get({ directory: formatPathForApi(directory) }))
   } catch {
     // VCS 不可用时返回 null
     return null
@@ -25,5 +25,5 @@ export async function getVcsInfo(directory?: string): Promise<VcsInfo | null> {
  */
 export async function getVcsDiff(mode: VcsDiffMode, directory?: string): Promise<FileDiff[]> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.vcs.diff({ mode, directory: formatPathForApi(directory) })) as FileDiff[]
+  return unwrap(await sdk.vcs.diff({ mode, directory: formatPathForApi(directory) }))
 }

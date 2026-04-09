@@ -12,7 +12,7 @@ import type { ApiAgent } from './types'
  */
 export async function getAgents(directory?: string): Promise<ApiAgent[]> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory) })) as ApiAgent[]
+  return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory) }))
 }
 
 /**

@@ -11,7 +11,7 @@ import type { MCPStatusResponse, McpServerConfig } from '../types/api/mcp'
  */
 export async function getMcpStatus(directory?: string): Promise<MCPStatusResponse> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.mcp.status({ directory: formatPathForApi(directory) })) as MCPStatusResponse
+  return unwrap(await sdk.mcp.status({ directory: formatPathForApi(directory) }))
 }
 
 /**

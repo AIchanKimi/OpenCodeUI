@@ -11,7 +11,7 @@ import type { ToolIDs, ToolList } from '../types/api/tool'
  */
 export async function getToolIds(directory?: string): Promise<ToolIDs> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.tool.ids({ directory: formatPathForApi(directory) })) as ToolIDs
+  return unwrap(await sdk.tool.ids({ directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -19,5 +19,5 @@ export async function getToolIds(directory?: string): Promise<ToolIDs> {
  */
 export async function getTools(provider: string, model: string, directory?: string): Promise<ToolList> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.tool.list({ provider, model, directory: formatPathForApi(directory) })) as ToolList
+  return unwrap(await sdk.tool.list({ provider, model, directory: formatPathForApi(directory) }))
 }

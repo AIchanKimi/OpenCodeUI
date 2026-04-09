@@ -85,7 +85,7 @@ export async function getDefaultModels(directory?: string): Promise<Record<strin
  */
 export async function getCurrentProject(directory?: string): Promise<ApiProject> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.project.current({ directory: formatPathForApi(directory) })) as ApiProject
+  return unwrap(await sdk.project.current({ directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -93,7 +93,7 @@ export async function getCurrentProject(directory?: string): Promise<ApiProject>
  */
 export async function getProjects(directory?: string): Promise<ApiProject[]> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.project.list({ directory: formatPathForApi(directory) })) as ApiProject[]
+  return unwrap(await sdk.project.list({ directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -101,7 +101,7 @@ export async function getProjects(directory?: string): Promise<ApiProject[]> {
  */
 export async function initGitProject(directory?: string): Promise<ApiProject> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.project.initGit({ directory: formatPathForApi(directory) })) as ApiProject
+  return unwrap(await sdk.project.initGit({ directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -122,7 +122,7 @@ export async function updateProject(
       directory: formatPathForApi(directory),
       ...params,
     }),
-  ) as ApiProject
+  )
 }
 
 // ============================================
@@ -131,5 +131,5 @@ export async function updateProject(
 
 export async function getPath(): Promise<ApiPath> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.path.get()) as ApiPath
+  return unwrap(await sdk.path.get())
 }

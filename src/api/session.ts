@@ -20,7 +20,7 @@ import type { TodoItem } from '../types/api/event'
  */
 export async function getSessionStatus(directory?: string): Promise<SessionStatusMap> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.session.status({ directory: formatPathForApi(directory) })) as SessionStatusMap
+  return unwrap(await sdk.session.status({ directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -29,13 +29,15 @@ export async function getSessionStatus(directory?: string): Promise<SessionStatu
  */
 export async function getSessionDiff(sessionId: string, directory?: string, messageId?: string): Promise<FileDiff[]> {
   const sdk = getSDKClient()
-  return (unwrap(
-    await sdk.session.diff({
-      sessionID: sessionId,
-      directory: formatPathForApi(directory),
-      messageID: messageId,
-    }),
-  ) ?? []) as FileDiff[]
+  return (
+    unwrap(
+      await sdk.session.diff({
+        sessionID: sessionId,
+        directory: formatPathForApi(directory),
+        messageID: messageId,
+      }),
+    ) ?? []
+  )
 }
 
 function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithParts & { info: ApiUserMessage } {
@@ -78,7 +80,7 @@ export async function getSessions(params: SessionListParams = {}): Promise<ApiSe
       search,
       limit,
     }),
-  ) as ApiSession[]
+  )
 }
 
 /**
@@ -86,7 +88,7 @@ export async function getSessions(params: SessionListParams = {}): Promise<ApiSe
  */
 export async function getSession(sessionId: string, directory?: string): Promise<ApiSession> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.session.get({ sessionID: sessionId, directory: formatPathForApi(directory) })) as ApiSession
+  return unwrap(await sdk.session.get({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -107,7 +109,7 @@ export async function createSession(
       title,
       parentID,
     }),
-  ) as ApiSession
+  )
 }
 
 /**
@@ -125,7 +127,7 @@ export async function updateSession(
       directory: formatPathForApi(directory),
       ...params,
     }),
-  ) as ApiSession
+  )
 }
 
 /**
@@ -167,7 +169,7 @@ export async function revertMessage(
       messageID: messageId,
       partID: partId,
     }),
-  ) as ApiSession
+  )
 }
 
 /**
@@ -175,9 +177,7 @@ export async function revertMessage(
  */
 export async function unrevertSession(sessionId: string, directory?: string): Promise<ApiSession> {
   const sdk = getSDKClient()
-  return unwrap(
-    await sdk.session.unrevert({ sessionID: sessionId, directory: formatPathForApi(directory) }),
-  ) as ApiSession
+  return unwrap(await sdk.session.unrevert({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -185,7 +185,7 @@ export async function unrevertSession(sessionId: string, directory?: string): Pr
  */
 export async function shareSession(sessionId: string, directory?: string): Promise<ApiSession> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.session.share({ sessionID: sessionId, directory: formatPathForApi(directory) })) as ApiSession
+  return unwrap(await sdk.session.share({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -193,9 +193,7 @@ export async function shareSession(sessionId: string, directory?: string): Promi
  */
 export async function unshareSession(sessionId: string, directory?: string): Promise<ApiSession> {
   const sdk = getSDKClient()
-  return unwrap(
-    await sdk.session.unshare({ sessionID: sessionId, directory: formatPathForApi(directory) }),
-  ) as ApiSession
+  return unwrap(await sdk.session.unshare({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
@@ -209,7 +207,7 @@ export async function forkSession(sessionId: string, messageId?: string, directo
       directory: formatPathForApi(directory),
       messageID: messageId,
     }),
-  ) as ApiSession
+  )
 }
 
 /**
@@ -236,9 +234,7 @@ export async function summarizeSession(
  */
 export async function getSessionChildren(sessionId: string, directory?: string): Promise<ApiSession[]> {
   const sdk = getSDKClient()
-  return unwrap(
-    await sdk.session.children({ sessionID: sessionId, directory: formatPathForApi(directory) }),
-  ) as ApiSession[]
+  return unwrap(await sdk.session.children({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**

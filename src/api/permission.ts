@@ -16,9 +16,7 @@ import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, Questio
  */
 export async function getPendingPermissions(sessionId?: string, directory?: string): Promise<ApiPermissionRequest[]> {
   const sdk = getSDKClient()
-  const permissions = unwrap(
-    await sdk.permission.list({ directory: formatPathForApi(directory) }),
-  ) as ApiPermissionRequest[]
+  const permissions = unwrap(await sdk.permission.list({ directory: formatPathForApi(directory) }))
   return sessionId ? permissions.filter((p: ApiPermissionRequest) => p.sessionID === sessionId) : permissions
 }
 
@@ -52,7 +50,7 @@ export async function replyPermission(
  */
 export async function getPendingQuestions(sessionId?: string, directory?: string): Promise<ApiQuestionRequest[]> {
   const sdk = getSDKClient()
-  const questions = unwrap(await sdk.question.list({ directory: formatPathForApi(directory) })) as ApiQuestionRequest[]
+  const questions = unwrap(await sdk.question.list({ directory: formatPathForApi(directory) }))
   return sessionId ? questions.filter((q: ApiQuestionRequest) => q.sessionID === sessionId) : questions
 }
 

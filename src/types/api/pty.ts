@@ -1,36 +1,17 @@
-// ============================================
-// PTY (Pseudo Terminal) API Types
-// 基于 OpenAPI 规范
-// ============================================
+import type { Pty as SDKPty } from '@opencode-ai/sdk/v2/client'
 
-/**
- * PTY 尺寸
- */
 export interface PtySize {
   rows: number
   cols: number
 }
 
-/**
- * PTY 会话
- */
-export interface Pty {
-  id: string
-  title?: string
-  command: string
-  args?: string[]
-  cwd?: string
+export type Pty = SDKPty & {
   env?: Record<string, string>
   size?: PtySize
   running: boolean
-  status?: string
-  pid?: number
   exitCode?: number
 }
 
-/**
- * PTY 创建参数
- */
 export interface PtyCreateParams {
   command?: string
   args?: string[]
@@ -39,9 +20,6 @@ export interface PtyCreateParams {
   env?: Record<string, string>
 }
 
-/**
- * PTY 更新参数
- */
 export interface PtyUpdateParams {
   title?: string
   size?: PtySize

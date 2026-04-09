@@ -1,39 +1,13 @@
-// ============================================
-// Agent API Types
-// 基于 OpenAPI 规范
-// ============================================
+import type { Agent as SDKAgent } from '@opencode-ai/sdk/v2/client'
 
-import type { ModelRef } from './common'
-import type { PermissionAction } from './permission'
+export type AgentMode = SDKAgent['mode']
 
-/**
- * Agent 模式
- */
-export type AgentMode = 'subagent' | 'primary' | 'all'
-
-/**
- * Agent 权限配置
- */
 export interface AgentPermission {
   permission: string
-  action: PermissionAction
+  action: 'allow' | 'ask' | 'deny'
   pattern: string
 }
 
-/**
- * Agent 实体
- */
-export interface Agent {
-  name: string
-  description?: string
-  mode: AgentMode
-  native?: boolean
-  hidden?: boolean
-  temperature?: number
-  topP?: number
-  color?: string
-  prompt?: string
+export type Agent = Omit<SDKAgent, 'permission'> & {
   permission?: AgentPermission[]
-  options?: Record<string, unknown>
-  model?: ModelRef
 }

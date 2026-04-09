@@ -61,17 +61,23 @@ export function extractUserMessageContent(apiMessage: ApiMessageWithParts): Reve
 
   const attachments: Attachment[] = []
 
+  const getSourcePath = (source: ApiFilePart['source']): string | undefined => {
+    if (!source || !('path' in source)) return undefined
+    return source.path
+  }
+
   for (const part of parts) {
     if (part.type === 'file') {
       const fp = part as ApiFilePart
       const isFolder = fp.mime === 'application/x-directory'
+      const sourcePath = getSourcePath(fp.source)
       attachments.push({
         id: fp.id || crypto.randomUUID(),
         type: isFolder ? 'folder' : 'file',
-        displayName: fp.filename || fp.source?.path || 'file',
+        displayName: fp.filename || sourcePath || 'file',
         url: fp.url,
         mime: fp.mime,
-        relativePath: fp.source?.path,
+        relativePath: sourcePath,
         textRange: fp.source?.text
           ? {
               value: fp.source.text.value,
