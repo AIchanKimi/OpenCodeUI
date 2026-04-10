@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.4.8] - 2026-04-10
+
+- feat: queue follow-up messages behind active turns (90756e3)
+- fix: GPT apply_patch diff not rendering and error messages invisible in chat (6d6f81d)
+- fix: align prompt history cursor navigation (4dd2bf4)
+- fix: tighten session alerts and mobile code copy (8e02c0a)
+
 ## [v0.4.7] - 2026-04-09
 
 - fix: update command test to mock sdk instead of removed http module (f7521bc)
