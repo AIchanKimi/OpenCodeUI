@@ -32,9 +32,12 @@ services:
       - opencode-router-data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      - frontend
-      - backend
-      - file-service
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      file-service:
+        condition: service_healthy
     environment:
       - TARGET_CONTAINER=opencode-backend
       - ROUTER_STATE_FILE=/data/routes.json
@@ -86,6 +89,18 @@ services:
       fi;
       fi &&
       npm run dev -- --host 0.0.0.0 --port 3000"
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000').then(res => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 60s
     expose:
       - '3000'
     networks:
@@ -127,6 +142,12 @@ services:
       - OPENCODE_SERVER_USERNAME=${OPENCODE_SERVER_USERNAME:-opencode}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:4096/global/health']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - opencode-net
 
@@ -148,6 +169,12 @@ services:
       - FILE_SERVICE_PORT=4097
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-}
       - OPENCODE_SERVER_USERNAME=${OPENCODE_SERVER_USERNAME:-opencode}
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - http://127.0.0.1:4097/health >/dev/null 2>&1']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     networks:
       - opencode-net
 volumes:
