@@ -1,9 +1,9 @@
 // ============================================
 // Permission & Question API Functions
-// 基于 OpenAPI: /permission, /question 相关接口
+// 基于 @opencode-ai/sdk: /permission, /question 相关接口
 // ============================================
 
-import { get, post } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, QuestionAnswer } from './types'
 
@@ -12,18 +12,16 @@ import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, Questio
 // ============================================
 
 /**
- * GET /permission - 获取待处理的权限请求列表
- * directory 会根据 pathMode 自动转换格式
+ * 获取待处理的权限请求列表
  */
 export async function getPendingPermissions(sessionId?: string, directory?: string): Promise<ApiPermissionRequest[]> {
-  const permissions = await get<ApiPermissionRequest[]>('/permission', {
-    directory: formatPathForApi(directory),
-  })
+  const sdk = getSDKClient()
+  const permissions = unwrap(await sdk.permission.list({ directory: formatPathForApi(directory) }))
   return sessionId ? permissions.filter((p: ApiPermissionRequest) => p.sessionID === sessionId) : permissions
 }
 
 /**
- * POST /permission/{requestID}/reply - 回复权限请求
+ * 回复权限请求
  */
 export async function replyPermission(
   requestId: string,
@@ -31,13 +29,16 @@ export async function replyPermission(
   message?: string,
   directory?: string,
 ): Promise<boolean> {
-  return post<boolean>(
-    `/permission/${requestId}/reply`,
-    {
+  const sdk = getSDKClient()
+  unwrap(
+    await sdk.permission.reply({
+      requestID: requestId,
       directory: formatPathForApi(directory),
-    },
-    { reply, message },
+      reply,
+      message,
+    }),
   )
+  return true
 }
 
 // ============================================
@@ -45,38 +46,43 @@ export async function replyPermission(
 // ============================================
 
 /**
- * GET /question - 获取待处理的问题请求列表
- * directory 会根据 pathMode 自动转换格式
+ * 获取待处理的问题请求列表
  */
 export async function getPendingQuestions(sessionId?: string, directory?: string): Promise<ApiQuestionRequest[]> {
-  const questions = await get<ApiQuestionRequest[]>('/question', {
-    directory: formatPathForApi(directory),
-  })
+  const sdk = getSDKClient()
+  const questions = unwrap(await sdk.question.list({ directory: formatPathForApi(directory) }))
   return sessionId ? questions.filter((q: ApiQuestionRequest) => q.sessionID === sessionId) : questions
 }
 
 /**
- * POST /question/{requestID}/reply - 回复问题请求
+ * 回复问题请求
  */
 export async function replyQuestion(
   requestId: string,
   answers: QuestionAnswer[],
   directory?: string,
 ): Promise<boolean> {
-  return post<boolean>(
-    `/question/${requestId}/reply`,
-    {
+  const sdk = getSDKClient()
+  unwrap(
+    await sdk.question.reply({
+      requestID: requestId,
       directory: formatPathForApi(directory),
-    },
-    { answers },
+      answers,
+    }),
   )
+  return true
 }
 
 /**
- * POST /question/{requestID}/reject - 拒绝问题请求
+ * 拒绝问题请求
  */
 export async function rejectQuestion(requestId: string, directory?: string): Promise<boolean> {
-  return post<boolean>(`/question/${requestId}/reject`, {
-    directory: formatPathForApi(directory),
-  })
+  const sdk = getSDKClient()
+  unwrap(
+    await sdk.question.reject({
+      requestID: requestId,
+      directory: formatPathForApi(directory),
+    }),
+  )
+  return true
 }

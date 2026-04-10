@@ -2,7 +2,7 @@
 // VCS API - 版本控制信息
 // ============================================
 
-import { get } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import type { FileDiff } from './types'
 import type { VcsDiffMode, VcsInfo } from '../types/api/vcs'
 import { formatPathForApi } from '../utils/directoryUtils'
@@ -12,7 +12,8 @@ import { formatPathForApi } from '../utils/directoryUtils'
  */
 export async function getVcsInfo(directory?: string): Promise<VcsInfo | null> {
   try {
-    return await get<VcsInfo>('/vcs', { directory: formatPathForApi(directory) })
+    const sdk = getSDKClient()
+    return unwrap(await sdk.vcs.get({ directory: formatPathForApi(directory) }))
   } catch {
     // VCS 不可用时返回 null
     return null
@@ -23,5 +24,6 @@ export async function getVcsInfo(directory?: string): Promise<VcsInfo | null> {
  * 获取 Git 或分支维度的 diff
  */
 export async function getVcsDiff(mode: VcsDiffMode, directory?: string): Promise<FileDiff[]> {
-  return get<FileDiff[]>('/vcs/diff', { mode, directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.vcs.diff({ mode, directory: formatPathForApi(directory) }))
 }

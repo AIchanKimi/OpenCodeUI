@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.4.7] - 2026-04-09
+
+- fix: update command test to mock sdk instead of removed http module (f7521bc)
+- fix: patch sdk migration review findings (e45b2b5)
+- refactor: collapse remaining sdk helper types (c9d2a74)
+- refactor: align remaining api models with sdk (f9c9272)
+- refactor: align user message model fields with sdk (e427ccd)
+- refactor: align event types with sdk (826cd49)
+- refactor: tighten message part guards (b83098f)
+- refactor: align tool part types with sdk (cecab44)
+- refactor: align event payload adapters with sdk (d9ffe50)
+- refactor: tighten sdk adapters and message conversions (a5aa326)
+- refactor: align config and skill types with sdk (4eed10c)
+- refactor: trim remaining sdk type wrappers (bfa0bde)
+- refactor: collapse API types onto sdk definitions (e5e7305)
+- refactor: replace API type wrappers with sdk aliases (89d42ac)
+- fix: finish sdk migration cleanup (a90d0aa)
+- fix: align API layer with official opencode sdk (ae4308c)
+- fix: eliminate UI flicker, merge duplicate effects, avoid object mutation (a6e4cc1)
+- fix: stabilize git workspace recents and worktree actions (abd0ee5)
+
 ## [v0.4.6] - 2026-04-07
 
 - fix: keep active child sessions visible across projects (9d8a725)

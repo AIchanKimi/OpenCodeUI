@@ -3,23 +3,10 @@
 // ============================================
 
 import { getApiBaseUrl, getAuthHeader } from './http'
+import { normalizeTodoItems } from './todo'
 import { isTauri } from '../utils/tauri'
-import type {
-  ApiMessageWithParts,
-  ApiPart,
-  ApiSession,
-  ApiPermissionRequest,
-  PermissionReply,
-  ApiQuestionRequest,
-  GlobalEvent,
-  EventCallbacks,
-  PartDeltaPayload,
-  SessionStatusPayload,
-  WorktreeReadyPayload,
-  WorktreeFailedPayload,
-  VcsBranchUpdatedPayload,
-  TodoUpdatedPayload,
-} from './types'
+import type { EventCallbacks, EventType, GlobalEvent, SessionErrorPayload, TodoUpdatedPayload } from './types'
+import { EventTypes } from '../types/api/event'
 
 // ============================================
 // Connection State
@@ -75,6 +62,8 @@ const BACKGROUND_KEEPALIVE_INTERVAL = 30000
 // 所有订阅者的 callbacks
 const allSubscribers = new Set<EventCallbacks>()
 
+const EVENT_TYPE_SET = new Set<string>(Object.values(EventTypes))
+
 // 单例连接状态
 let singletonController: AbortController | null = null
 let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
@@ -100,7 +89,7 @@ function disconnectTauri(): Promise<void> {
   if (!isTauri()) return Promise.resolve()
 
   const p = pendingDisconnect.then(() =>
-    import('@tauri-apps/api/core').then(({ invoke }) => invoke('sse_disconnect') as Promise<void>).catch(() => {}),
+    import('@tauri-apps/api/core').then(({ invoke }) => invoke('sse_disconnect').then(() => undefined)).catch(() => {}),
   )
   pendingDisconnect = p
   return p
@@ -241,13 +230,9 @@ async function connectViaTauri() {
         case 'message': {
           resetHeartbeat()
           if (msg.data?.raw) {
-            try {
-              const globalEvent = JSON.parse(msg.data.raw) as GlobalEvent
+            const globalEvent = parseGlobalEvent(msg.data.raw)
+            if (globalEvent) {
               broadcastEvent(globalEvent)
-            } catch (e) {
-              if (import.meta.env.DEV) {
-                console.warn('[SSE/Tauri] Failed to parse event:', e, msg.data.raw)
-              }
             }
           }
           break
@@ -394,13 +379,9 @@ function connectViaBrowser() {
             if (dataLines.length > 0) {
               const eventData = dataLines.join('\n')
               dataLines.length = 0
-              try {
-                const globalEvent = JSON.parse(eventData) as GlobalEvent
+              const globalEvent = parseGlobalEvent(eventData)
+              if (globalEvent) {
                 broadcastEvent(globalEvent)
-              } catch (e) {
-                if (import.meta.env.DEV) {
-                  console.warn('[SSE] Failed to parse event:', e, eventData)
-                }
               }
             }
           }
@@ -426,6 +407,34 @@ function connectViaBrowser() {
       allSubscribers.forEach(cb => cb.onError?.(error))
       scheduleReconnect()
     })
+}
+
+function parseGlobalEvent(raw: string): GlobalEvent | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return isGlobalEvent(parsed) ? parsed : null
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[SSE] Failed to parse event:', error, raw)
+    }
+    return null
+  }
+}
+
+function isGlobalEvent(value: unknown): value is GlobalEvent {
+  if (!isRecord(value)) return false
+  if (typeof value.directory !== 'string') return false
+  if (!isRecord(value.payload)) return false
+  if (!isEventType(value.payload.type)) return false
+  return 'properties' in value.payload
+}
+
+function isEventType(value: unknown): value is EventType {
+  return typeof value === 'string' && EVENT_TYPE_SET.has(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object'
 }
 
 // ============================================
@@ -629,83 +638,119 @@ function unregisterLifecycleListeners() {
 
 // 广播事件给所有订阅者
 function broadcastEvent(globalEvent: GlobalEvent) {
-  const { type, properties } = globalEvent.payload
-
   // 广播给所有订阅者
   allSubscribers.forEach(callbacks => {
-    handleEventForSubscriber(type, properties, callbacks)
+    handleEventForSubscriber(globalEvent.payload, callbacks)
   })
 }
 
-function handleEventForSubscriber(type: string, properties: unknown, callbacks: EventCallbacks) {
-  switch (type) {
-    case 'message.updated': {
-      const data = properties as { info: ApiMessageWithParts['info'] }
-      callbacks.onMessageUpdated?.(data.info)
+function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: EventCallbacks) {
+  switch (payload.type) {
+    case EventTypes.MESSAGE_UPDATED: {
+      callbacks.onMessageUpdated?.(payload.properties.info)
       break
     }
-    case 'message.part.updated': {
-      const data = properties as { part: ApiPart; delta?: string }
-      callbacks.onPartUpdated?.(data.part, data.delta)
+    case EventTypes.MESSAGE_PART_UPDATED: {
+      callbacks.onPartUpdated?.(payload.properties.part)
       break
     }
-    case 'message.part.delta': {
-      const data = properties as PartDeltaPayload
-      callbacks.onPartDelta?.(data)
+    case EventTypes.MESSAGE_PART_DELTA: {
+      callbacks.onPartDelta?.(payload.properties)
       break
     }
-    case 'message.part.removed':
-      callbacks.onPartRemoved?.(properties as { id: string; messageID: string; sessionID: string })
+    case EventTypes.MESSAGE_PART_REMOVED:
+      callbacks.onPartRemoved?.(payload.properties)
       break
-    case 'session.updated': {
-      const data = properties as { info: ApiSession }
-      callbacks.onSessionUpdated?.(data.info)
-      break
-    }
-    case 'session.created': {
-      const data = properties as { info: ApiSession }
-      callbacks.onSessionCreated?.(data.info)
+    case EventTypes.SESSION_UPDATED: {
+      callbacks.onSessionUpdated?.(payload.properties.info)
       break
     }
-    case 'session.error':
-      callbacks.onSessionError?.(properties as { sessionID: string; name: string; data: unknown })
+    case EventTypes.SESSION_CREATED: {
+      callbacks.onSessionCreated?.(payload.properties.info)
       break
-    case 'session.idle':
-      callbacks.onSessionIdle?.(properties as { sessionID: string })
+    }
+    case EventTypes.SESSION_DELETED: {
+      callbacks.onSessionDeleted?.(payload.properties.sessionID)
       break
-    case 'session.status':
-      callbacks.onSessionStatus?.(properties as SessionStatusPayload)
+    }
+    case EventTypes.PROJECT_UPDATED: {
+      callbacks.onProjectUpdated?.(payload.properties)
       break
-    case 'permission.asked':
-      callbacks.onPermissionAsked?.(properties as ApiPermissionRequest)
+    }
+    case EventTypes.SESSION_ERROR:
+      callbacks.onSessionError?.(normalizeSessionError(payload.properties))
       break
-    case 'permission.replied':
-      callbacks.onPermissionReplied?.(properties as { sessionID: string; requestID: string; reply: PermissionReply })
+    case EventTypes.SESSION_IDLE:
+      callbacks.onSessionIdle?.(payload.properties)
       break
-    case 'question.asked':
-      callbacks.onQuestionAsked?.(properties as ApiQuestionRequest)
+    case EventTypes.SESSION_STATUS:
+      callbacks.onSessionStatus?.(payload.properties)
       break
-    case 'question.replied':
-      callbacks.onQuestionReplied?.(properties as { sessionID: string; requestID: string; answers: string[][] })
+    case EventTypes.PERMISSION_ASKED:
+      callbacks.onPermissionAsked?.(payload.properties)
       break
-    case 'question.rejected':
-      callbacks.onQuestionRejected?.(properties as { sessionID: string; requestID: string })
+    case EventTypes.PERMISSION_REPLIED:
+      callbacks.onPermissionReplied?.(payload.properties)
       break
-    case 'worktree.ready':
-      callbacks.onWorktreeReady?.(properties as WorktreeReadyPayload)
+    case EventTypes.QUESTION_ASKED:
+      callbacks.onQuestionAsked?.(payload.properties)
       break
-    case 'worktree.failed':
-      callbacks.onWorktreeFailed?.(properties as WorktreeFailedPayload)
+    case EventTypes.QUESTION_REPLIED:
+      callbacks.onQuestionReplied?.(payload.properties)
       break
-    case 'vcs.branch.updated':
-      callbacks.onVcsBranchUpdated?.(properties as VcsBranchUpdatedPayload)
+    case EventTypes.QUESTION_REJECTED:
+      callbacks.onQuestionRejected?.(payload.properties)
       break
-    case 'todo.updated':
-      callbacks.onTodoUpdated?.(properties as TodoUpdatedPayload)
+    case EventTypes.WORKTREE_READY:
+      callbacks.onWorktreeReady?.(payload.properties)
       break
+    case EventTypes.WORKTREE_FAILED:
+      callbacks.onWorktreeFailed?.(payload.properties)
+      break
+    case EventTypes.VCS_BRANCH_UPDATED:
+      callbacks.onVcsBranchUpdated?.(payload.properties)
+      break
+    case EventTypes.TODO_UPDATED: {
+      callbacks.onTodoUpdated?.({
+        sessionID: payload.properties.sessionID,
+        todos: normalizeTodoItems(payload.properties.todos),
+      } satisfies TodoUpdatedPayload)
+      break
+    }
     default:
       // 忽略其他事件类型
       break
+  }
+}
+
+function normalizeSessionError(properties: unknown): SessionErrorPayload {
+  if (!isRecord(properties)) {
+    return { sessionID: '', name: 'UnknownError', data: properties }
+  }
+
+  const sessionID = typeof properties.sessionID === 'string' ? properties.sessionID : ''
+
+  if (typeof properties.name === 'string') {
+    return {
+      sessionID,
+      name: properties.name,
+      data: properties.data,
+    }
+  }
+
+  const sdkError = properties.error
+  if (isRecord(sdkError)) {
+    return {
+      sessionID,
+      name: typeof sdkError.name === 'string' ? sdkError.name : 'UnknownError',
+      data: 'data' in sdkError ? sdkError.data : sdkError,
+    }
+  }
+
+  return {
+    sessionID,
+    name: 'UnknownError',
+    data: sdkError,
   }
 }
 

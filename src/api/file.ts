@@ -1,9 +1,10 @@
 // ============================================
 // File Search API Functions
-// 基于 OpenAPI: /file, /find/file, /find/symbol 相关接口
+// 基于 @opencode-ai/sdk: /file, /find/file, /find/symbol 相关接口
 // ============================================
 
 import { buildUrl, get, getAuthHeader, getBinary, put, unifiedFetch } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { FileNode, FileContent, FileStatusItem, FileWriteResponse, SymbolInfo } from './types'
 import { serverStore } from '../store/serverStore'
@@ -93,21 +94,18 @@ export function isFileServicePathSupported(path: string, directory?: string): bo
 }
 
 async function fetchDirectory(path: string, directory?: string): Promise<FileNode[]> {
+  const sdk = getSDKClient()
   const isAbsolute = /^[a-zA-Z]:/.test(path) || path.startsWith('/')
 
   if (isAbsolute && !directory) {
-    return get<FileNode[]>('/file', { directory: formatPathForApi(path), path: '' })
+    return unwrap(await sdk.file.list({ directory: formatPathForApi(path), path: '' }))
   }
 
-  return get<FileNode[]>('/file', { path, directory: formatPathForApi(directory) })
+  return unwrap(await sdk.file.list({ path, directory: formatPathForApi(directory) }))
 }
 
 /**
- * GET /find/file - 搜索文件或目录
- * @param query 搜索关键词
- * @param options.directory 工作目录（项目目录）
- * @param options.type 搜索类型：file 或 directory
- * @param options.limit 返回结果数量限制
+ * 搜索文件或目录
  */
 export async function searchFiles(
   query: string,
@@ -117,18 +115,19 @@ export async function searchFiles(
     limit?: number
   } = {},
 ): Promise<string[]> {
-  return get<string[]>('/find/file', {
-    query,
-    directory: formatPathForApi(options.directory),
-    type: options.type,
-    limit: options.limit,
-  })
+  const sdk = getSDKClient()
+  return unwrap(
+    await sdk.find.files({
+      query,
+      directory: formatPathForApi(options.directory),
+      type: options.type,
+      limit: options.limit,
+    }),
+  ) as string[]
 }
 
 /**
- * GET /file - 列出目录内容
- * @param path 要列出的路径（相对于 directory）
- * @param directory 工作目录（项目目录）
+ * 列出目录内容
  */
 export async function listDirectory(path: string, directory?: string): Promise<FileNode[]> {
   if (!isRootDirectoryPath(path)) {
@@ -215,9 +214,7 @@ export async function getFileServiceAvailability(forceRefresh: boolean = false):
 }
 
 /**
- * GET /file/content - 读取文件内容
- * @param path 文件路径（相对于 directory）
- * @param directory 工作目录（项目目录）
+ * 读取文件内容
  */
 export async function getFileContent(path: string, directory?: string): Promise<FileContent> {
   const target = resolveFileServiceRequestTarget(path, directory)
@@ -332,29 +329,23 @@ export async function downloadFileAsset(
 }
 
 /**
- * GET /file/status - 获取文件 git 状态
- * @param directory 工作目录（项目目录）
+ * 获取文件 git 状态
  */
 export async function getFileStatus(directory?: string): Promise<FileStatusItem[]> {
-  return get<FileStatusItem[]>('/file/status', {
-    directory: formatPathForApi(directory),
-  })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.file.status({ directory: formatPathForApi(directory) }))
 }
 
 /**
- * GET /find/symbol - 搜索代码符号
- * @param query 搜索关键词
- * @param directory 工作目录（项目目录）
+ * 搜索代码符号
  */
 export async function searchSymbols(query: string, directory?: string): Promise<SymbolInfo[]> {
-  return get<SymbolInfo[]>('/find/symbol', { query, directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.find.symbols({ query, directory: formatPathForApi(directory) }))
 }
 
 /**
  * 搜索目录（便捷方法）
- * @param query 搜索关键词
- * @param baseDirectory 基础目录（从哪里开始搜索）
- * @param limit 返回结果数量限制
  */
 export async function searchDirectories(query: string, baseDirectory?: string, limit: number = 50): Promise<string[]> {
   return searchFiles(query, {

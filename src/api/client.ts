@@ -1,14 +1,11 @@
 // ============================================
 // API Client for OpenCode Backend
-// 基于 OpenAPI: /config, /project, /provider 相关接口
+// 基于 @opencode-ai/sdk: /config, /project, /provider 相关接口
 // ============================================
 
-import { get, patch, post } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
-import type { ProvidersResponse, ModelInfo, ApiProject, ApiPath } from './types'
-
-// Re-export API_BASE for backward compatibility
-export { API_BASE } from './http'
+import type { ModelInfo, ApiProject, ApiPath } from './types'
 
 // Re-export all types
 export * from './types'
@@ -37,13 +34,12 @@ export * from './lsp'
 
 // ============================================
 // Model API Functions
-// 基于 OpenAPI: GET /config/providers
+// 基于 SDK: config.providers()
 // ============================================
 
 export async function getActiveModels(directory?: string): Promise<ModelInfo[]> {
-  const data = await get<ProvidersResponse>('/config/providers', {
-    directory: formatPathForApi(directory),
-  })
+  const sdk = getSDKClient()
+  const data = unwrap(await sdk.config.providers({ directory: formatPathForApi(directory) }))
   const models: ModelInfo[] = []
 
   for (const provider of data.providers) {
@@ -75,40 +71,42 @@ export async function getActiveModels(directory?: string): Promise<ModelInfo[]> 
 }
 
 export async function getDefaultModels(directory?: string): Promise<Record<string, string>> {
-  const data = await get<ProvidersResponse>('/config/providers', {
-    directory: formatPathForApi(directory),
-  })
+  const sdk = getSDKClient()
+  const data = unwrap(await sdk.config.providers({ directory: formatPathForApi(directory) }))
   return data.default
 }
 
 // ============================================
 // Project API Functions
-// 基于 OpenAPI: /project, /project/current, /project/{projectID}
+// 基于 SDK: project.*
 // ============================================
 
 /**
- * GET /project/current - 获取当前项目
+ * 获取当前项目
  */
 export async function getCurrentProject(directory?: string): Promise<ApiProject> {
-  return get<ApiProject>('/project/current', { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.project.current({ directory: formatPathForApi(directory) }))
 }
 
 /**
- * GET /project - 获取项目列表
+ * 获取项目列表
  */
 export async function getProjects(directory?: string): Promise<ApiProject[]> {
-  return get<ApiProject[]>('/project', { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.project.list({ directory: formatPathForApi(directory) }))
 }
 
 /**
- * POST /project/git/init - 初始化 Git 仓库
+ * 初始化 Git 仓库
  */
 export async function initGitProject(directory?: string): Promise<ApiProject> {
-  return post<ApiProject>('/project/git/init', { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.project.initGit({ directory: formatPathForApi(directory) }))
 }
 
 /**
- * PATCH /project/{projectID} - 更新项目
+ * 更新项目
  */
 export async function updateProject(
   projectId: string,
@@ -118,12 +116,13 @@ export async function updateProject(
   },
   directory?: string,
 ): Promise<ApiProject> {
-  return patch<ApiProject>(
-    `/project/${projectId}`,
-    {
+  const sdk = getSDKClient()
+  return unwrap(
+    await sdk.project.update({
+      projectID: projectId,
       directory: formatPathForApi(directory),
-    },
-    params,
+      ...params,
+    }),
   )
 }
 
@@ -132,5 +131,6 @@ export async function updateProject(
 // ============================================
 
 export async function getPath(): Promise<ApiPath> {
-  return get<ApiPath>('/path')
+  const sdk = getSDKClient()
+  return unwrap(await sdk.path.get())
 }

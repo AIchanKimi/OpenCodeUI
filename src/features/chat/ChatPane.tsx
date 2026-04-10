@@ -354,8 +354,8 @@ export const ChatPane = memo(function ChatPane({
     if (messages.length === 0) return
     const lastUserMsg = [...messages].reverse().find(m => m.info.role === 'user')
     if (lastUserMsg && 'model' in lastUserMsg.info) {
-      const userInfo = lastUserMsg.info as { model?: { providerID: string; modelID: string }; variant?: string }
-      restoreFromMessage(userInfo.model, userInfo.variant)
+      const userInfo = lastUserMsg.info as { model?: { providerID: string; modelID: string; variant?: string } }
+      restoreFromMessage(userInfo.model, userInfo.model?.variant)
     }
   }, [inputRestoreContent, messages, models, restoreFromMessage])
 

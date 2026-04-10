@@ -1,36 +1,43 @@
 // ============================================
 // Session API Functions
-// 基于 OpenAPI: /session 相关接口
+// 基于 @opencode-ai/sdk: /session 相关接口
 // ============================================
 
-import { get, post, patch, del } from './http'
+import { getSDKClient, unwrap } from './sdk'
+import { normalizeTodoItems } from './todo'
 import { formatPathForApi } from '../utils/directoryUtils'
 import { getSessionMessages } from './message'
 import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
 import type { SessionStatusMap } from '../types/api/session'
+import type { TodoItem } from '../types/api/event'
 
-// ... existing code ...
+// ============================================
+// Session Status & Diff
+// ============================================
 
 /**
- * GET /session/status - 获取所有 session 的当前状态
+ * 获取所有 session 的当前状态
  */
 export async function getSessionStatus(directory?: string): Promise<SessionStatusMap> {
-  return get<SessionStatusMap>('/session/status', { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.status({ directory: formatPathForApi(directory) }))
 }
 
 /**
- * GET /session/{sessionID}/diff - 获取 session 的 diff
+ * 获取 session 的 diff
+ * 返回上游最新的 SnapshotFileDiff 格式（file/patch/additions/deletions/status）
  */
 export async function getSessionDiff(sessionId: string, directory?: string, messageId?: string): Promise<FileDiff[]> {
-  const params: Record<string, string> = {}
-  const formattedDir = formatPathForApi(directory)
-  if (formattedDir) {
-    params.directory = formattedDir
-  }
-  if (messageId) {
-    params.messageID = messageId
-  }
-  return get<FileDiff[]>(`/session/${sessionId}/diff`, params)
+  const sdk = getSDKClient()
+  return (
+    unwrap(
+      await sdk.session.diff({
+        sessionID: sessionId,
+        directory: formatPathForApi(directory),
+        messageID: messageId,
+      }),
+    ) ?? []
+  )
 }
 
 function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithParts & { info: ApiUserMessage } {
@@ -56,35 +63,36 @@ export async function getLastTurnDiff(sessionId: string, directory?: string): Pr
 }
 
 // ============================================
-// Session Actions
-// ============================================
 // Session CRUD
 // ============================================
 
 /**
- * GET /session - 获取 session 列表
- * directory 会根据 pathMode 自动转换格式
+ * 获取 session 列表
  */
 export async function getSessions(params: SessionListParams = {}): Promise<ApiSession[]> {
+  const sdk = getSDKClient()
   const { directory, roots, start, search, limit } = params
-  return get<ApiSession[]>('/session', {
-    directory: formatPathForApi(directory),
-    roots,
-    start,
-    search,
-    limit,
-  })
+  return unwrap(
+    await sdk.session.list({
+      directory: formatPathForApi(directory),
+      roots,
+      start,
+      search,
+      limit,
+    }),
+  )
 }
 
 /**
- * GET /session/{sessionID} - 获取单个 session
+ * 获取单个 session
  */
 export async function getSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  return get<ApiSession>(`/session/${sessionId}`, { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.get({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
- * POST /session - 创建 session
+ * 创建 session
  */
 export async function createSession(
   params: {
@@ -93,26 +101,42 @@ export async function createSession(
     parentID?: string
   } = {},
 ): Promise<ApiSession> {
+  const sdk = getSDKClient()
   const { directory, title, parentID } = params
-  return post<ApiSession>('/session', { directory: formatPathForApi(directory) }, { title, parentID })
+  return unwrap(
+    await sdk.session.create({
+      directory: formatPathForApi(directory),
+      title,
+      parentID,
+    }),
+  )
 }
 
 /**
- * PATCH /session/{sessionID} - 更新 session
+ * 更新 session
  */
 export async function updateSession(
   sessionId: string,
   params: { title?: string; time?: { archived?: number } },
   directory?: string,
 ): Promise<ApiSession> {
-  return patch<ApiSession>(`/session/${sessionId}`, { directory: formatPathForApi(directory) }, params)
+  const sdk = getSDKClient()
+  return unwrap(
+    await sdk.session.update({
+      sessionID: sessionId,
+      directory: formatPathForApi(directory),
+      ...params,
+    }),
+  )
 }
 
 /**
- * DELETE /session/{sessionID} - 删除 session
+ * 删除 session
  */
 export async function deleteSession(sessionId: string, directory?: string): Promise<boolean> {
-  return del<boolean>(`/session/${sessionId}`, { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  unwrap(await sdk.session.delete({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+  return true
 }
 
 // ============================================
@@ -120,14 +144,16 @@ export async function deleteSession(sessionId: string, directory?: string): Prom
 // ============================================
 
 /**
- * POST /session/{sessionID}/abort - 中止 session
+ * 中止 session
  */
 export async function abortSession(sessionId: string, directory?: string): Promise<boolean> {
-  return post<boolean>(`/session/${sessionId}/abort`, { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  unwrap(await sdk.session.abort({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+  return true
 }
 
 /**
- * POST /session/{sessionID}/revert - 回退消息
+ * 回退消息
  */
 export async function revertMessage(
   sessionId: string,
@@ -135,73 +161,93 @@ export async function revertMessage(
   partId?: string,
   directory?: string,
 ): Promise<ApiSession> {
-  const body: { messageID: string; partID?: string } = { messageID: messageId }
-  if (partId) {
-    body.partID = partId
-  }
-  return post<ApiSession>(`/session/${sessionId}/revert`, { directory: formatPathForApi(directory) }, body)
-}
-
-/**
- * POST /session/{sessionID}/unrevert - 恢复已回退的消息
- */
-export async function unrevertSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  return post<ApiSession>(`/session/${sessionId}/unrevert`, { directory: formatPathForApi(directory) })
-}
-
-/**
- * POST /session/{sessionID}/share - 分享 session
- */
-export async function shareSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  return post<ApiSession>(`/session/${sessionId}/share`, { directory: formatPathForApi(directory) })
-}
-
-/**
- * DELETE /session/{sessionID}/share - 取消分享 session
- */
-export async function unshareSession(sessionId: string, directory?: string): Promise<ApiSession> {
-  return del<ApiSession>(`/session/${sessionId}/share`, { directory: formatPathForApi(directory) })
-}
-
-/**
- * POST /session/{sessionID}/fork - Fork session
- */
-export async function forkSession(sessionId: string, messageId?: string, directory?: string): Promise<ApiSession> {
-  return post<ApiSession>(
-    `/session/${sessionId}/fork`,
-    { directory: formatPathForApi(directory) },
-    { messageID: messageId },
+  const sdk = getSDKClient()
+  return unwrap(
+    await sdk.session.revert({
+      sessionID: sessionId,
+      directory: formatPathForApi(directory),
+      messageID: messageId,
+      partID: partId,
+    }),
   )
 }
 
 /**
- * POST /session/{sessionID}/summarize - 总结 session
+ * 恢复已回退的消息
+ */
+export async function unrevertSession(sessionId: string, directory?: string): Promise<ApiSession> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.unrevert({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+}
+
+/**
+ * 分享 session
+ */
+export async function shareSession(sessionId: string, directory?: string): Promise<ApiSession> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.share({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+}
+
+/**
+ * 取消分享 session
+ */
+export async function unshareSession(sessionId: string, directory?: string): Promise<ApiSession> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.unshare({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+}
+
+/**
+ * Fork session
+ */
+export async function forkSession(sessionId: string, messageId?: string, directory?: string): Promise<ApiSession> {
+  const sdk = getSDKClient()
+  return unwrap(
+    await sdk.session.fork({
+      sessionID: sessionId,
+      directory: formatPathForApi(directory),
+      messageID: messageId,
+    }),
+  )
+}
+
+/**
+ * 总结 session
  */
 export async function summarizeSession(
   sessionId: string,
   params: { providerID: string; modelID: string; auto?: boolean },
   directory?: string,
 ): Promise<boolean> {
-  return post<boolean>(`/session/${sessionId}/summarize`, { directory: formatPathForApi(directory) }, params)
+  const sdk = getSDKClient()
+  unwrap(
+    await sdk.session.summarize({
+      sessionID: sessionId,
+      directory: formatPathForApi(directory),
+      ...params,
+    }),
+  )
+  return true
 }
 
 /**
- * GET /session/{sessionID}/children - 获取子 session
+ * 获取子 session
  */
 export async function getSessionChildren(sessionId: string, directory?: string): Promise<ApiSession[]> {
-  return get<ApiSession[]>(`/session/${sessionId}/children`, { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.session.children({ sessionID: sessionId, directory: formatPathForApi(directory) }))
 }
 
 /**
- * GET /session/{sessionID}/todo - 获取 session 的 todo 列表
+ * Session Todo
  */
-export interface ApiTodo {
-  id: string
-  content: string
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-  priority: 'high' | 'medium' | 'low'
-}
+export type ApiTodo = TodoItem
 
+/**
+ * 获取 session 的 todo 列表
+ * SDK 的 Todo 没有 id 字段，用 index+content+status 合成
+ */
 export async function getSessionTodos(sessionId: string, directory?: string): Promise<ApiTodo[]> {
-  return get<ApiTodo[]>(`/session/${sessionId}/todo`, { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  const todos = unwrap(await sdk.session.todo({ sessionID: sessionId, directory: formatPathForApi(directory) }))
+  return normalizeTodoItems(todos)
 }

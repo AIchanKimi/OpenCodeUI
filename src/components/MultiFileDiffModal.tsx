@@ -13,6 +13,7 @@ import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
 import { getSessionDiff } from '../api/session'
 import type { FileDiff } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
+import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { sessionErrorHandler } from '../utils'
 
 // ============================================
@@ -88,6 +89,14 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
 
   const selectedDiff = diffs[selectedFileIndex]
   const language = selectedDiff ? detectLanguage(selectedDiff.file) || 'text' : 'text'
+  const { before: selectedBefore, after: selectedAfter } = useMemo(() => {
+    if (!selectedDiff) return { before: '', after: '' }
+    if (selectedDiff.patch) return extractContentFromUnifiedDiff(selectedDiff.patch)
+    if (selectedDiff.before !== undefined && selectedDiff.after !== undefined) {
+      return { before: selectedDiff.before, after: selectedDiff.after }
+    }
+    return { before: '', after: '' }
+  }, [selectedDiff])
 
   const stats = useMemo(() => {
     let additions = 0,
@@ -193,12 +202,7 @@ export const MultiFileDiffModal = memo(function MultiFileDiffModal({
               </div>
 
               <div className="flex-1 min-h-0">
-                <DiffViewer
-                  before={selectedDiff.before}
-                  after={selectedDiff.after}
-                  language={language}
-                  viewMode={viewMode}
-                />
+                <DiffViewer before={selectedBefore} after={selectedAfter} language={language} viewMode={viewMode} />
               </div>
             </>
           ) : (

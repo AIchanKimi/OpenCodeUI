@@ -1,15 +1,5 @@
-// ============================================
-// VCS (Version Control System) API Types
-// 基于 OpenAPI 规范 v0.0.3
-// ============================================
+import type { VcsInfo as SDKVcsInfo } from '@opencode-ai/sdk/v2/client'
 
-/**
- * VCS 信息
- * 后端 schema: { branch?: string, default_branch?: string }
- */
-export interface VcsInfo {
-  branch?: string
-  default_branch?: string
-}
+export type VcsInfo = SDKVcsInfo
 
 export type VcsDiffMode = 'git' | 'branch'

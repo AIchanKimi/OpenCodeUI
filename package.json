@@ -1,6 +1,6 @@
 {
   "name": "opencodeui",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "A third-party web frontend for OpenCode",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -34,6 +34,7 @@
     "@codemirror/lang-yaml": "^6.1.2",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.6",
+    "@opencode-ai/sdk": "^1.4.1",
     "@streamdown/math": "^1.0.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",

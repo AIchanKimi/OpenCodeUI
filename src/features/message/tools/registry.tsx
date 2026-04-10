@@ -38,6 +38,7 @@ interface MetadataFileEntry {
   filePath?: string
   file?: string
   diff?: string
+  patch?: string
   before?: string
   after?: string
   additions?: number
@@ -96,6 +97,7 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
       result.files = (metadata.files as MetadataFileEntry[]).map(file => ({
         filePath: file.filePath || file.file || 'unknown',
         diff: file.diff,
+        patch: file.patch,
         before: file.before,
         after: file.after,
         additions: file.additions,
@@ -115,8 +117,17 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
         }
       }
     } else if (metadata.filediff && typeof metadata.filediff === 'object') {
-      const fd = metadata.filediff as { before?: string; after?: string; additions?: number; deletions?: number }
-      if (fd.before !== undefined && fd.after !== undefined) {
+      const fd = metadata.filediff as {
+        patch?: string
+        before?: string
+        after?: string
+        additions?: number
+        deletions?: number
+      }
+      // 上游 v1.4.0+ metadata.filediff 用 patch 格式
+      if (fd.patch) {
+        result.diff = fd.patch
+      } else if (fd.before !== undefined && fd.after !== undefined) {
         result.diff = { before: fd.before, after: fd.after }
       }
       if (fd.additions !== undefined || fd.deletions !== undefined) {

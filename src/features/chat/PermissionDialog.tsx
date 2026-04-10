@@ -33,8 +33,8 @@ export function PermissionDialog({
   const isCompact = presentation.isCompact
   // 从 metadata 中提取 diff 信息
   const metadata = request.metadata
-  const diff = metadata?.diff as string | undefined
   const filepath = metadata?.filepath as string | undefined
+  let diffData = metadata?.diff as string | undefined
 
   // Extract structured filediff if available
   let before: string | undefined
@@ -42,8 +42,12 @@ export function PermissionDialog({
 
   if (metadata?.filediff && typeof metadata.filediff === 'object') {
     const fd = metadata.filediff as Record<string, unknown>
-    before = String(fd.before || '')
-    after = String(fd.after || '')
+    // 上游 v1.4.0+ 优先 patch 格式
+    if (typeof fd.patch === 'string') {
+      diffData = fd.patch
+    }
+    before = fd.before !== undefined ? String(fd.before) : undefined
+    after = fd.after !== undefined ? String(fd.after) : undefined
   }
 
   // 判断是否是文件编辑类权限
@@ -115,11 +119,11 @@ export function PermissionDialog({
             {/* Content */}
             <div className="px-4 py-3 space-y-4 max-h-[45vh] overflow-y-auto custom-scrollbar">
               {/* Diff Preview for file edits */}
-              {isFileEdit && diff && (
+              {isFileEdit && (diffData || (before !== undefined && after !== undefined)) && (
                 <div>
                   <p className="text-xs text-text-400 mb-2">{t('permissionDialog.changesPreview')}</p>
                   <DiffView
-                    diff={diff}
+                    diff={diffData}
                     before={before}
                     after={after}
                     filePath={filepath}

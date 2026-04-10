@@ -15,6 +15,7 @@ import { getLastTurnDiff, getSessionDiff } from '../api/session'
 import { getVcsDiff, getVcsInfo } from '../api/vcs'
 import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
+import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { sessionErrorHandler } from '../utils'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
@@ -736,6 +737,12 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
   onClose,
 }: DiffPreviewPanelProps) {
   const language = detectLanguage(diff.file) || 'text'
+  // 优先用 patch 提取 before/after，回退到直接的 before/after 字段（旧版后端兼容）
+  const { before, after } = useMemo(() => {
+    if (diff.patch) return extractContentFromUnifiedDiff(diff.patch)
+    if (diff.before !== undefined && diff.after !== undefined) return { before: diff.before, after: diff.after }
+    return { before: '', after: '' }
+  }, [diff.patch, diff.before, diff.after])
   const { t } = useTranslation(['components', 'common'])
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const [fullscreenViewMode, setFullscreenViewMode] = useState<ViewMode>(viewMode)
@@ -793,13 +800,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
 
       {/* Diff Content - DiffViewer 自带滚动 */}
       <div className="flex-1 min-h-0">
-        <DiffViewer
-          before={diff.before}
-          after={diff.after}
-          language={language}
-          viewMode={viewMode}
-          isResizing={isResizing}
-        />
+        <DiffViewer before={before} after={after} language={language} viewMode={viewMode} isResizing={isResizing} />
       </div>
 
       <FullscreenViewer
@@ -814,7 +815,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
         }
         headerRight={<ViewModeSwitch viewMode={fullscreenViewMode} onChange={setFullscreenViewMode} />}
       >
-        <DiffViewer before={diff.before} after={diff.after} language={language} viewMode={fullscreenViewMode} />
+        <DiffViewer before={before} after={after} language={language} viewMode={fullscreenViewMode} />
       </FullscreenViewer>
     </div>
   )
@@ -827,8 +828,14 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
 type FileStatus = 'added' | 'modified' | 'deleted'
 
 function getFileStatus(diff: FileDiff): FileStatus {
-  if (!diff.before || diff.before.trim() === '') return 'added'
-  if (!diff.after || diff.after.trim() === '') return 'deleted'
+  if (diff.status) return diff.status as FileStatus
+  if (diff.deletions === 0 && diff.additions > 0) return 'added'
+  if (diff.additions === 0 && diff.deletions > 0) return 'deleted'
+  // 旧版 before/after 兼容
+  if (diff.before !== undefined && diff.after !== undefined) {
+    if (!diff.before.trim()) return 'added'
+    if (!diff.after.trim()) return 'deleted'
+  }
   return 'modified'
 }
 

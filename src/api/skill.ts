@@ -2,7 +2,7 @@
 // Skill API
 // ============================================
 
-import { get } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { SkillList } from '../types/api/skill'
 
@@ -10,5 +10,6 @@ import type { SkillList } from '../types/api/skill'
  * 获取所有可用 Skills
  */
 export async function getSkills(directory?: string): Promise<SkillList> {
-  return get<SkillList>('/skill', { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.app.skills({ directory: formatPathForApi(directory) }))
 }

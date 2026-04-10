@@ -2,7 +2,7 @@
 // Command API - 命令列表和执行
 // ============================================
 
-import { get, post } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
 import i18n from '../i18n'
@@ -37,7 +37,8 @@ function getCommandCacheKey(directory?: string): string {
 async function fetchCommands(directory?: string): Promise<Command[]> {
   let apiCommands: ApiCommand[] = []
   try {
-    apiCommands = await get<ApiCommand[]>('/command', { directory: formatPathForApi(directory) })
+    const sdk = getSDKClient()
+    apiCommands = unwrap(await sdk.command.list({ directory: formatPathForApi(directory) })) ?? []
   } catch {
     // Backend unreachable — frontend commands still available
   }
@@ -83,5 +84,13 @@ export async function executeCommand(
   args: string = '',
   directory?: string,
 ): Promise<unknown> {
-  return post(`/session/${sessionId}/command`, { directory: formatPathForApi(directory) }, { command, arguments: args })
+  const sdk = getSDKClient()
+  return unwrap(
+    await sdk.session.command({
+      sessionID: sessionId,
+      directory: formatPathForApi(directory),
+      command,
+      arguments: args,
+    }),
+  )
 }

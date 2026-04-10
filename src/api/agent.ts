@@ -1,17 +1,18 @@
 // ============================================
 // Agent API Functions
-// 基于 OpenAPI: /agent 相关接口
+// 基于 @opencode-ai/sdk: /agent 相关接口
 // ============================================
 
-import { get } from './http'
+import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type { ApiAgent } from './types'
 
 /**
- * GET /agent - 获取 agent 列表
+ * 获取 agent 列表
  */
 export async function getAgents(directory?: string): Promise<ApiAgent[]> {
-  return get<ApiAgent[]>('/agent', { directory: formatPathForApi(directory) })
+  const sdk = getSDKClient()
+  return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory) }))
 }
 
 /**

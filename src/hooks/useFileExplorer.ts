@@ -419,10 +419,16 @@ function normalizePath(p: string): string {
   return result
 }
 
-// Helper: 从 diff 推断文件状态
+// Helper: 从 diff 推断文件状态（优先 status 字段，回退统计推断，最后 before/after 推断）
 function getFileStatusFromDiff(diff: FileDiff): 'added' | 'modified' | 'deleted' {
-  if (!diff.before || diff.before.trim() === '') return 'added'
-  if (!diff.after || diff.after.trim() === '') return 'deleted'
+  if (diff.status) return diff.status as 'added' | 'modified' | 'deleted'
+  if (diff.deletions === 0 && diff.additions > 0) return 'added'
+  if (diff.additions === 0 && diff.deletions > 0) return 'deleted'
+  // 旧版 before/after 兼容
+  if (diff.before !== undefined && diff.after !== undefined) {
+    if (!diff.before.trim()) return 'added'
+    if (!diff.after.trim()) return 'deleted'
+  }
   return 'modified'
 }
 

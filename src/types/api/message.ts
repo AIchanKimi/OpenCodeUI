@@ -1,235 +1,64 @@
-// ============================================
-// Message API Types
-// 基于 OpenAPI 规范
-// ============================================
+import type {
+  AgentPart as SDKAgentPart,
+  AgentPartInput as SDKAgentPartInput,
+  AssistantMessage as SDKAssistantMessage,
+  CompactionPart as SDKCompactionPart,
+  FilePart as SDKFilePart,
+  FilePartInput as SDKFilePartInput,
+  FilePartSource as SDKFilePartSource,
+  PatchPart as SDKPatchPart,
+  ReasoningPart as SDKReasoningPart,
+  RetryPart as SDKRetryPart,
+  SnapshotPart as SDKSnapshotPart,
+  StepFinishPart as SDKStepFinishPart,
+  StepStartPart as SDKStepStartPart,
+  SubtaskPart as SDKSubtaskPart,
+  SubtaskPartInput as SDKSubtaskPartInput,
+  TextPart as SDKTextPart,
+  TextPartInput as SDKTextPartInput,
+  ToolPart as SDKToolPart,
+  ToolState as SDKToolState,
+  UserMessage as SDKUserMessage,
+} from '@opencode-ai/sdk/v2/client'
 
-import type { TimeInfo, TokenUsage, ModelRef, PathInfo, ErrorInfo, TextRange } from './common'
-import type { FileDiff } from './file'
+export type MessageSummary = NonNullable<SDKUserMessage['summary']>
 
-// ============================================
-// Message Types
-// ============================================
+export type UserMessage = SDKUserMessage
 
-/**
- * 消息摘要
- */
-export interface MessageSummary {
-  title?: string
-  body?: string
-  diffs?: FileDiff[]
-}
+export type AssistantMessage = SDKAssistantMessage
 
-/**
- * 用户消息
- */
-export interface UserMessage {
-  id: string
-  sessionID: string
-  role: 'user'
-  time: { created: number }
-  agent: string
-  model: ModelRef
-  variant?: string
-  summary?: MessageSummary
-}
-
-/**
- * 助手消息
- */
-export interface AssistantMessage {
-  id: string
-  sessionID: string
-  role: 'assistant'
-  time: TimeInfo
-  parentID: string
-  modelID: string
-  providerID: string
-  mode: string
-  agent: string
-  path: PathInfo
-  cost: number
-  tokens: TokenUsage
-  error?: ErrorInfo
-  finish?: string
-}
-
-/**
- * 消息联合类型
- */
 export type Message = UserMessage | AssistantMessage
 
-// ============================================
-// Part Types
-// ============================================
+export type TextPart = SDKTextPart
 
-/**
- * Part 基础接口
- */
-interface PartBase {
-  id: string
-  sessionID: string
-  messageID: string
-}
+export type ReasoningPart = SDKReasoningPart
 
-/**
- * 文本部分
- */
-export interface TextPart extends PartBase {
-  type: 'text'
-  text: string
-  synthetic?: boolean
-  time?: { start: number; end?: number }
-}
+export type ToolState = SDKToolState
 
-/**
- * 推理部分
- */
-export interface ReasoningPart extends PartBase {
-  type: 'reasoning'
-  text: string
-  time: { start: number; end?: number }
-}
+export type ToolPart = SDKToolPart
 
-/**
- * 工具状态
- */
-export interface ToolState {
-  status: 'pending' | 'running' | 'completed' | 'error'
-  input?: unknown
-  output?: unknown
-  title?: string
-  time?: { start: number; end?: number }
-  error?: ErrorInfo
-  metadata?: {
-    diff?: string
-    filediff?: {
-      file: string
-      before: string
-      after: string
-      additions: number
-      deletions: number
-    }
-    filepath?: string
-    output?: string
-    exit?: number
-    truncated?: boolean
-    [key: string]: unknown
-  }
-}
+export type FileSource = SDKFilePartSource
 
-/**
- * 工具调用部分
- */
-export interface ToolPart extends PartBase {
-  type: 'tool'
-  callID: string
-  tool: string
-  state: ToolState
-}
+export type FileSourceType = NonNullable<FileSource>['type']
 
-/**
- * 文件来源类型
- */
-export type FileSourceType = 'text' | 'file' | 'symbol' | 'resource'
+export type FilePart = SDKFilePart
 
-/**
- * 文件来源
- */
-export interface FileSource {
-  text?: TextRange
-  type?: FileSourceType
-  path?: string
-}
+export type AgentPart = SDKAgentPart
 
-/**
- * 文件部分
- */
-export interface FilePart extends PartBase {
-  type: 'file'
-  mime: string
-  filename?: string
-  url: string
-  source?: FileSource
-}
+export type StepStartPart = SDKStepStartPart
 
-/**
- * Agent 部分
- */
-export interface AgentPart extends PartBase {
-  type: 'agent'
-  name: string
-  source?: TextRange
-}
+export type StepFinishPart = SDKStepFinishPart
 
-/**
- * 步骤开始部分
- */
-export interface StepStartPart extends PartBase {
-  type: 'step-start'
-  snapshot?: string
-}
+export type SnapshotPart = SDKSnapshotPart
 
-/**
- * 步骤完成部分
- */
-export interface StepFinishPart extends PartBase {
-  type: 'step-finish'
-  reason: string
-  cost: number
-  tokens: TokenUsage
-  snapshot?: string
-}
+export type PatchPart = SDKPatchPart
 
-/**
- * 快照部分
- */
-export interface SnapshotPart extends PartBase {
-  type: 'snapshot'
-  snapshot: string
-}
+export type SubtaskPart = SDKSubtaskPart
 
-/**
- * 补丁部分
- */
-export interface PatchPart extends PartBase {
-  type: 'patch'
-  hash: string
-  files: string[]
-}
+export type RetryPart = SDKRetryPart
 
-/**
- * 子任务部分
- */
-export interface SubtaskPart extends PartBase {
-  type: 'subtask'
-  prompt: string
-  description: string
-  agent: string
-  model?: ModelRef
-  command?: string
-}
+export type CompactionPart = SDKCompactionPart
 
-/**
- * 重试部分
- */
-export interface RetryPart extends PartBase {
-  type: 'retry'
-  attempt: number
-  error: ErrorInfo
-  time: { created: number }
-}
-
-/**
- * 压缩部分
- */
-export interface CompactionPart extends PartBase {
-  type: 'compaction'
-  auto?: boolean
-}
-
-/**
- * Part 联合类型
- */
 export type Part =
   | TextPart
   | ReasoningPart
@@ -244,64 +73,15 @@ export type Part =
   | RetryPart
   | CompactionPart
 
-/**
- * 消息及其部分（API 响应格式）
- */
 export interface MessageWithParts {
   info: Message
   parts: Part[]
 }
 
-// ============================================
-// Send Message Types
-// ============================================
+export type TextPartInput = SDKTextPartInput
 
-/**
- * 文本输入部分
- */
-export interface TextPartInput {
-  type: 'text'
-  text: string
-}
+export type FilePartInput = SDKFilePartInput
 
-/**
- * 文件输入部分
- */
-export interface FilePartInput {
-  type: 'file'
-  mime: string
-  url: string
-  filename?: string
-  source?: FileSource
-}
+export type AgentPartInput = SDKAgentPartInput
 
-/**
- * Agent 输入部分
- */
-export interface AgentPartInput {
-  type: 'agent'
-  name: string
-  source?: TextRange
-}
-
-/**
- * 子任务输入部分
- */
-export interface SubtaskPartInput {
-  type: 'subtask'
-  prompt: string
-  description: string
-  agent: string
-  model?: ModelRef
-  command?: string
-}
-
-/**
- * 发送消息请求体
- */
-export interface SendMessageBody {
-  parts: (TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput)[]
-  model?: ModelRef
-  agent?: string
-  variant?: string
-}
+export type SubtaskPartInput = SDKSubtaskPartInput

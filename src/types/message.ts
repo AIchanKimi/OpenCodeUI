@@ -21,6 +21,7 @@ export interface TokenUsage {
 export interface ModelRef {
   providerID: string
   modelID: string
+  variant?: string
 }
 
 export interface PathInfo {
@@ -91,7 +92,6 @@ export interface UserMessageInfo {
   time: MessageTime
   agent: string
   model: ModelRef
-  variant?: string
   summary?: MessageSummary
 }
 
@@ -321,6 +321,21 @@ export function isUserMessage(info: MessageInfo): info is UserMessageInfo {
 /** 检查消息是否为助手消息 */
 export function isAssistantMessage(info: MessageInfo): info is AssistantMessageInfo {
   return info.role === 'assistant'
+}
+
+/** 检查 part 是否为工具调用 */
+export function isToolPart(part: Part): part is ToolPart {
+  return part.type === 'tool'
+}
+
+/** 检查 part 是否为可见文本 */
+export function isVisibleTextPart(part: Part): part is TextPart {
+  return part.type === 'text' && !!part.text.trim() && !part.synthetic
+}
+
+/** 检查 part 是否为可见 reasoning */
+export function isVisibleReasoningPart(part: Part): part is ReasoningPart {
+  return part.type === 'reasoning' && !!part.text.trim()
 }
 
 /** 检查消息是否有可见内容 */
