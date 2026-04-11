@@ -12,7 +12,7 @@ import { getPtyConnectUrl, updatePtySession } from '../api/pty'
 import { layoutStore } from '../store/layoutStore'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { logger } from '../utils/logger'
-import { isTauri, isTauriMobile } from '../utils/tauri'
+import { isTauri } from '../utils/tauri'
 
 // ============================================
 // 终端主题 - 与应用主题配合
@@ -409,7 +409,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     const MAX_RECONNECT_DELAY = 30000 // 最大 30s
     const BASE_RECONNECT_DELAY = 1000 // 起始 1s
     let intentionalClose = false // 标记主动关闭
-    const useNativePtyBridge = isTauriMobile()
+    const useNativePtyBridge = isTauri()
 
     const resetTransport = () => {
       transportSendRef.current = null
@@ -459,7 +459,11 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       fitAddon.fit()
 
       if (useNativePtyBridge) {
-        logger.log('[Terminal/Tauri] Connecting PTY bridge:', ptyId, reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '')
+        logger.log(
+          '[Terminal/Tauri] Connecting PTY bridge:',
+          ptyId,
+          reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '',
+        )
         void import('../api/ptyBridge')
           .then(({ connectTauriPty }) =>
             connectTauriPty({
