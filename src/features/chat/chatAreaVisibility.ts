@@ -2,11 +2,12 @@ import type { Message, Part } from '../../types/message'
 import { isVisibleReasoningPart, isVisibleTextPart } from '../../types/message'
 
 function messageHasContent(message: Message): boolean {
+  // 有非 abort 错误的助手消息始终可见（展示错误信息）
+  // 不论 parts 是否为空——error 消息可能只带 step-start 等基础设施 part
+  if (message.info.role === 'assistant' && 'error' in message.info && message.info.error) {
+    return message.info.error.name !== 'MessageAbortedError'
+  }
   if (message.parts.length === 0) {
-    // 有非 abort 错误的助手消息仍然可见（展示错误信息）
-    if (message.info.role === 'assistant' && 'error' in message.info && message.info.error) {
-      return message.info.error.name !== 'MessageAbortedError'
-    }
     // 任何角色的空消息都不可见：没有内容可展示
     // part 到达后自动进入可见列表；abort 后永远不会有 part → 永远不可见
     return false

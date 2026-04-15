@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.5.1] - 2026-04-13
+
+- feat: show agent and model name in step finish info (closes #61) (7299319)
+- fix: restore line-height lost during font system migration (3d83f3b)
+- fix: split diff view losing syntax highlighting when word diff is active (9f281ec)
+- feat: tune default font sizes to match opencode official UI proportions (29c6f76)
+- feat: unified typography system with CSS variables and per-axis font scale sliders (4533b15)
+
+## [v0.5.0] - 2026-04-13
+
+- feat: add keep-screen-awake toggle in appearance settings (Wake Lock API) (3a6a13c)
+- fix: update inline code test to match simplified style (no border/bg) (edc4beb)
+- fix: simplify inline code style and add persistent underline to links (7f2cd73)
+- fix: allow share URL to scroll horizontally on mobile (d049ce0)
+- fix: ensure bottom padding in PWA standalone for devices without Home Indicator (eb8682c)
+- fix: use replaceState on mobile to prevent session history stacking (ceed83d)
+
+## [v0.4.9] - 2026-04-11
+
+- fix: prevent model restoration from overriding user selection during streaming (0c799e3)
+- fix: return 404 for /api on frontend-only image (b07a30e)
+- fix: align UI hook dependencies with live state (63a2b87)
+- refactor: remove dead UI cleanup leftovers (5b82694)
+- fix: remove unused resolveAlias function in shiki module (81d5fdb)
+- perf: lazy-load shiki languages and optimize Tauri release profile (1be34e0)
+- fix: PTY WebSocket auth fails behind reverse proxy (4bbb3c5)
+- fix: prevent session fetch storm on SSE reconnect in SessionContext (ae26e6c)
+- refactor: unify SSE and PTY into a single transparent bridge (73e638f)
+- fix: use tungstenite message variants for PTY bridge (6210294)
+- fix: bridge Tauri mobile PTY through native client (e33bde5)
+
+## [v0.4.8] - 2026-04-10
+
+- feat: queue follow-up messages behind active turns (90756e3)
+- fix: GPT apply_patch diff not rendering and error messages invisible in chat (6d6f81d)
+- fix: align prompt history cursor navigation (4dd2bf4)
+- fix: tighten session alerts and mobile code copy (8e02c0a)
+
 ## [v0.4.7] - 2026-04-09
 
 - fix: update command test to mock sdk instead of removed http module (f7521bc)

@@ -246,6 +246,32 @@ class MessageStore {
     this.notify()
   }
 
+  upsertLocalMessage(message: Message) {
+    const state = this.ensureSession(message.info.sessionID)
+    const existingIndex = state.messages.findIndex(item => item.info.id === message.info.id)
+
+    if (existingIndex >= 0) {
+      state.messages = [...state.messages.slice(0, existingIndex), message, ...state.messages.slice(existingIndex + 1)]
+    } else {
+      state.messages = [...state.messages, message].sort((a, b) => {
+        const aCreated = a.info.time?.created ?? 0
+        const bCreated = b.info.time?.created ?? 0
+        return aCreated - bCreated
+      })
+    }
+
+    this.notify()
+  }
+
+  removeMessage(sessionId: string, messageId: string) {
+    const state = this.sessions.get(sessionId)
+    if (!state) return
+    const nextMessages = state.messages.filter(message => message.info.id !== messageId)
+    if (nextMessages.length === state.messages.length) return
+    state.messages = nextMessages
+    this.notify()
+  }
+
   markAllSessionsStale() {
     let updated = false
     for (const state of this.sessions.values()) {

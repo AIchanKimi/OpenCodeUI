@@ -335,29 +335,39 @@ export const ChatPane = memo(function ChatPane({
 
   // ============================================
   // Model Restoration Effect
+  // --
+  // 只在 session 切换（routeSessionId 变化）或 revert/undo 恢复时执行一次。
+  // 流式输出期间 messages 变化不会触发，避免覆盖用户的模型选择。
   // ============================================
   const inputRestoreContent = revertedContent ?? restoredContent
 
+  // revert/undo 恢复：inputRestoreContent 变化时立即恢复
   useEffect(() => {
-    if (inputRestoreContent?.model) {
-      const modelSelection = restoreModelSelection(
-        inputRestoreContent.model,
-        inputRestoreContent.variant ?? null,
-        models,
-      )
-      if (modelSelection) {
-        restoreFromMessage(inputRestoreContent.model, inputRestoreContent.variant)
-        return
-      }
+    if (!inputRestoreContent?.model) return
+    const modelSelection = restoreModelSelection(inputRestoreContent.model, inputRestoreContent.variant ?? null, models)
+    if (modelSelection) {
+      restoreFromMessage(inputRestoreContent.model, inputRestoreContent.variant)
     }
+  }, [inputRestoreContent, models, restoreFromMessage])
 
+  // session 切换：只在 routeSessionId 变化时，从最后一条 user 消息恢复模型
+  const restoredSessionRef = useRef<string | null>(null)
+  useEffect(() => {
+    // 没有 session、或者这个 session 已经恢复过了 → 跳过
+    if (!routeSessionId || restoredSessionRef.current === routeSessionId) return
+    // messages 还没加载完 → 等下次
     if (messages.length === 0) return
+
+    restoredSessionRef.current = routeSessionId
+
     const lastUserMsg = [...messages].reverse().find(m => m.info.role === 'user')
     if (lastUserMsg && 'model' in lastUserMsg.info) {
       const userInfo = lastUserMsg.info as { model?: { providerID: string; modelID: string; variant?: string } }
       restoreFromMessage(userInfo.model, userInfo.model?.variant)
     }
-  }, [inputRestoreContent, messages, models, restoreFromMessage])
+    // 依赖 routeSessionId 和 messages.length（等加载完），不依赖 messages 引用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeSessionId, messages.length, models, restoreFromMessage])
 
   // ============================================
   // Agent Restoration Effect
@@ -566,13 +576,13 @@ export const ChatPane = memo(function ChatPane({
       <div ref={inputBoxWrapperRef} className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
         {(showCancelHint || (fullAutoHint && !showCancelHint)) && (
           <div className="absolute bottom-full inset-x-0 flex justify-center pb-2 pointer-events-none z-20">
-            <div className="px-3 py-1.5 glass border border-border-200/60 rounded-lg shadow-lg text-xs text-text-300 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <div className="px-3 py-1.5 glass border border-border-200/60 rounded-lg shadow-lg text-[length:var(--fs-sm)] text-text-300 animate-in fade-in slide-in-from-bottom-2 duration-150">
               {showCancelHint ? (
                 <Trans
                   i18nKey="chat:hints.pressEscAgain"
                   components={{
                     1: (
-                      <kbd className="mx-0.5 px-1.5 py-0.5 bg-bg-200 border border-border-200 rounded text-[11px] font-mono font-medium text-text-200" />
+                      <kbd className="mx-0.5 px-1.5 py-0.5 bg-bg-200 border border-border-200 rounded text-[length:var(--fs-xs)] font-mono font-medium text-text-200" />
                     ),
                   }}
                 />

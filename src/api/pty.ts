@@ -8,12 +8,31 @@ import { formatPathForApi } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
 import type { Pty, PtyCreateParams, PtyUpdateParams } from '../types/api/pty'
 
+type LegacyPty = Pty & { running?: boolean; status?: Pty['status'] }
+interface PtyConnectUrlOptions {
+  /**
+   * false = 不在 URL 里放认证（Tauri bridge 通过 header 传）
+   * true  = 在 URL 里放认证（浏览器原生 WebSocket 无法设 header）
+   */
+  includeAuthInUrl?: boolean
+}
+
+function normalizePty(pty: LegacyPty): Pty {
+  if (pty.status) return pty as Pty
+  return {
+    ...pty,
+    status: pty.running ? 'running' : 'exited',
+  } as Pty
+}
+
 /**
  * 获取所有 PTY 会话列表
  */
 export async function listPtySessions(directory?: string): Promise<Pty[]> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.pty.list({ directory: formatPathForApi(directory) }))
+  return unwrap(await sdk.pty.list({ directory: formatPathForApi(directory) })).map(pty =>
+    normalizePty(pty as LegacyPty),
+  )
 }
 
 /**
@@ -21,7 +40,7 @@ export async function listPtySessions(directory?: string): Promise<Pty[]> {
  */
 export async function createPtySession(params: PtyCreateParams, directory?: string): Promise<Pty> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.pty.create({ directory: formatPathForApi(directory), ...params }))
+  return normalizePty(unwrap(await sdk.pty.create({ directory: formatPathForApi(directory), ...params })) as LegacyPty)
 }
 
 /**
@@ -29,7 +48,7 @@ export async function createPtySession(params: PtyCreateParams, directory?: stri
  */
 export async function getPtySession(ptyId: string, directory?: string): Promise<Pty> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.pty.get({ ptyID: ptyId, directory: formatPathForApi(directory) }))
+  return normalizePty(unwrap(await sdk.pty.get({ ptyID: ptyId, directory: formatPathForApi(directory) })) as LegacyPty)
 }
 
 /**
@@ -37,7 +56,9 @@ export async function getPtySession(ptyId: string, directory?: string): Promise<
  */
 export async function updatePtySession(ptyId: string, params: PtyUpdateParams, directory?: string): Promise<Pty> {
   const sdk = getSDKClient()
-  return unwrap(await sdk.pty.update({ ptyID: ptyId, directory: formatPathForApi(directory), ...params }))
+  return normalizePty(
+    unwrap(await sdk.pty.update({ ptyID: ptyId, directory: formatPathForApi(directory), ...params })) as LegacyPty,
+  )
 }
 
 /**
@@ -52,24 +73,47 @@ export async function removePtySession(ptyId: string, directory?: string): Promi
 /**
  * 获取 PTY 连接 WebSocket URL
  *
- * WebSocket 不支持自定义 header，认证通过 URL userinfo 传递
- * 这部分必须手动拼，SDK 不处理 WebSocket
+ * 浏览器 WebSocket 不支持自定义 header，认证方式：
+ * - 跨域：auth_token query parameter（与官方 opencode app 一致）
+ * - 同源：浏览器会复用页面的 Basic auth 凭据
+ * - Tauri bridge：不走这里，通过 Rust 的 HTTP header 传认证
  */
-export function getPtyConnectUrl(ptyId: string, directory?: string): string {
+export function getPtyConnectUrl(ptyId: string, directory?: string, options?: PtyConnectUrlOptions): string {
   const httpBase = getApiBaseUrl()
   const wsBase = httpBase.replace(/^http/, 'ws')
+  const includeAuthInUrl = options?.includeAuthInUrl ?? true
 
   const auth = serverStore.getActiveAuth()
-  let wsUrl: string
-  if (auth?.password) {
-    const creds = `${encodeURIComponent(auth.username)}:${encodeURIComponent(auth.password)}@`
-    wsUrl = wsBase.replace('://', `://${creds}`)
-  } else {
-    wsUrl = wsBase
+  const formatted = formatPathForApi(directory)
+
+  // Tauri bridge 不需要在 URL 里放认证
+  if (!includeAuthInUrl) {
+    return `${wsBase}/pty/${ptyId}/connect${buildQueryString({ directory: formatted })}`
   }
 
-  const formatted = formatPathForApi(directory)
-  const queryString = buildQueryString({ directory: formatted })
+  // 浏览器原生 WebSocket：
+  // 跨域时用 auth_token query parameter + userinfo fallback
+  // 同源时浏览器会自动复用 Basic auth
+  const isCrossOrigin = (() => {
+    try {
+      return new URL(httpBase).origin !== location.origin
+    } catch {
+      return true
+    }
+  })()
 
-  return `${wsUrl}/pty/${ptyId}/connect${queryString}`
+  const queryParams: Record<string, string | undefined> = { directory: formatted }
+
+  let wsUrl = wsBase
+  if (auth?.password) {
+    if (isCrossOrigin) {
+      // auth_token = base64(username:password)，与官方 opencode app 一致
+      queryParams.auth_token = btoa(`${auth.username}:${auth.password}`)
+    }
+    // 同时设 userinfo 作为 fallback（部分浏览器直连时能用）
+    const creds = `${encodeURIComponent(auth.username)}:${encodeURIComponent(auth.password)}@`
+    wsUrl = wsBase.replace('://', `://${creds}`)
+  }
+
+  return `${wsUrl}/pty/${ptyId}/connect${buildQueryString(queryParams)}`
 }

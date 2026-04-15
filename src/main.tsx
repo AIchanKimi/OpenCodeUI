@@ -16,7 +16,7 @@ import { serviceStore } from './store/serviceStore'
 import { reconnectSSE } from './api/events'
 import { getSDKClientAsync, invalidateSDKClient } from './api/sdk'
 import { resetPathModeCache } from './utils/directoryUtils'
-import { isTauri } from './utils/tauri'
+import { isTauri, isTauriMobile } from './utils/tauri'
 import { apiErrorHandler, globalErrorHandler } from './utils/errorHandling'
 
 // Polyfill: randomUUID 在非 HTTPS 环境可能缺失（如局域网 HTTP）
@@ -79,8 +79,11 @@ serverStore.onServerChange(() => {
   reconnectSSE()
 })
 
+const isNativeTauri = isTauri()
+const isNativeTauriMobile = isNativeTauri && isTauriMobile()
+
 // Tauri 原生 app 初始化
-if (isTauri()) {
+if (isNativeTauri) {
   // 添加 CSS class 用于 safe-area 适配
   document.documentElement.classList.add('tauri-app')
 
@@ -94,7 +97,7 @@ if (isTauri()) {
   }
 
   // Auto-start opencode serve（如果设置开启）
-  if (serviceStore.autoStart) {
+  if (!isNativeTauriMobile && serviceStore.autoStart) {
     const serverUrl = serverStore.getActiveServer()?.url || 'http://127.0.0.1:4096'
     const binaryPath = serviceStore.effectiveBinaryPath
     import('@tauri-apps/api/core').then(({ invoke }) => {
@@ -129,14 +132,8 @@ window.addEventListener('unhandledrejection', event => {
   event.preventDefault()
 })
 
-// 调试：追踪页面刷新来源
-window.addEventListener('beforeunload', _event => {
-  console.error('[beforeunload] Page is about to reload! Stack trace:')
-  console.trace()
-})
-
 async function bootstrap() {
-  if (isTauri()) {
+  if (isNativeTauri) {
     await getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
   }
 

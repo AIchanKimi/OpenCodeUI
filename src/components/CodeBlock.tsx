@@ -1,4 +1,5 @@
-import { memo, useMemo, useSyncExternalStore } from 'react'
+import { memo, useCallback, useMemo, useSyncExternalStore } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { useSyntaxHighlight } from '../hooks/useSyntaxHighlight'
 import { themeStore } from '../store/themeStore'
 import { CopyButton } from './ui'
@@ -30,6 +31,7 @@ export const CodeBlock = memo(function CodeBlock({
   wordwrap,
 }: CodeBlockProps) {
   const { codeWordWrap } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
+  const isMobile = useIsMobile()
   const resolvedWordWrap = wordwrap ?? codeWordWrap
   const isReasoning = variant === 'reasoning'
 
@@ -69,7 +71,18 @@ export const CodeBlock = memo(function CodeBlock({
       ? '[&_pre]:pt-0 [&_pre]:pb-3.5 [&_pre]:px-3.5 [&_pre]:m-0'
       : '[&_pre]:p-4 [&_pre]:m-0'
 
-  const fontSize = isReasoning ? 'text-xs' : 'text-[13px]'
+  const requireTapToRevealCopy = isMobile && !isReasoning && !showLabel
+
+  const handleTouchStartCapture = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!requireTapToRevealCopy) return
+      if (event.target instanceof HTMLElement && event.target.closest('button')) return
+      event.currentTarget.focus()
+    },
+    [requireTapToRevealCopy],
+  )
+
+  const fontSize = isReasoning ? 'text-[length:var(--fs-sm)]' : 'text-[length:var(--fs-md)]'
   const lineHeight = isReasoning ? 'leading-5' : 'leading-6'
   const textColor = isReasoning ? 'text-text-300' : 'text-text-200'
 
@@ -108,12 +121,14 @@ export const CodeBlock = memo(function CodeBlock({
   return (
     <div
       ref={ref}
-      className={`group/code relative rounded-md overflow-hidden border border-border-200/40 bg-bg-200/40 w-full max-w-full flex flex-col contain-content ${className}`}
+      className={`group/code relative rounded-md overflow-hidden border border-border-200/40 bg-bg-200/40 w-full max-w-full flex flex-col contain-content ${requireTapToRevealCopy ? 'focus:outline-none' : ''} ${className}`}
       style={style}
+      tabIndex={requireTapToRevealCopy ? 0 : undefined}
+      onTouchStartCapture={requireTapToRevealCopy ? handleTouchStartCapture : undefined}
     >
       {showLabel ? (
         <div className="flex min-h-10 items-start justify-between pl-3.5 pr-0 pt-2 pb-0">
-          <div className="flex h-8 min-w-0 items-center text-[11px] font-medium leading-none tracking-wide text-text-500 select-none">
+          <div className="flex h-8 min-w-0 items-center text-[length:var(--fs-xs)] font-medium leading-none tracking-wide text-text-500 select-none">
             <span className="truncate">{language}</span>
           </div>
           <div className="inline-flex h-8 shrink-0 items-center pr-2 opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
@@ -121,7 +136,9 @@ export const CodeBlock = memo(function CodeBlock({
           </div>
         </div>
       ) : (
-        <div className="absolute top-2 right-2 z-10 opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
+        <div
+          className={`absolute top-2 right-2 z-10 opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 ${requireTapToRevealCopy ? '[@media(hover:none)]:opacity-0' : '[@media(hover:none)]:opacity-100'} transition-opacity`}
+        >
           <CopyButton
             text={code}
             position="static"

@@ -218,6 +218,27 @@ function belongsToCurrentSession(sessionId: string): boolean {
   return false
 }
 
+/**
+ * 检查 session 是否被某个 pane 直接打开。
+ *
+ * 和 belongsToCurrentSession() 的区别：
+ * - belongsToCurrentSession(): 包含当前 session 的子 session family
+ * - isSessionDirectlyOpen(): 只认 pane 直接打开的 session 本身
+ *
+ * 这样父 session 正在查看时，子 session 的事件可以继续在界面内冒泡，
+ * 但不会再被当成“当前 session 自己”的提示音来播放。
+ */
+function isSessionDirectlyOpen(sessionId: string): boolean {
+  const focusedSessionId = paneLayoutStore.getFocusedSessionId()
+  if (focusedSessionId === sessionId) return true
+
+  for (const consumer of sessionConsumers.values()) {
+    if (consumer.sessionId === sessionId) return true
+  }
+
+  return false
+}
+
 export function useGlobalEvents(directories?: string[]) {
   const directoriesRef = useRef<string[] | undefined>(directories)
   const refreshRef = useRef<(() => void) | null>(null)
@@ -331,7 +352,7 @@ export function useGlobalEvents(directories?: string[]) {
             const meta = activeSessionStore.getSessionMeta(error.sessionID)
             const sessionLabel = meta?.title || error.sessionID.slice(0, 8)
             notificationStore.push('error', sessionLabel, 'Session error', error.sessionID, meta?.directory)
-          } else if (soundStore.getSnapshot().currentSessionEnabled) {
+          } else if (isSessionDirectlyOpen(error.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
             playNotificationSoundDeduped('error')
           }
         }
@@ -377,7 +398,7 @@ export function useGlobalEvents(directories?: string[]) {
         // Toast 通知 — 不属于当前 session family 的才弹
         if (!belongsToCurrentSession(request.sessionID)) {
           notificationStore.push('permission', `${sessionLabel} — Permission`, desc, request.sessionID, meta?.directory)
-        } else if (soundStore.getSnapshot().currentSessionEnabled) {
+        } else if (isSessionDirectlyOpen(request.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
           // 当前会话：如果开启了当前会话提示音
           playNotificationSoundDeduped('permission')
         }
@@ -413,7 +434,7 @@ export function useGlobalEvents(directories?: string[]) {
         // Toast 通知
         if (!belongsToCurrentSession(request.sessionID)) {
           notificationStore.push('question', `${sessionLabel} — Question`, desc, request.sessionID, meta?.directory)
-        } else if (soundStore.getSnapshot().currentSessionEnabled) {
+        } else if (isSessionDirectlyOpen(request.sessionID) && soundStore.getSnapshot().currentSessionEnabled) {
           playNotificationSoundDeduped('question')
         }
 
@@ -460,7 +481,7 @@ export function useGlobalEvents(directories?: string[]) {
         } else if (
           wasBusy &&
           data.status.type === 'idle' &&
-          belongsToCurrentSession(data.sessionID) &&
+          isSessionDirectlyOpen(data.sessionID) &&
           soundStore.getSnapshot().currentSessionEnabled
         ) {
           playNotificationSoundDeduped('completed')

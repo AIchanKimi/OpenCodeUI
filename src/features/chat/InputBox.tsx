@@ -508,6 +508,12 @@ function InputBoxComponent({
       if (historyResult) {
         setText(historyResult.text)
         setAttachments(historyResult.attachments)
+        requestAnimationFrame(() => {
+          if (!textareaRef.current) return
+          const cursorPos = historyResult.cursor === 'start' ? 0 : historyResult.text.length
+          textareaRef.current.focus()
+          textareaRef.current.setSelectionRange(cursorPos, cursorPos)
+        })
         return
       }
 
@@ -982,7 +988,7 @@ function InputBoxComponent({
                   {/* Drop overlay */}
                   {isDragging && (
                     <div className="absolute inset-0 z-50 rounded-2xl bg-accent-main-100/5 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
-                      <span className="text-sm text-accent-main-100 font-medium">{t('inputBox.dropFilesHere')}</span>
+                      <span className="text-[length:var(--fs-base)] text-accent-main-100 font-medium">{t('inputBox.dropFilesHere')}</span>
                     </div>
                   )}
 

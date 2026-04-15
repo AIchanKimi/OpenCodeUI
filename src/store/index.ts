@@ -65,3 +65,6 @@ export { serviceStore, useServiceStore } from './serviceStore'
 
 export { soundStore, useSoundSettings } from './soundStore'
 export type { SoundSettings, EventSoundConfig } from './soundStore'
+
+export { followupQueueStore, useFollowupQueue } from './followupQueueStore'
+export type { QueuedFollowupDraft } from './followupQueueStore'

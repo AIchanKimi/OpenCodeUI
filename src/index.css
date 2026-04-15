@@ -58,6 +58,14 @@ body,
     padding-right: var(--safe-area-inset-right);
     /* 不在这里加 padding-bottom，让 InputBox 自己处理 */
   }
+
+  /* PWA standalone 底部兜底：
+   * 部分 iOS 设备（如有物理 Home 键的 iPhone 8）env(safe-area-inset-bottom) 为 0，
+   * 但 Safari standalone 仍会在底部叠加系统 UI 横条，遮住贴底内容。
+   * 用 max() 取 safe-area 和最小保底值的较大者，确保 InputFooter 不被遮挡。 */
+  :root:not(.tauri-app) {
+    --safe-area-inset-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  }
 }
 
 /* Tauri 原生 app：原生层 MainActivity.kt 已经通过 setPadding 处理了安全区域和键盘 */
@@ -265,12 +273,46 @@ body,
   --always-black: 0 0% 0%;
   --always-white: 0 0% 100%;
   --oncolor-100: 0 0% 100%;
+
+  /* ============================================
+   * Typography Scale — 字号系统
+   * ============================================
+   * 所有 UI 字号都通过这些变量控制。
+   * themeStore 的 fontScale 设置会覆盖这些值。
+   *
+   * 使用方式：在 Tailwind class 中写 text-[length:var(--fs-xxs)] 等。
+   * 代码区行高必须用绝对值 (px)，保证虚拟滚动和行号对齐。
+   *
+   * 参考：opencode 官方 UI 只用 4 档（13/14/16/20），
+   *       代码区 13px + 24px 行高。
+   */
+  --fs-xxs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+
+  /* 代码 / Diff / 终端专用 */
+  --fs-code: 13px;
+  --fs-code-line-height: 24px;
+  --fs-terminal: 13px;
+  --fs-terminal-line-height: 1.4;
+
+  /* 固定字号 — 不受 fontScale 滑块影响，但统一管理 */
+  --fs-btn-sm: 12px;
+  --fs-btn-md: 14px;
+  --fs-btn-lg: 16px;
+  --fs-heading-3: 16px;
+  --fs-heading-2: 18px;
+  --fs-heading-1: 20px;
 }
 
 /* Base styles */
 body {
   margin: 0;
   font-family: var(--font-ui-sans);
+  line-height: 1.5;
 }
 
 /* ============================================
@@ -357,16 +399,8 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
-.panel-scrollbar-x {
-  overflow-x: auto;
-  overflow-y: hidden;
-}
 .code-scrollbar {
   overflow: auto;
-}
-.tabs-scrollbar {
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 
 /* ── Overlay thumb (vertical, default) ── */
@@ -440,114 +474,22 @@ body {
  * Input Textarea + Overlay - 共享样式确保完全对齐
  * ============================================ */
 
-/* 面板统一过渡效果 */
-.panel-transition {
-  transition-property: width, height, opacity, transform;
-  transition-duration: 200ms;
-  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
-}
-
-/* 面板统一阴影（可选，用于浮动状态） */
-.panel-shadow {
-  box-shadow:
-    0 0 0 1px hsl(var(--border-200) / 0.5),
-    0 4px 12px hsl(var(--always-black) / 0.08);
-}
-
-/* ============================================
- * Input Textarea + Overlay - 共享样式确保完全对齐
- * ============================================ */
-.input-textarea,
-.input-overlay {
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  letter-spacing: normal;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  padding: 0;
-  margin: 0;
-  border: none;
-  min-height: 24px;
-  max-height: 50vh;
-}
-
-.input-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
 /* ============================================
  * Panel Unified Styles - 面板统一样式
  * ============================================
  * 用于 RightPanel 和 BottomPanel 的统一视觉规范
  */
 
-/* 移动端面板覆盖层 */
 @media (max-width: 768px) {
-  /* 面板默认隐藏 */
-  .panel-mobile-hide {
-    display: none;
-  }
-
-  /* 面板全屏覆盖模式 */
-  .panel-mobile-overlay {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 100;
-    border: none !important;
-  }
-
-  /* 移动端面板头部增大点击区域 */
-  .panel-mobile-header {
-    min-height: 48px;
-    padding: 12px 16px;
-  }
-
-  /* 移动端 resize handle 更大的触摸区域 */
-  .panel-resize-handle-mobile {
-    width: 16px;
-    height: 16px;
-  }
-
   /* 移动端触摸目标最小尺寸 - 只对独立按钮生效，不影响紧凑组件内部 */
   button:not(.touch-target-sm):not([role='tab']):not([role='switch']):not([data-compact]) {
     min-height: 32px;
   }
 
-  /* 输入框适配 */
-  input,
-  textarea,
-  select {
-    font-size: 16px !important; /* 防止 iOS 缩放 */
-  }
-}
-
-/* 平板适配 */
-@media (min-width: 768px) and (max-width: 1024px) {
-  /* 面板最小宽度调整 */
-  .panel-tablet-min-w {
-    min-width: 280px;
-  }
-
-  /* 面板最大宽度调整 */
-  .panel-tablet-max-w {
-    max-width: 50vw;
-  }
+  /*
+   * iOS 缩放已由 viewport meta (maximum-scale=1, user-scalable=no) 阻止，
+   * 不再需要强制 16px，让 textarea 继承 --fs-base 与信息流字号一致。
+   */
 }
 
 @keyframes fade-in {
@@ -589,23 +531,6 @@ body {
   animation-name: slide-in-from-bottom;
 }
 
-/* Custom Animations */
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1);
-  }
-}
-
-.animate-breathe {
-  animation: breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
 @keyframes reasoning-shimmer {
   0% {
     background-position: 200% 0;
@@ -639,56 +564,6 @@ body {
   }
 }
 
-@keyframes reasoning-breath-bar {
-  0%,
-  100% {
-    opacity: 0.28;
-    transform: scaleX(0.94);
-    background-position: 0% 50%;
-  }
-  50% {
-    opacity: 0.82;
-    transform: scaleX(1);
-    background-position: 100% 50%;
-  }
-}
-
-.reasoning-breath-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 1px;
-  width: auto;
-  height: 1px;
-  border-radius: 9999px;
-  pointer-events: none;
-  transform-origin: center;
-  background: linear-gradient(
-    90deg,
-    hsl(var(--text-200) / 0),
-    hsl(var(--text-200) / 0.28) 18%,
-    hsl(var(--text-200) / 0.78) 35%,
-    hsl(var(--text-100) / 0.96) 50%,
-    hsl(var(--text-200) / 0.78) 65%,
-    hsl(var(--text-200) / 0.28) 82%,
-    hsl(var(--text-200) / 0)
-  );
-  background-size: 160% 100%;
-  box-shadow:
-    0 0 6px hsl(var(--text-200) / 0.1),
-    0 0 14px hsl(var(--text-200) / 0.04);
-  animation: reasoning-breath-bar 2.6s cubic-bezier(0.42, 0, 0.28, 1) infinite;
-  will-change: transform, opacity, background-position;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .reasoning-breath-bar {
-    animation: none !important;
-    opacity: 0.6;
-    transform: none;
-  }
-}
-
 /* ============================================
  * Mention tag styles
  * ============================================ */
@@ -709,46 +584,6 @@ body {
 /* Folder mention - uses success (green) */
 .mention-tag[data-mention-type='folder'] {
   color: hsl(var(--success-100));
-}
-
-/* ============================================
- * Content Enter Animation
- * ============================================
- * 内容出现时的流畅渐显动画
- * 使用纯透明度过渡，避免位移带来的"蹦"的感觉
- */
-@keyframes content-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-content-in {
-  animation: content-in 0.3s ease-out both;
-}
-
-/* 子元素依次出现的效果 */
-.animate-stagger > * {
-  animation: content-in 0.3s ease-out both;
-}
-
-.animate-stagger > *:nth-child(1) {
-  animation-delay: 0ms;
-}
-.animate-stagger > *:nth-child(2) {
-  animation-delay: 80ms;
-}
-.animate-stagger > *:nth-child(3) {
-  animation-delay: 160ms;
-}
-.animate-stagger > *:nth-child(4) {
-  animation-delay: 240ms;
-}
-.animate-stagger > *:nth-child(5) {
-  animation-delay: 320ms;
 }
 
 /* ============================================
@@ -800,21 +635,8 @@ body {
 }
 
 /* ============================================
- * Utility: Linear Fade Mask
- * ============================================ */
-.mask-linear-fade {
-  mask-image: linear-gradient(to right, transparent, black 10px, black 90%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 10px, black 90%, transparent);
-}
-
-/* ============================================
  * CSS Containment - 优化布局性能，减少 CLS
  * ============================================ */
-
-/* 隔离布局变化，防止子元素影响外部布局 */
-.contain-layout {
-  contain: layout;
-}
 
 /* 完全隔离（用于独立的滚动区域） */
 .contain-strict {
