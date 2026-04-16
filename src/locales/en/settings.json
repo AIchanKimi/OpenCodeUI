@@ -234,11 +234,12 @@
   "about": {
     "title": "About & Updates",
     "versionCardTitle": "Version",
-    "versionCardDesc": "Check whether a newer OpenCodeUI release is available and jump to the download page.",
+    "versionCardDesc": "View the current version and open the releases page when needed.",
     "currentVersion": "Current Version",
     "latestVersion": "Latest Release",
     "unknownVersion": "Unknown",
     "statusIdle": "Check for updates to see whether a newer version is available.",
+    "statusDisabled": "Update checks are disabled for this local build.",
     "statusChecking": "Checking GitHub releases...",
     "statusUpToDate": "You are already on the latest version.",
     "statusUpdateAvailable": "A newer version is available: {{version}}",

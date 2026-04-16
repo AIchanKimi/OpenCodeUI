@@ -9,6 +9,7 @@ export interface UpdateRelease {
 }
 
 export interface UpdateState {
+  enabled: boolean
   currentVersion: string
   latestRelease: UpdateRelease | null
   lastCheckedAt: number | null
@@ -25,9 +26,14 @@ interface PersistedUpdateState {
 }
 
 type Subscriber = () => void
+interface UpdateStoreOptions {
+  enabled?: boolean
+}
 
 const STORAGE_KEY = 'opencode:update-check'
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
+// Private or forked builds should not check upstream releases unless explicitly enabled.
+export const UPDATE_CHECK_ENABLED = false
 export const RELEASES_API_URL = 'https://api.github.com/repos/lehhair/OpenCodeUI/releases/latest'
 export const RELEASES_PAGE_URL = 'https://github.com/lehhair/OpenCodeUI/releases/latest'
 
@@ -57,10 +63,12 @@ export function compareVersions(a: string, b: string): number {
 }
 
 export function hasUpdateAvailable(state: UpdateState): boolean {
+  if (!state.enabled) return false
   return !!state.latestRelease && compareVersions(state.latestRelease.version, state.currentVersion) > 0
 }
 
 export function shouldShowUpdateToast(state: UpdateState): boolean {
+  if (!state.enabled) return false
   if (!state.latestRelease || !hasUpdateAvailable(state)) return false
   if (state.dismissedVersion === state.latestRelease.version) return false
   if (state.hiddenToastVersion === state.latestRelease.version) return false
@@ -86,6 +94,7 @@ function loadPersistedState(): PersistedUpdateState {
 }
 
 function persistState(state: UpdateState): void {
+  if (!state.enabled) return
   try {
     const payload: PersistedUpdateState = {
       latestRelease: state.latestRelease,
@@ -132,13 +141,15 @@ export class UpdateStore {
   private subscribers = new Set<Subscriber>()
   private inflightCheck: Promise<void> | null = null
 
-  constructor(currentVersion?: string) {
+  constructor(currentVersion?: string, options?: UpdateStoreOptions) {
+    const enabled = options?.enabled ?? UPDATE_CHECK_ENABLED
     const persisted = loadPersistedState()
     this.state = {
+      enabled,
       currentVersion: normalizeVersion(currentVersion ?? getDefaultCurrentVersion()),
-      latestRelease: persisted.latestRelease,
-      lastCheckedAt: persisted.lastCheckedAt,
-      dismissedVersion: persisted.dismissedVersion,
+      latestRelease: enabled ? persisted.latestRelease : null,
+      lastCheckedAt: enabled ? persisted.lastCheckedAt : null,
+      dismissedVersion: enabled ? persisted.dismissedVersion : null,
       hiddenToastVersion: null,
       checking: false,
       error: null,
@@ -175,6 +186,7 @@ export class UpdateStore {
   }
 
   async checkForUpdates(options?: { force?: boolean }): Promise<void> {
+    if (!this.state.enabled) return
     if (this.inflightCheck) return this.inflightCheck
 
     const force = options?.force === true

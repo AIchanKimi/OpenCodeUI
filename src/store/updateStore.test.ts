@@ -10,6 +10,7 @@ describe('updateStore helpers', () => {
 
   it('detects whether an update toast should be shown', () => {
     const baseState = {
+      enabled: true,
       currentVersion: '0.5.1',
       latestRelease: {
         version: '0.5.2',
@@ -56,7 +57,7 @@ describe('UpdateStore', () => {
       }),
     )
 
-    const store = new UpdateStore('0.5.1')
+    const store = new UpdateStore('0.5.1', { enabled: true })
     await store.checkForUpdates({ force: true })
 
     expect(store.getSnapshot().latestRelease?.version).toBe('0.5.2')
@@ -67,5 +68,33 @@ describe('UpdateStore', () => {
     expect(store.getSnapshot().dismissedVersion).toBe('0.5.2')
     expect(shouldShowUpdateToast(store.getSnapshot())).toBe(false)
     expect(localStorage.getItem('opencode:update-check')).toContain('0.5.2')
+  })
+
+  it('skips update checks entirely when disabled', async () => {
+    localStorage.setItem(
+      'opencode:update-check',
+      JSON.stringify({
+        latestRelease: {
+          version: '0.5.2',
+          tagName: 'v0.5.2',
+          url: 'https://example.com',
+          publishedAt: null,
+          name: null,
+        },
+        lastCheckedAt: Date.now(),
+        dismissedVersion: null,
+      }),
+    )
+
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const store = new UpdateStore('0.5.1', { enabled: false })
+    await store.checkForUpdates({ force: true })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(store.getSnapshot().latestRelease).toBeNull()
+    expect(hasUpdateAvailable(store.getSnapshot())).toBe(false)
+    expect(shouldShowUpdateToast(store.getSnapshot())).toBe(false)
   })
 })
