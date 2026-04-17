@@ -9,21 +9,41 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.gateway
+      args:
+        HTTP_PROXY: ${OPENCODE_HTTP_PROXY:-}
+        HTTPS_PROXY: ${OPENCODE_HTTPS_PROXY:-}
+        ALL_PROXY: ${OPENCODE_ALL_PROXY:-}
+        NO_PROXY: ${OPENCODE_NO_PROXY:-}
 
   frontend:
     image: opencodeui-frontend:local
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
+      args:
+        HTTP_PROXY: ${OPENCODE_HTTP_PROXY:-}
+        HTTPS_PROXY: ${OPENCODE_HTTPS_PROXY:-}
+        ALL_PROXY: ${OPENCODE_ALL_PROXY:-}
+        NO_PROXY: ${OPENCODE_NO_PROXY:-}
 
   backend:
     image: opencodeui-backend:local
     build:
       context: .
       dockerfile: docker/Dockerfile.backend
+      args:
+        HTTP_PROXY: ${OPENCODE_HTTP_PROXY:-}
+        HTTPS_PROXY: ${OPENCODE_HTTPS_PROXY:-}
+        ALL_PROXY: ${OPENCODE_ALL_PROXY:-}
+        NO_PROXY: ${OPENCODE_NO_PROXY:-}
 
   file-service:
     image: opencodeui-file-service:local
     build:
       context: .
       dockerfile: docker/Dockerfile.file-service
+      args:
+        HTTP_PROXY: ${OPENCODE_HTTP_PROXY:-}
+        HTTPS_PROXY: ${OPENCODE_HTTPS_PROXY:-}
+        ALL_PROXY: ${OPENCODE_ALL_PROXY:-}
+        NO_PROXY: ${OPENCODE_NO_PROXY:-}
