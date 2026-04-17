@@ -9,10 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/root
 
 # 基础依赖
-# 使用阿里镜像加速 apt（替换默认的 archive / security 源），再更新并安装依赖
-RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
-    && sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
