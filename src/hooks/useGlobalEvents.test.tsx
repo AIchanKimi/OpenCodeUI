@@ -12,7 +12,11 @@ const {
   getFocusedSessionIdMock,
   notificationPushMock,
   playNotificationSoundDedupedMock,
+  getSoundSnapshotMock,
+  isSystemEnabledMock,
   activeSessionStoreMock,
+  applyServerConnectedTimestampMock,
+  getActiveServerIdMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
   getSessionStatusMock: vi.fn(() => Promise.resolve({})),
@@ -23,6 +27,12 @@ const {
   getFocusedSessionIdMock: vi.fn<() => string | null>(() => null),
   notificationPushMock: vi.fn(),
   playNotificationSoundDedupedMock: vi.fn(),
+  isSystemEnabledMock: vi.fn((type: string) => type !== 'permission'),
+  applyServerConnectedTimestampMock: vi.fn(),
+  getActiveServerIdMock: vi.fn(() => 'local'),
+  getSoundSnapshotMock: vi.fn(() => ({
+    currentSessionEnabled: true,
+  })),
   activeSessionStoreMock: {
     initialize: vi.fn(),
     initializePendingRequests: vi.fn(),
@@ -67,6 +77,10 @@ vi.mock('../store', () => ({
   paneLayoutStore: {
     getFocusedSessionId: getFocusedSessionIdMock,
   },
+  serverStore: {
+    applyServerConnectedTimestamp: applyServerConnectedTimestampMock,
+    getActiveServerId: getActiveServerIdMock,
+  },
 }))
 
 vi.mock('../store/activeSessionStore', () => ({
@@ -81,7 +95,13 @@ vi.mock('../store/notificationStore', () => ({
 
 vi.mock('../store/soundStore', () => ({
   soundStore: {
-    getSnapshot: () => ({ currentSessionEnabled: true }),
+    getSnapshot: () => getSoundSnapshotMock(),
+  },
+}))
+
+vi.mock('../store/notificationEventSettingsStore', () => ({
+  notificationEventSettingsStore: {
+    isSystemEnabled: (type: 'completed' | 'permission' | 'question' | 'error') => isSystemEnabledMock(type),
   },
 }))
 
@@ -106,13 +126,38 @@ describe('useGlobalEvents', () => {
     getFocusedSessionIdMock.mockReset()
     notificationPushMock.mockReset()
     playNotificationSoundDedupedMock.mockReset()
+    getSoundSnapshotMock.mockReset()
+    isSystemEnabledMock.mockReset()
+    applyServerConnectedTimestampMock.mockReset()
+    getActiveServerIdMock.mockReset()
     Object.values(activeSessionStoreMock).forEach(value => {
       if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
     })
 
     subscribeToEventsMock.mockImplementation(() => vi.fn())
+    getSoundSnapshotMock.mockReturnValue({
+      currentSessionEnabled: true,
+    })
+    isSystemEnabledMock.mockImplementation((type: string) => type !== 'permission')
+    getActiveServerIdMock.mockReturnValue('local')
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Child Session', directory: '/workspace' })
     activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: {} })
+  })
+
+  it('stores server clock calibration when server.connected arrives', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onServerConnected?.({ timestamp: '2026-04-22T15:00:00.000Z' })
+
+    expect(applyServerConnectedTimestampMock).toHaveBeenCalledWith('local', '2026-04-22T15:00:00.000Z')
   })
 
   it('does not play current-session sound for child session events when parent session is focused', async () => {
@@ -163,4 +208,78 @@ describe('useGlobalEvents', () => {
     expect(notificationPushMock).not.toHaveBeenCalled()
     expect(playNotificationSoundDedupedMock).toHaveBeenCalledWith('permission')
   })
+
+  it('still plays current-session sound when the matching system notification toggle is disabled', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getFocusedSessionIdMock.mockReturnValue('child-session')
+    isSystemEnabledMock.mockImplementation(type => type !== 'permission')
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onPermissionAsked?.({
+      id: 'perm-sound',
+      sessionID: 'child-session',
+      permission: 'bash',
+      patterns: [],
+    })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+    expect(playNotificationSoundDedupedMock).toHaveBeenCalledWith('permission')
+  })
+
+  it.each([
+    {
+      disabledType: 'permission',
+      trigger: 'onPermissionAsked',
+      payload: { id: 'perm-3', sessionID: 'background-session', permission: 'bash', patterns: [] },
+    },
+    {
+      disabledType: 'question',
+      trigger: 'onQuestionAsked',
+      payload: {
+        id: 'question-3',
+        sessionID: 'background-session',
+        questions: [{ header: 'Need input' }],
+      },
+    },
+    {
+      disabledType: 'completed',
+      trigger: 'onSessionStatus',
+      beforeTrigger: () => {
+        activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'background-session': { type: 'busy' } } })
+      },
+      payload: { sessionID: 'background-session', status: { type: 'idle' } },
+    },
+    {
+      disabledType: 'error',
+      trigger: 'onSessionError',
+      payload: { sessionID: 'background-session', name: 'Error' },
+    },
+  ])(
+    'keeps background notifications working when the $disabledType system notification toggle is disabled',
+    async ({ disabledType, trigger, payload, beforeTrigger }) => {
+      let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+      subscribeToEventsMock.mockImplementation(cb => {
+        callbacks = cb
+        return vi.fn()
+      })
+      isSystemEnabledMock.mockImplementation(type => type !== disabledType)
+      beforeTrigger?.()
+
+      renderHook(() => useGlobalEvents())
+
+      await waitFor(() => expect(callbacks).toBeDefined())
+
+      callbacks![trigger as keyof typeof callbacks]?.(payload as never)
+
+      expect(notificationPushMock).toHaveBeenCalledTimes(1)
+      expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()
+    },
+  )
 })

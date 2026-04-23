@@ -174,7 +174,9 @@ export function SessionList({
           </div>
         ) : sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-text-400 opacity-60">
-            <p className="text-[length:var(--fs-sm)]">{search ? t('common:noMatchesFound') : t('sessions.noChatsYet')}</p>
+            <p className="text-[length:var(--fs-sm)]">
+              {search ? t('common:noMatchesFound') : t('sessions.noChatsYet')}
+            </p>
           </div>
         ) : showGroups ? (
           // Grouped View
@@ -356,6 +358,7 @@ export function SessionListItem({
     session.summary &&
     (session.summary.additions > 0 || session.summary.deletions > 0 || session.summary.files > 0),
   )
+  const itemPaddingClass = isCompact ? (isEditMode ? 'px-3 py-2' : 'pl-[6px] pr-3 py-2') : 'px-3 py-2.5'
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -469,6 +472,21 @@ export function SessionListItem({
     e.stopPropagation()
   }
 
+  // 拖拽会话到主信息流进行分屏 / 替换会话
+  const handleDragStart = (e: React.DragEvent) => {
+    if (isEditMode || isEditing) {
+      e.preventDefault()
+      return
+    }
+    e.dataTransfer.setData('text/x-session-id', session.id)
+    if (session.directory) {
+      e.dataTransfer.setData('text/x-session-directory', session.directory)
+    }
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const isDraggable = !isEditMode && !isEditing
+
   if (isEditing) {
     return (
       <div className={isMinimal ? 'px-2 py-0.5' : 'px-3 py-2'}>
@@ -481,7 +499,9 @@ export function SessionListItem({
           onKeyDown={handleKeyDown}
           onClick={e => e.stopPropagation()}
           className={`w-full bg-bg-000 border border-accent-main-100/50 rounded px-2 text-text-100 focus:outline-none focus:ring-1 focus:ring-accent-main-100/30 ${
-            isMinimal ? 'py-0.5 text-[length:var(--fs-sm)] leading-normal' : 'py-1.5 text-[length:var(--fs-base)] leading-relaxed'
+            isMinimal
+              ? 'py-0.5 text-[length:var(--fs-sm)] leading-normal'
+              : 'py-1.5 text-[length:var(--fs-base)] leading-relaxed'
           }`}
         />
       </div>
@@ -503,11 +523,13 @@ export function SessionListItem({
     return (
       <div
         ref={itemRef}
+        draggable={isDraggable}
+        onDragStart={handleDragStart}
         onClick={handleClick}
         onTouchStart={isEditMode ? undefined : handleTouchStart}
         onTouchMove={isEditMode ? undefined : handleTouchMove}
         onTouchEnd={isEditMode ? undefined : handleTouchEnd}
-        className={`group relative flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-default transition-colors duration-150 select-none ${
+        className={`group relative flex items-center gap-2 px-2 py-1.5 rounded-md cursor-default transition-colors duration-150 select-none ${
           isSelected && !isEditMode
             ? 'bg-bg-200/80 text-text-100'
             : isEditMode && isChecked
@@ -529,14 +551,14 @@ export function SessionListItem({
             data-selection-id={session.id}
             onMouseDown={handleCheckMouseDown}
             onClick={handleCheckClick}
-            className={`shrink-0 flex items-center justify-center w-3.5 h-3.5 rounded-full cursor-pointer transition-colors ${
+            className={`shrink-0 flex items-center justify-center size-5 rounded-full cursor-pointer transition-colors ${
               isChecked ? 'bg-accent-main-100' : 'border border-text-500/50 hover:border-text-400'
             }`}
           >
             {isChecked && <CheckIcon size={9} className="text-white" />}
           </button>
         ) : (
-          <span className="relative shrink-0 flex items-center justify-center w-3 h-3" title={statusIndicatorTitle}>
+          <span className="relative shrink-0 flex items-center justify-center size-5" title={statusIndicatorTitle}>
             {activeStatus ? (
               <>
                 <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
@@ -556,7 +578,10 @@ export function SessionListItem({
           }`}
         >
           {/* 标题 */}
-          <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" title={session.title || t('sessions.untitledChat')}>
+          <span
+            className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]"
+            title={session.title || t('sessions.untitledChat')}
+          >
             {session.title || t('sessions.untitledChat')}
           </span>
 
@@ -617,11 +642,13 @@ export function SessionListItem({
   return (
     <div
       ref={itemRef}
+      draggable={isDraggable}
+      onDragStart={handleDragStart}
       onClick={handleClick}
       onTouchStart={isEditMode ? undefined : handleTouchStart}
       onTouchMove={isEditMode ? undefined : handleTouchMove}
       onTouchEnd={isEditMode ? undefined : handleTouchEnd}
-      className={`group relative flex items-start ${isCompact ? 'px-3 py-2' : 'px-3 py-2.5'} rounded-lg cursor-default transition-all duration-200 border border-transparent select-none ${
+      className={`group relative flex items-start ${itemPaddingClass} rounded-lg cursor-default transition-all duration-200 border border-transparent select-none ${
         isSelected && !isEditMode ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50' : 'hover:bg-bg-200/50'
       } ${showActions && !isEditMode ? 'bg-bg-200/50' : ''}`}
     >

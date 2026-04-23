@@ -6,7 +6,14 @@ import { getApiBaseUrl, getAuthHeader } from './http'
 import { createSseTextParser } from './sse'
 import { normalizeTodoItems } from './todo'
 import { isTauri } from '../utils/tauri'
-import type { EventCallbacks, EventType, GlobalEvent, SessionErrorPayload, TodoUpdatedPayload } from './types'
+import type {
+  EventCallbacks,
+  EventType,
+  GlobalEvent,
+  ServerConnectedPayload,
+  SessionErrorPayload,
+  TodoUpdatedPayload,
+} from './types'
 import { EventTypes } from '../types/api/event'
 
 // ============================================
@@ -33,7 +40,9 @@ const connectionListeners = new Set<(info: ConnectionInfo) => void>()
 
 function updateConnectionState(update: Partial<ConnectionInfo>) {
   connectionInfo = { ...connectionInfo, ...update }
-  connectionListeners.forEach(fn => fn(connectionInfo))
+  connectionListeners.forEach(fn => {
+    fn(connectionInfo)
+  })
 }
 
 export function getConnectionInfo(): ConnectionInfo {
@@ -84,6 +93,14 @@ let pendingDisconnect: Promise<void> = Promise.resolve()
 let lastReconnectedBroadcast = 0
 const RECONNECTED_COOLDOWN = 2000
 
+function finalizeConnectionAttempt(generation: number): boolean {
+  if (generation !== connectionGeneration) {
+    return false
+  }
+  isConnecting = false
+  return true
+}
+
 /**
  * 广播 onReconnected，带 cooldown 防止 SSE 快速重连时密集触发数据拉取
  */
@@ -96,7 +113,9 @@ function broadcastReconnected(reason: 'network' | 'server-switch') {
     return
   }
   lastReconnectedBroadcast = now
-  allSubscribers.forEach(cb => cb.onReconnected?.(reason))
+  allSubscribers.forEach(cb => {
+    cb.onReconnected?.(reason)
+  })
 }
 
 /**
@@ -210,6 +229,8 @@ interface BridgeEvent {
 }
 
 async function connectViaTauri() {
+  const myGeneration = connectionGeneration
+
   try {
     // 等待上一次 disconnect 完成，避免 Rust 侧 connect/disconnect 竞争
     await pendingDisconnect
@@ -219,9 +240,6 @@ async function connectViaTauri() {
     const url = `${getApiBaseUrl()}/global/event`
     const authHeaders = getAuthHeader()
     const authHeader = authHeaders['Authorization'] || null
-
-    // 捕获当前连接代次，旧代次的事件一律丢弃
-    const myGeneration = connectionGeneration
 
     const sseParser = createSseTextParser()
 
@@ -282,7 +300,9 @@ async function connectViaTauri() {
             state: 'error',
             error: errorMsg,
           })
-          allSubscribers.forEach(cb => cb.onError?.(new Error(errorMsg)))
+          allSubscribers.forEach(cb => {
+            cb.onError?.(new Error(errorMsg))
+          })
           scheduleReconnect()
           break
         }
@@ -294,7 +314,7 @@ async function connectViaTauri() {
       args: { bridgeId: 'sse', url, authHeader },
       onEvent,
     }).catch((error: unknown) => {
-      isConnecting = false
+      if (!finalizeConnectionAttempt(myGeneration)) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       if (import.meta.env.DEV) {
         console.warn('[SSE/Tauri] invoke error:', errorMsg)
@@ -303,11 +323,13 @@ async function connectViaTauri() {
         state: 'error',
         error: errorMsg,
       })
-      allSubscribers.forEach(cb => cb.onError?.(new Error(errorMsg)))
+      allSubscribers.forEach(cb => {
+        cb.onError?.(new Error(errorMsg))
+      })
       scheduleReconnect()
     })
   } catch (error) {
-    isConnecting = false
+    if (!finalizeConnectionAttempt(myGeneration)) return
     const errorMsg = error instanceof Error ? error.message : String(error)
     console.warn('[SSE/Tauri] Failed to initialize:', errorMsg)
     updateConnectionState({ state: 'error', error: errorMsg })
@@ -333,7 +355,12 @@ function connectViaBrowser() {
     },
   })
     .then(async response => {
-      isConnecting = false
+      if (myGeneration !== connectionGeneration) {
+        await response.body?.cancel?.().catch(() => {})
+        return
+      }
+
+      finalizeConnectionAttempt(myGeneration)
 
       if (!response.ok) {
         throw new Error(`Failed to subscribe: ${response.status}`)
@@ -371,6 +398,11 @@ function connectViaBrowser() {
         }
 
         const { done, value } = await reader.read()
+        if (myGeneration !== connectionGeneration) {
+          reader.cancel().catch(() => {})
+          break
+        }
+
         if (done) {
           if (import.meta.env.DEV) {
             console.log('[SSE] Stream ended, reconnecting...')
@@ -391,7 +423,9 @@ function connectViaBrowser() {
       }
     })
     .catch(error => {
-      isConnecting = false
+      if (!finalizeConnectionAttempt(myGeneration)) {
+        return
+      }
 
       if (error.name === 'AbortError') {
         return
@@ -405,7 +439,9 @@ function connectViaBrowser() {
         error: error.message || 'Connection failed',
       })
       // 通知所有订阅者出错
-      allSubscribers.forEach(cb => cb.onError?.(error))
+      allSubscribers.forEach(cb => {
+        cb.onError?.(error)
+      })
       scheduleReconnect()
     })
 }
@@ -718,9 +754,19 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
       } satisfies TodoUpdatedPayload)
       break
     }
+    case EventTypes.SERVER_CONNECTED:
+      callbacks.onServerConnected?.(normalizeServerConnected(payload.properties))
+      break
     default:
       // 忽略其他事件类型
       break
+  }
+}
+
+function normalizeServerConnected(properties: unknown): ServerConnectedPayload {
+  if (!isRecord(properties)) return {}
+  return {
+    timestamp: properties.timestamp,
   }
 }
 

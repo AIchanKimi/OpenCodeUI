@@ -1,5 +1,73 @@
 # Changelog
 
+## [v0.5.9] - 2026-04-23
+
+- fix: harden live tool timing updates (d6c963a)
+- feat: resolve issue #74 running tool durations (54490f3)
+- feat: store calibrated server time locally (f35c4ab)
+- feat: handle server.connected event timestamps (0e77075)
+- refactor: extract shared ticking clock hook (1b0c626)
+
+## [v0.5.8] - 2026-04-21
+
+- fix: polish sidebar session and notification layout (51b22f2)
+- refactor: modularize settings backup snapshots (a9d59c6)
+- fix: reset project dialog state on reopen (b344278)
+- feat: add settings backup import and export (93ad2ab)
+- fix: rebalance obsidian surface contrast (0837734)
+- fix: separate system notification settings from sound config (ccc80e4)
+- feat: add separate system notification controls (3236d14)
+- feat: add Dracula theme preset (7623377)
+- fix: persist model selection across session restore (d8eb318)
+- fix: shrink launcher icon mark further for masked shells (4f3e99f)
+- fix: reduce app icon mark scale and drop custom Android splash (2552342)
+- fix: remove unsupported Android splash attr from canary build (21ea11a)
+- fix: shrink Android app icon foreground and add native splash theme (8325bfc)
+- feat: redesign app icons for desktop and Android (527d423)
+
+## [v0.5.7] - 2026-04-19
+
+- fix: anchor toasts to the content area beneath desktop titlebar (fe15280)
+
+## [v0.5.6] - 2026-04-19
+
+- chore: sync Tauri app icons from web opencode.svg (f792218)
+- polish: slim desktop titlebar down to minimal app chrome (375e8d1)
+- feat: add platform-aware desktop titlebar foundation (43fa2da)
+- fix: prevent model selector from jumping to wrong provider on split (5b33360)
+
+## [v0.5.5] - 2026-04-18
+
+- fix: remove redundant *Single i18n keys — let i18next handle count=1 natively (9385ef8)
+- style: match pane drop highlight radius to pane shell (rounded-lg) (f8acac2)
+- feat: enable drag-to-split on active session list items (ac20b7b)
+
+## [v0.5.4] - 2026-04-18
+
+- polish: pane drop overlay — drop text labels, harden edge cases (2be4c13)
+- perf: keep pane drop overlay state out of ChatPane re-render path (17025ad)
+- feat: drag sessions onto chat pane to split or replace (e413864)
+- fix: add keyboard shortcuts to question dialogs (send keybinding to submit, Escape to skip) (dc83e0e)
+- fix: narrow shell tool detection to exact 'sh' match across all matchers (f534454)
+- Update zh-CN usage stats labels to English (074878e)
+- fix: distinguish file writes in tool summary (2f25e93)
+- fix: refine message tool summary wording (1d41542)
+- fix: guard session error without sessionID (2166183)
+
+## [v0.5.3] - 2026-04-17
+
+- style: use distinct icons for settings tabs (9b2adb1)
+- fix: sanitize exported CSS snippet filenames safely (139725c)
+- fix: adapt token usage ring track to all themes (75f2ad4)
+- refactor: derive theme previews from preset tokens (720c426)
+- feat: add reusable CSS overrides for themes (eba9d1d)
+- refactor: split settings into agent and workspace tabs (b38ac6b)
+- feat: add configurable message completion timestamps (2f01c56)
+- feat: add model visibility settings (731efdd)
+- style: improve glass effect - thicker base, blur(22px), saturate(200%) (bd27ce1)
+- feat(themes): 新增Sakura、Ocean、Obsidian三款预设主题 (bfa449c)
+- feat(settings): 添加自定义CSS模板管理功能 (79db9f4)
+
 ## [v0.5.2] - 2026-04-15
 
 - test: fix streamed event mock typing (92627ee)

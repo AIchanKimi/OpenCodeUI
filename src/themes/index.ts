@@ -441,10 +441,478 @@ export const breezeTheme: ThemePreset = {
 }
 
 // ============================================
+// Sakura 主题 - 粉白色系
+// ============================================
+
+const sakuraLight: ThemeColors = {
+  background: {
+    bg000: '350 30% 99%',
+    bg100: '350 25% 97%',
+    bg200: '350 20% 94%',
+    bg300: '350 18% 90%',
+    bg400: '350 15% 86%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '340 20% 15%',
+    text200: '340 15% 35%',
+    text300: '340 10% 50%',
+    text400: '340 8% 62%',
+    text500: '340 6% 72%',
+    text600: '340 5% 82%',
+  },
+  accent: {
+    brand: '340 70% 55%',
+    main000: '340 65% 48%',
+    main100: '340 70% 55%',
+    main200: '340 75% 62%',
+    secondary100: '320 60% 50%',
+  },
+  semantic: {
+    success100: '140 50% 42%',
+    success200: '140 45% 35%',
+    successBg: '140 40% 94%',
+    warning100: '35 85% 48%',
+    warning200: '35 80% 40%',
+    warningBg: '35 70% 93%',
+    danger000: '350 65% 45%',
+    danger100: '350 70% 55%',
+    danger200: '350 75% 62%',
+    dangerBg: '350 60% 95%',
+    danger900: '350 50% 92%',
+    info100: '200 70% 50%',
+    info200: '200 65% 58%',
+    infoBg: '200 60% 95%',
+  },
+  border: {
+    border100: '350 15% 88%',
+    border200: '350 12% 84%',
+    border300: '350 10% 78%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+const sakuraDark: ThemeColors = {
+  background: {
+    bg000: '340 15% 18%',
+    bg100: '340 15% 14%',
+    bg200: '340 12% 11%',
+    bg300: '340 10% 9%',
+    bg400: '340 8% 6%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '350 15% 92%',
+    text200: '350 10% 72%',
+    text300: '350 8% 58%',
+    text400: '350 6% 48%',
+    text500: '350 5% 38%',
+    text600: '350 4% 28%',
+  },
+  accent: {
+    brand: '340 65% 60%',
+    main000: '340 60% 52%',
+    main100: '340 65% 60%',
+    main200: '340 70% 68%',
+    secondary100: '320 55% 62%',
+  },
+  semantic: {
+    success100: '140 55% 52%',
+    success200: '140 50% 60%',
+    successBg: '140 35% 14%',
+    warning100: '35 85% 58%',
+    warning200: '35 80% 65%',
+    warningBg: '35 30% 14%',
+    danger000: '350 75% 62%',
+    danger100: '350 70% 58%',
+    danger200: '350 72% 68%',
+    dangerBg: '350 30% 14%',
+    danger900: '350 25% 22%',
+    info100: '200 75% 62%',
+    info200: '200 70% 70%',
+    infoBg: '200 30% 14%',
+  },
+  border: {
+    border100: '340 10% 24%',
+    border200: '340 8% 28%',
+    border300: '340 6% 34%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+export const sakuraTheme: ThemePreset = {
+  id: 'sakura',
+  name: 'Sakura',
+  description: 'Soft pink tones, gentle and warm',
+  light: sakuraLight,
+  dark: sakuraDark,
+}
+
+// ============================================
+// Ocean 主题 - 蓝白色系
+// ============================================
+
+const oceanLight: ThemeColors = {
+  background: {
+    bg000: '215 40% 99%',
+    bg100: '215 35% 97%',
+    bg200: '215 30% 94%',
+    bg300: '215 25% 90%',
+    bg400: '215 20% 86%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '220 25% 15%',
+    text200: '220 20% 35%',
+    text300: '220 15% 50%',
+    text400: '220 12% 62%',
+    text500: '220 10% 72%',
+    text600: '220 8% 82%',
+  },
+  accent: {
+    brand: '215 80% 52%',
+    main000: '215 75% 45%',
+    main100: '215 80% 52%',
+    main200: '215 85% 58%',
+    secondary100: '200 70% 50%',
+  },
+  semantic: {
+    success100: '155 60% 40%',
+    success200: '155 55% 32%',
+    successBg: '155 50% 94%',
+    warning100: '40 90% 48%',
+    warning200: '35 85% 40%',
+    warningBg: '40 80% 93%',
+    danger000: '0 70% 45%',
+    danger100: '0 75% 55%',
+    danger200: '0 80% 62%',
+    dangerBg: '0 70% 95%',
+    danger900: '0 55% 92%',
+    info100: '215 80% 50%',
+    info200: '215 75% 58%',
+    infoBg: '215 70% 95%',
+  },
+  border: {
+    border100: '215 20% 86%',
+    border200: '215 18% 82%',
+    border300: '215 15% 76%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+const oceanDark: ThemeColors = {
+  background: {
+    bg000: '220 30% 16%',
+    bg100: '220 30% 12%',
+    bg200: '220 28% 10%',
+    bg300: '220 25% 8%',
+    bg400: '220 20% 5%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '215 20% 92%',
+    text200: '215 15% 72%',
+    text300: '215 12% 58%',
+    text400: '215 10% 48%',
+    text500: '215 8% 38%',
+    text600: '215 6% 28%',
+  },
+  accent: {
+    brand: '215 75% 58%',
+    main000: '215 70% 50%',
+    main100: '215 75% 58%',
+    main200: '215 80% 65%',
+    secondary100: '200 65% 60%',
+  },
+  semantic: {
+    success100: '155 65% 55%',
+    success200: '155 60% 62%',
+    successBg: '155 35% 14%',
+    warning100: '40 90% 60%',
+    warning200: '40 85% 68%',
+    warningBg: '40 30% 14%',
+    danger000: '0 80% 62%',
+    danger100: '0 75% 58%',
+    danger200: '0 78% 68%',
+    dangerBg: '0 30% 14%',
+    danger900: '0 25% 22%',
+    info100: '215 80% 62%',
+    info200: '215 75% 70%',
+    infoBg: '215 30% 14%',
+  },
+  border: {
+    border100: '220 15% 22%',
+    border200: '220 12% 26%',
+    border300: '220 10% 32%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+export const oceanTheme: ThemePreset = {
+  id: 'ocean',
+  name: 'Ocean',
+  description: 'Deep blue tones, calm and focused',
+  light: oceanLight,
+  dark: oceanDark,
+}
+
+const draculaLight: ThemeColors = {
+  background: {
+    bg000: '48 100% 96%',
+    bg100: '48 88% 94%',
+    bg200: '45 52% 90%',
+    bg300: '240 19% 88%',
+    bg400: '240 19% 84%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '0 0% 12%',
+    text200: '49 18% 36%',
+    text300: '46 14% 46%',
+    text400: '45 12% 58%',
+    text500: '240 19% 84%',
+    text600: '240 19% 88%',
+  },
+  accent: {
+    brand: '252 54% 54%',
+    main000: '336 78% 36%',
+    main100: '252 54% 54%',
+    main200: '265 89% 78%',
+    secondary100: '198 96% 30%',
+  },
+  semantic: {
+    success100: '114 84% 24%',
+    success200: '120 90% 30%',
+    successBg: '48 100% 96%',
+    warning100: '24 78% 36%',
+    warning200: '54 78% 36%',
+    warningBg: '48 100% 96%',
+    danger000: '6 66% 48%',
+    danger100: '12 72% 54%',
+    danger200: '0 100% 67%',
+    dangerBg: '48 100% 96%',
+    danger900: '240 19% 84%',
+    info100: '198 96% 30%',
+    info200: '204 100% 42%',
+    infoBg: '48 100% 96%',
+  },
+  border: {
+    border100: '240 19% 88%',
+    border200: '240 19% 84%',
+    border300: '49 18% 36%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+const draculaDark: ThemeColors = {
+  background: {
+    bg000: '231 15% 18%',
+    bg100: '233 16% 16%',
+    bg200: '233 17% 14%',
+    bg300: '233 18% 12%',
+    bg400: '233 20% 10%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '60 30% 96%',
+    text200: '60 23% 90%',
+    text300: '225 27% 51%',
+    text400: '228 16% 62%',
+    text500: '232 14% 31%',
+    text600: '233 17% 14%',
+  },
+  accent: {
+    brand: '265 89% 78%',
+    main000: '258 60% 60%',
+    main100: '265 89% 78%',
+    main200: '265 89% 78%',
+    secondary100: '225 27% 51%',
+  },
+  semantic: {
+    success100: '135 94% 65%',
+    success200: '120 90% 30%',
+    successBg: '235 14% 15%',
+    warning100: '31 100% 71%',
+    warning200: '54 78% 36%',
+    warningBg: '235 14% 15%',
+    danger000: '0 100% 67%',
+    danger100: '12 72% 54%',
+    danger200: '0 100% 67%',
+    dangerBg: '235 14% 15%',
+    danger900: '230 15% 24%',
+    info100: '191 97% 77%',
+    info200: '204 100% 42%',
+    infoBg: '235 14% 15%',
+  },
+  border: {
+    border100: '232 14% 31%',
+    border200: '232 14% 31%',
+    border300: '225 27% 51%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+export const draculaTheme: ThemePreset = {
+  id: 'dracula',
+  name: 'Dracula',
+  description: 'Official Dracula preset with Alucard day and monochrome night',
+  light: draculaLight,
+  dark: draculaDark,
+}
+
+// ============================================
+// Obsidian 主题 - 纯黑高对比
+// ============================================
+
+const obsidianLight: ThemeColors = {
+  background: {
+    bg000: '0 0% 100%',
+    bg100: '0 0% 98%',
+    bg200: '0 0% 95%',
+    bg300: '0 0% 91%',
+    bg400: '0 0% 86%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '0 0% 13%',
+    text200: '0 0% 35%',
+    text300: '0 0% 44%',
+    text400: '0 0% 67%',
+    text500: '0 0% 74%',
+    text600: '0 0% 83%',
+  },
+  accent: {
+    brand: '254 80% 68%',
+    main000: '255 82% 63%',
+    main100: '254 80% 68%',
+    main200: '258 100% 75%',
+    secondary100: '212 93% 45%',
+  },
+  semantic: {
+    success100: '144 92% 38%',
+    success200: '144 92% 32%',
+    successBg: '144 70% 94%',
+    warning100: '30 100% 46%',
+    warning200: '31 79% 58%',
+    warningBg: '46 100% 94%',
+    danger000: '353 81% 48%',
+    danger100: '353 81% 55%',
+    danger200: '358 96% 63%',
+    dangerBg: '353 100% 96%',
+    danger900: '353 70% 92%',
+    info100: '212 93% 45%',
+    info200: '212 100% 50%',
+    infoBg: '212 100% 96%',
+  },
+  border: {
+    border100: '0 0% 89%',
+    border200: '0 0% 88%',
+    border300: '0 0% 83%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+const obsidianDark: ThemeColors = {
+  background: {
+    bg000: '0 0% 16%',
+    bg100: '0 0% 13%',
+    bg200: '0 0% 10%',
+    bg300: '0 0% 8%',
+    bg400: '0 0% 5%',
+  },
+  text: {
+    text000: '0 0% 100%',
+    text100: '0 0% 85%',
+    text200: '0 0% 73%',
+    text300: '0 0% 60%',
+    text400: '0 0% 40%',
+    text500: '0 0% 33%',
+    text600: '0 0% 25%',
+  },
+  accent: {
+    brand: '254 80% 68%',
+    main000: '255 82% 63%',
+    main100: '254 80% 68%',
+    main200: '258 100% 75%',
+    secondary100: '212 100% 50%',
+  },
+  semantic: {
+    success100: '138 59% 54%',
+    success200: '138 59% 60%',
+    successBg: '138 24% 18%',
+    warning100: '31 79% 58%',
+    warning200: '59 64% 66%',
+    warningBg: '46 24% 18%',
+    danger000: '358 96% 58%',
+    danger100: '358 96% 63%',
+    danger200: '358 96% 69%',
+    dangerBg: '353 22% 18%',
+    danger900: '353 18% 24%',
+    info100: '212 100% 50%',
+    info200: '212 100% 58%',
+    infoBg: '212 24% 18%',
+  },
+  border: {
+    border100: '0 0% 16%',
+    border200: '0 0% 21%',
+    border300: '0 0% 25%',
+  },
+  special: {
+    alwaysBlack: '0 0% 0%',
+    alwaysWhite: '0 0% 100%',
+    oncolor100: '0 0% 100%',
+  },
+}
+
+export const obsidianTheme: ThemePreset = {
+  id: 'obsidian',
+  name: 'Obsidian',
+  description: 'Default Obsidian-inspired grayscale with purple accent',
+  light: obsidianLight,
+  dark: obsidianDark,
+}
+
+// ============================================
 // Theme Registry
 // ============================================
 
-export const builtinThemes: ThemePreset[] = [eucalyptusTheme, claudeTheme, breezeTheme]
+export const builtinThemes: ThemePreset[] = [
+  eucalyptusTheme,
+  claudeTheme,
+  breezeTheme,
+  sakuraTheme,
+  oceanTheme,
+  draculaTheme,
+  obsidianTheme,
+]
 
 export function getThemePreset(id: string): ThemePreset | undefined {
   return builtinThemes.find(t => t.id === id)

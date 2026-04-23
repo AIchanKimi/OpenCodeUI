@@ -37,7 +37,7 @@ import type {
   AssistantMessageInfo,
 } from '../../types/message'
 import { isToolPart, isVisibleReasoningPart, isVisibleTextPart } from '../../types/message'
-import { formatDuration } from '../../utils/formatUtils'
+import { formatDuration, formatCompletedAt } from '../../utils/formatUtils'
 
 interface MessageRendererProps {
   message: Message
@@ -377,7 +377,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
   onEnsureParts?: (messageId: string) => void
 }) {
   const { parts, isStreaming, info } = message
-  const { stepFinishDisplay } = useTheme()
+  const { stepFinishDisplay, completedAtFormat } = useTheme()
 
   const wrapperRef = useEntryGrowAnimation(info.time.created)
 
@@ -431,6 +431,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
   const hasStepFinishPart = parts.some(part => part.type === 'step-finish')
   const showTurnDurationFooter =
     !isStreaming && !hasStepFinishPart && stepFinishDisplay.turnDuration && turnDuration != null && turnDuration > 0
+  const showCompletedAtFooter = !isStreaming && !hasStepFinishPart && stepFinishDisplay.completedAt && completed != null
 
   if (!isStreaming && parts.length === 0) {
     // 有错误时直接显示错误信息
@@ -470,6 +471,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
                   isStreaming={isStreaming}
                   agent={agent}
                   modelLabel={modelLabel}
+                  completedAt={isLastStepFinish ? completed : undefined}
                 />
               )
             }
@@ -491,6 +493,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
                     turnDuration={isLastStepFinish ? turnDuration : undefined}
                     agent={agent}
                     modelLabel={modelLabel}
+                    completedAt={isLastStepFinish ? completed : undefined}
                   />
                 )
               case 'subtask':
@@ -509,9 +512,10 @@ const AssistantMessageView = memo(function AssistantMessageView({
       {/* Message-level error */}
       {messageError && <MessageErrorView error={messageError} />}
 
-      {showTurnDurationFooter && (
+      {(showTurnDurationFooter || showCompletedAtFooter) && (
         <div className="flex items-center gap-3 text-[length:var(--fs-xxs)] text-text-500 pl-5 py-0.5">
-          <span>total {formatDuration(turnDuration!)}</span>
+          {showTurnDurationFooter && <span>{formatDuration(turnDuration!)} total</span>}
+          {showCompletedAtFooter && <span>{formatCompletedAt(completed!, completedAtFormat)}</span>}
         </div>
       )}
 
@@ -537,10 +541,11 @@ interface ToolGroupProps {
   isStreaming?: boolean
   agent?: string
   modelLabel?: string
+  completedAt?: number
 }
 
 /** 用户需要阅读/交互的工具：沉浸模式下这些工具完成后保持展开 */
-const READABLE_TOOL_PATTERNS = /bash|sh|cmd|terminal|shell|write|save|edit|replace|patch|todo|question|ask/i
+const READABLE_TOOL_PATTERNS = /bash|\bsh\b|cmd|terminal|shell|write|save|edit|replace|patch|todo|question|ask/i
 
 function isReadableTool(toolName: string): boolean {
   return READABLE_TOOL_PATTERNS.test(toolName.toLowerCase())
@@ -554,6 +559,7 @@ const ToolGroup = memo(function ToolGroup({
   isStreaming,
   agent,
   modelLabel,
+  completedAt,
 }: ToolGroupProps) {
   const { t } = useTranslation('message')
   const { descriptiveToolSteps, inlineToolRequests, immersiveMode } = useTheme()
@@ -729,6 +735,7 @@ const ToolGroup = memo(function ToolGroup({
               turnDuration={turnDuration}
               agent={agent}
               modelLabel={modelLabel}
+              completedAt={completedAt}
             />
           </div>
         )}
@@ -752,7 +759,20 @@ function formatTokens(
   return `${total} ${t('tokens')}`
 }
 
-type ToolSummaryCategory = 'execute' | 'edit' | 'explore' | 'network' | 'task' | 'todo' | 'question' | 'think' | 'other'
+type ToolSummaryCategory =
+  | 'execute'
+  | 'write'
+  | 'edit'
+  | 'read'
+  | 'search'
+  | 'list'
+  | 'network'
+  | 'task'
+  | 'todo'
+  | 'question'
+  | 'skill'
+  | 'think'
+  | 'other'
 
 type ToolSummaryPhase = 'done' | 'active' | 'failed'
 
@@ -807,7 +827,12 @@ function buildDescriptiveToolStepsSummary(
         segments.push({ text: formatToolSummarySegment(cat, done, 'done', t), type: 'normal' })
       } else {
         // 纯失败
-        segments.push({ text: formatToolSummarySegment(cat, failed, 'failed', t), type: 'error' })
+        if (failed === 1) {
+          segments.push({ text: formatToolSummarySegment(cat, failed, 'failed', t), type: 'error' })
+        } else {
+          segments.push({ text: formatToolSummarySegment(cat, failed, 'done', t), type: 'error' })
+          segments.push({ text: t('toolSteps.failedAllSuffix'), type: 'error' })
+        }
       }
     }
   }
@@ -834,6 +859,16 @@ function buildDescriptiveToolStepsSummary(
     return [{ text: t('stepsCount', { done: 0, total: parts.length }), type: 'normal' }]
   }
 
+  let isFirstContent = true
+  for (const seg of segments) {
+    if (seg.text === sep) continue
+    if (isFirstContent) {
+      isFirstContent = false
+      continue
+    }
+    seg.text = seg.text.charAt(0).toLowerCase() + seg.text.slice(1)
+  }
+
   return segments
 }
 
@@ -853,33 +888,21 @@ function getToolSummaryCategory(toolName: string): ToolSummaryCategory {
   if (lower.includes('todo')) return 'todo'
   if (lower === 'task') return 'task'
   if (lower.includes('question') || lower.includes('ask')) return 'question'
+  if (lower.includes('skill')) return 'skill'
   if (
     lower.includes('bash') ||
-    lower.includes('sh') ||
+    lower === 'sh' ||
     lower.includes('cmd') ||
     lower.includes('terminal') ||
     lower.includes('shell')
   ) {
     return 'execute'
   }
-  if (
-    lower.includes('write') ||
-    lower.includes('save') ||
-    lower.includes('edit') ||
-    lower.includes('replace') ||
-    lower.includes('patch')
-  ) {
-    return 'edit'
+  if (lower.includes('write') || lower.includes('save')) {
+    return 'write'
   }
-  if (
-    lower.includes('read') ||
-    lower.includes('cat') ||
-    lower.includes('search') ||
-    lower.includes('find') ||
-    lower.includes('grep') ||
-    lower.includes('glob')
-  ) {
-    return 'explore'
+  if (lower.includes('edit') || lower.includes('replace') || lower.includes('patch')) {
+    return 'edit'
   }
   if (
     lower.includes('web') ||
@@ -891,6 +914,9 @@ function getToolSummaryCategory(toolName: string): ToolSummaryCategory {
   ) {
     return 'network'
   }
+  if (lower.includes('read') || lower.includes('cat')) return 'read'
+  if (lower.includes('grep') || lower.includes('search')) return 'search'
+  if (lower.includes('glob') || lower.includes('find')) return 'list'
   if (lower.includes('think') || lower.includes('reason') || lower.includes('plan')) return 'think'
   return 'other'
 }

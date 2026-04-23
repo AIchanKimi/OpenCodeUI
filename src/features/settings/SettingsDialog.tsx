@@ -4,28 +4,44 @@ import { Dialog } from '../../components/ui/Dialog'
 import {
   SunIcon,
   GlobeIcon,
-  SettingsIcon,
+  AgentIcon,
+  CpuIcon,
   KeyboardIcon,
   CloseIcon,
   BellIcon,
   PlugIcon,
-  DownloadIcon,
+  MessageSquareIcon,
+  LayersIcon,
+  QuestionIcon,
 } from '../../components/Icons'
 import { useIsMobile } from '../../hooks'
 import { isTauri } from '../../utils/tauri'
 import { KeybindingsSection } from './KeybindingsSection'
+import { AgentSettings } from './components/AgentSettings'
 import { AppearanceSettings } from './components/AppearanceSettings'
 import { AboutSettings } from './components/AboutSettings'
 import { ChatSettings } from './components/ChatSettings'
+import { ModelsSettings } from './components/ModelsSettings'
 import { NotificationSettings } from './components/NotificationSettings'
 import { ServiceSettings } from './components/ServiceSettings'
 import { ServersSettings } from './components/ServersSettings'
+import { WorkspaceSettings } from './components/WorkspaceSettings'
 
 // ============================================
 // Types
 // ============================================
 
-export type SettingsTab = 'appearance' | 'chat' | 'notifications' | 'service' | 'servers' | 'keybindings' | 'about'
+export type SettingsTab =
+  | 'agent'
+  | 'appearance'
+  | 'chat'
+  | 'models'
+  | 'notifications'
+  | 'service'
+  | 'servers'
+  | 'keybindings'
+  | 'workspace'
+  | 'about'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -39,20 +55,37 @@ interface SettingsDialogProps {
 
 const TAB_ICONS: Record<SettingsTab, React.ReactNode> = {
   servers: <GlobeIcon size={15} />,
-  chat: <SettingsIcon size={15} />,
+  agent: <AgentIcon size={15} />,
+  chat: <MessageSquareIcon size={15} />,
+  models: <CpuIcon size={15} />,
   appearance: <SunIcon size={15} />,
+  workspace: <LayersIcon size={15} />,
   notifications: <BellIcon size={15} />,
   service: <PlugIcon size={15} />,
   keybindings: <KeyboardIcon size={15} />,
-  about: <DownloadIcon size={15} />,
+  about: <QuestionIcon size={15} />,
 }
 
-const TAB_IDS: SettingsTab[] = ['servers', 'chat', 'appearance', 'notifications', 'service', 'keybindings', 'about']
+const TAB_IDS: SettingsTab[] = [
+  'servers',
+  'models',
+  'agent',
+  'chat',
+  'workspace',
+  'appearance',
+  'notifications',
+  'service',
+  'keybindings',
+  'about',
+]
 
 const TAB_LABEL_KEYS: Record<SettingsTab, string> = {
   servers: 'tabs.servers',
+  agent: 'tabs.agent',
   chat: 'tabs.chat',
+  models: 'tabs.models',
   appearance: 'tabs.appearance',
+  workspace: 'tabs.workspace',
   notifications: 'tabs.notifications',
   service: 'tabs.service',
   keybindings: 'tabs.shortcuts',
@@ -61,8 +94,11 @@ const TAB_LABEL_KEYS: Record<SettingsTab, string> = {
 
 const TAB_DESC_KEYS: Record<SettingsTab, string> = {
   servers: 'tabs.serversDesc',
+  agent: 'tabs.agentDesc',
   chat: 'tabs.chatDesc',
+  models: 'tabs.modelsDesc',
   appearance: 'tabs.appearanceDesc',
+  workspace: 'tabs.workspaceDesc',
   notifications: 'tabs.notificationsDesc',
   service: 'tabs.serviceDesc',
   keybindings: 'tabs.shortcutsDesc',
@@ -70,7 +106,7 @@ const TAB_DESC_KEYS: Record<SettingsTab, string> = {
 }
 
 const GROUP_DEFS: { labelKey: string; tabs: SettingsTab[] }[] = [
-  { labelKey: 'groups.core', tabs: ['servers', 'chat', 'appearance', 'notifications'] },
+  { labelKey: 'groups.core', tabs: ['servers', 'models', 'agent', 'chat', 'workspace', 'appearance', 'notifications'] },
   { labelKey: 'groups.advanced', tabs: ['service', 'keybindings', 'about'] },
 ]
 
@@ -80,10 +116,14 @@ const GROUP_DEFS: { labelKey: string; tabs: SettingsTab[] }[] = [
 
 function TabContent({ tab }: { tab: SettingsTab }) {
   switch (tab) {
+    case 'agent':
+      return <AgentSettings />
     case 'appearance':
       return <AppearanceSettings />
     case 'chat':
       return <ChatSettings />
+    case 'models':
+      return <ModelsSettings />
     case 'notifications':
       return <NotificationSettings />
     case 'service':
@@ -92,6 +132,8 @@ function TabContent({ tab }: { tab: SettingsTab }) {
       return <ServersSettings />
     case 'keybindings':
       return <KeybindingsSection />
+    case 'workspace':
+      return <WorkspaceSettings />
     case 'about':
       return <AboutSettings />
     default:

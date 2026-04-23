@@ -50,6 +50,16 @@ export interface ServerHealth {
   version?: string // 服务器版本
 }
 
+export interface ServerSettingsBackup {
+  servers: ServerConfig[]
+  activeServerId: string | null
+}
+
+interface ServerClockCalibration {
+  serverTimestamp: number
+  calibratedAtMonotonic: number
+}
+
 type Listener = () => void
 
 const STORAGE_KEY = 'opencode-servers'
@@ -63,6 +73,7 @@ class ServerStore {
   private servers: ServerConfig[] = []
   private activeServerId: string | null = null
   private healthMap = new Map<string, ServerHealth>()
+  private clockCalibrationMap = new Map<string, ServerClockCalibration>()
   private listeners: Set<Listener> = new Set()
 
   // server 切换监听器（用于触发 SSE 重连等副作用，避免循环依赖）
@@ -162,7 +173,9 @@ class ServerStore {
 
   private notify(): void {
     this.updateSnapshots()
-    this.listeners.forEach(l => l())
+    this.listeners.forEach(l => {
+      l()
+    })
   }
 
   /**
@@ -238,6 +251,12 @@ class ServerStore {
     return this._healthMapSnapshot
   }
 
+  getActiveCalibratedNow(): number | undefined {
+    const calibration = this.clockCalibrationMap.get(this.getActiveServerId())
+    if (!calibration) return undefined
+    return calibration.serverTimestamp + (performance.now() - calibration.calibratedAtMonotonic)
+  }
+
   // ============================================
   // Mutations
   // ============================================
@@ -287,6 +306,7 @@ class ServerStore {
 
     this.servers = this.servers.filter(s => s.id !== id)
     this.healthMap.delete(id)
+    this.clockCalibrationMap.delete(id)
 
     // 如果删除的是当前选中的，切换到默认
     if (this.activeServerId === id) {
@@ -312,9 +332,23 @@ class ServerStore {
 
     // 实际切换了服务器，通知外部（SSE 重连等）
     if (changed) {
-      this.serverChangeListeners.forEach(fn => fn(id))
+      this.serverChangeListeners.forEach(fn => {
+        fn(id)
+      })
     }
 
+    return true
+  }
+
+  applyServerConnectedTimestamp(serverId: string, timestamp: unknown): boolean {
+    const normalizedTimestamp = normalizeServerTimestamp(timestamp)
+    if (normalizedTimestamp == null) return false
+
+    this.clockCalibrationMap.set(serverId, {
+      serverTimestamp: normalizedTimestamp,
+      calibratedAtMonotonic: performance.now(),
+    })
+    this.notify()
     return true
   }
 
@@ -421,9 +455,93 @@ class ServerStore {
 // 单例导出
 export const serverStore = new ServerStore()
 
+function normalizeServerBackup(raw: unknown): ServerSettingsBackup {
+  const parsed = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined
+  const servers = Array.isArray(parsed?.servers)
+    ? parsed.servers
+        .filter(
+          (item): item is ServerConfig =>
+            !!item &&
+            typeof item === 'object' &&
+            typeof (item as Record<string, unknown>).id === 'string' &&
+            typeof (item as Record<string, unknown>).name === 'string' &&
+            typeof (item as Record<string, unknown>).url === 'string',
+        )
+        .map(item => ({
+          id: item.id,
+          name: item.name,
+          url: item.url.replace(/\/+$/, ''),
+          isDefault: item.isDefault === true,
+          auth:
+            item.auth &&
+            typeof item.auth === 'object' &&
+            typeof item.auth.username === 'string' &&
+            typeof item.auth.password === 'string'
+              ? { username: item.auth.username, password: item.auth.password }
+              : undefined,
+        }))
+    : []
+
+  const normalizedServers = servers.length
+    ? servers
+    : [
+        {
+          id: 'local',
+          name: 'Local',
+          url: API_BASE_URL,
+          isDefault: true,
+        },
+      ]
+
+  const activeServerId =
+    typeof parsed?.activeServerId === 'string' && normalizedServers.some(server => server.id === parsed.activeServerId)
+      ? parsed.activeServerId
+      : (normalizedServers[0]?.id ?? null)
+
+  return {
+    servers: normalizedServers,
+    activeServerId,
+  }
+}
+
+export function exportServerSettingsBackup(): ServerSettingsBackup {
+  return {
+    servers: serverStore.getServers().map(server => ({
+      ...server,
+      auth: server.auth ? { ...server.auth } : undefined,
+    })),
+    activeServerId: serverStore.getActiveServerId(),
+  }
+}
+
+export function importServerSettingsBackup(raw: unknown): void {
+  const normalized = normalizeServerBackup(raw)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized.servers))
+  if (normalized.activeServerId) {
+    localStorage.setItem(ACTIVE_SERVER_KEY, normalized.activeServerId)
+    sessionStorage.setItem(ACTIVE_SERVER_KEY, normalized.activeServerId)
+  } else {
+    localStorage.removeItem(ACTIVE_SERVER_KEY)
+    sessionStorage.removeItem(ACTIVE_SERVER_KEY)
+  }
+}
+
 /**
  * 生成 Basic Auth header 值
  */
 export function makeBasicAuthHeader(auth: ServerAuth): string {
   return 'Basic ' + btoa(`${auth.username}:${auth.password}`)
+}
+
+function normalizeServerTimestamp(timestamp: unknown): number | null {
+  if (typeof timestamp === 'number') {
+    return Number.isFinite(timestamp) ? timestamp : null
+  }
+
+  if (typeof timestamp === 'string') {
+    const parsed = Date.parse(timestamp)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
 }
