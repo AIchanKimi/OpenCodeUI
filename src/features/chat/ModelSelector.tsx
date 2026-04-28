@@ -116,7 +116,8 @@ interface ModelListPanelProps {
   searchQuery: string
   setSearchQuery: (q: string) => void
   setHighlightedIndex: React.Dispatch<React.SetStateAction<number>>
-  handleKeyDown: (e: React.KeyboardEvent) => void
+  handleSearchKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  handleItemKeyDown: (e: React.KeyboardEvent<HTMLButtonElement>, interactiveIndex: number, model: ModelInfo) => void
   flatList: FlatListItem[]
   itemIndices: number[]
   highlightedIndex: number
@@ -125,14 +126,18 @@ interface ModelListPanelProps {
   onTogglePin: (e: React.MouseEvent, model: ModelInfo) => void
   onTouchStart?: (model: ModelInfo) => void
   onTouchEnd?: () => void
+  handlePinKeyDown: (e: React.KeyboardEvent<HTMLButtonElement>, interactiveIndex: number) => void
   ignoreMouseRef: React.RefObject<boolean>
   lastMousePosRef: React.RefObject<{ x: number; y: number }>
   idPrefix: string
+  listboxId: string
   maxListHeight: string
   searchPlaceholder: string
   noResultsText: string
   noResultsHint: string
   preferTouchUi: boolean
+  pinLabel: string
+  unpinLabel: string
 }
 
 const ModelListPanel = memo(function ModelListPanel({
@@ -142,7 +147,8 @@ const ModelListPanel = memo(function ModelListPanel({
   searchQuery,
   setSearchQuery,
   setHighlightedIndex,
-  handleKeyDown,
+  handleSearchKeyDown,
+  handleItemKeyDown,
   flatList,
   itemIndices,
   highlightedIndex,
@@ -151,40 +157,53 @@ const ModelListPanel = memo(function ModelListPanel({
   onTogglePin,
   onTouchStart,
   onTouchEnd,
+  handlePinKeyDown,
   ignoreMouseRef,
   lastMousePosRef,
   idPrefix,
+  listboxId,
   maxListHeight,
   searchPlaceholder,
   noResultsText,
   noResultsHint,
   preferTouchUi,
+  pinLabel,
+  unpinLabel,
 }: ModelListPanelProps) {
   return (
-    <div ref={menuRef} onKeyDown={handleKeyDown} className="flex flex-col min-h-0 pt-1.5">
+    <div ref={menuRef} className="flex flex-col min-h-0 pt-1.5">
       {/* 搜索栏 */}
       <div className="shrink-0 px-2 pb-1.5">
         <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-bg-200/40 transition-colors focus-within:bg-bg-200/60">
-          <SearchIcon className="w-3.5 h-3.5 text-text-400 flex-shrink-0" />
+          <SearchIcon aria-hidden="true" className="w-3.5 h-3.5 text-text-400 flex-shrink-0" />
           <input
             ref={searchInputRef}
             type="text"
+            name="model-search"
             value={searchQuery}
             onChange={e => {
               setSearchQuery(e.target.value)
               setHighlightedIndex(0)
             }}
-            onKeyDown={handleKeyDown}
+            onKeyDown={handleSearchKeyDown}
             placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            autoComplete="off"
             className="flex-1 bg-transparent border-none outline-none text-[length:var(--fs-base)] text-text-100 placeholder:text-text-400"
           />
         </div>
       </div>
 
       {/* 列表 — 左侧 padding 给内容，右侧留给滚动条不覆盖内容 */}
-      <div ref={listRef} className={`overflow-y-auto custom-scrollbar flex-1 min-h-0 pl-2 pr-1 ${maxListHeight}`}>
+      <div
+        ref={listRef}
+        id={listboxId}
+        role="list"
+        aria-label={searchPlaceholder}
+        className={`overflow-y-auto custom-scrollbar flex-1 min-h-0 pl-2 pr-1 ${maxListHeight}`}
+      >
         {flatList.length === 0 ? (
-          <div className="px-4 py-10 text-center">
+          <div className="px-4 py-10 text-center" role="status" aria-live="polite">
             <div className="text-[length:var(--fs-base)] text-text-400">{noResultsText}</div>
             <div className="text-[length:var(--fs-sm)] text-text-500 mt-1">{noResultsHint}</div>
           </div>
@@ -195,6 +214,7 @@ const ModelListPanel = memo(function ModelListPanel({
                 return (
                   <div
                     key={item.key}
+                    aria-hidden="true"
                     className="px-2.5 pt-3 pb-1 first:pt-0.5 text-[length:var(--fs-xxs)] font-semibold text-text-400/60 uppercase tracking-wider select-none"
                   >
                     {item.data.name}
@@ -206,17 +226,17 @@ const ModelListPanel = memo(function ModelListPanel({
               const itemKey = getModelKey(model)
               const isSelected = selectedModelKey === itemKey
               const isHL = itemIndices[highlightedIndex] === index
+              const interactiveIndex = itemIndices.indexOf(index)
               const pinned = isModelPinned(model)
 
               return (
                 <div
                   key={item.key}
-                  id={`${idPrefix}-${index}`}
-                  onClick={() => onItemClick(model)}
-                  onTouchStart={onTouchStart ? () => onTouchStart(model) : undefined}
-                  onTouchEnd={onTouchEnd}
-                  onTouchMove={onTouchEnd}
-                  title={`${model.name} · ${model.providerName}${model.contextLimit ? ` · ${formatContext(model.contextLimit)}` : ''}`}
+                  className={`
+                    group flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors duration-100
+                    ${isSelected ? 'bg-accent-main-100/10 text-accent-main-100' : 'text-text-200'}
+                    ${isHL && !isSelected ? 'bg-bg-200/40 text-text-100' : ''}
+                  `}
                   onMouseMove={e => {
                     if (ignoreMouseRef.current) return
                     if (e.clientX === lastMousePosRef.current.x && e.clientY === lastMousePosRef.current.y) return
@@ -224,86 +244,81 @@ const ModelListPanel = memo(function ModelListPanel({
                     const hIndex = itemIndices.indexOf(index)
                     if (hIndex !== -1 && hIndex !== highlightedIndex) setHighlightedIndex(hIndex)
                   }}
-                  className={`
-                    group flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg cursor-pointer text-[length:var(--fs-base)] font-sans transition-colors duration-100 select-none
-                    ${isSelected ? 'bg-accent-main-100/10 text-accent-main-100' : 'text-text-200'}
-                    ${isHL && !isSelected ? 'bg-bg-200/40 text-text-100' : ''}
-                  `}
                 >
-                  {/* Left: name + capability icons */}
-                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                    <span className={`truncate font-medium ${isSelected ? 'text-accent-main-100' : 'text-text-100'}`}>
-                      {model.name}
-                    </span>
-                    <div
-                      className={`flex items-center gap-1 flex-shrink-0 transition-opacity ${isHL || isSelected ? 'opacity-60' : 'opacity-25'}`}
-                    >
-                      {model.supportsReasoning && <ThinkingIcon size={12} />}
-                      {model.supportsImages && <EyeIcon size={13} />}
-                    </div>
-                  </div>
-
-                  {/* Right: provider + context + trailing icon (check / pin, mutually exclusive) */}
-                  <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-mono flex-shrink-0">
-                    <span className="text-text-500 max-w-[100px] truncate text-right">{model.providerName}</span>
-                    {model.contextLimit > 0 && (
-                      <span className="text-text-500 w-[4ch] text-right hidden sm:inline">
-                        {formatContext(model.contextLimit)}
+                  <button
+                    id={`${idPrefix}-${index}`}
+                    data-model-key={itemKey}
+                    data-focus-target="item"
+                    type="button"
+                    onClick={() => onItemClick(model)}
+                    onFocus={() => {
+                      if (interactiveIndex !== -1) setHighlightedIndex(interactiveIndex)
+                    }}
+                    onKeyDown={e => {
+                      if (interactiveIndex !== -1) handleItemKeyDown(e, interactiveIndex, model)
+                    }}
+                    onTouchStart={onTouchStart ? () => onTouchStart(model) : undefined}
+                    onTouchEnd={onTouchEnd}
+                    onTouchMove={onTouchEnd}
+                    title={`${model.name} · ${model.providerName}${model.contextLimit ? ` · ${formatContext(model.contextLimit)}` : ''}`}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md bg-transparent border-none p-0 text-left text-[length:var(--fs-base)] outline-none focus-visible:outline-none"
+                  >
+                    {/* Left: name + capability icons */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                      <span className={`truncate font-medium ${isSelected ? 'text-accent-main-100' : 'text-text-100'}`}>
+                        {model.name}
                       </span>
-                    )}
-                    {/*
-                     * 末尾图标位：选中对勾 / 已钉住图标 / hover pin 按钮
-                     * - 选中态（PC）：默认对勾，hover 对勾时切换为 pin 按钮
-                     * - 选中态（触摸）：仅显示对勾，置顶通过长按行触发
-                     * - 未选中：已钉住常驻钉子，未钉住 hover 行渐现 pin 按钮
-                     */}
-                    <span className="w-5 flex items-center justify-center flex-shrink-0">
-                      {isSelected ? (
-                        preferTouchUi ? (
-                          <span className="text-accent-secondary-100">
-                            <CheckIcon />
-                          </span>
-                        ) : (
-                          <button
-                            onClick={e => onTogglePin(e, model)}
-                            className="group/pin p-0.5 rounded transition-all duration-150"
-                          >
-                            <span className="text-accent-secondary-100 block group-hover/pin:hidden">
-                              <CheckIcon />
-                            </span>
-                            <span
-                              className={`hidden group-hover/pin:block ${
-                                pinned
-                                  ? 'text-accent-main-100 opacity-80 hover:opacity-100'
-                                  : 'text-text-500 opacity-60 hover:!opacity-100'
-                              }`}
-                            >
-                              <PinIcon size={12} />
-                            </span>
-                          </button>
-                        )
-                      ) : preferTouchUi ? (
-                        // 触摸设备：已钉住时显示钉子图标（长按切换）
-                        pinned ? (
-                          <span className="text-accent-main-100/60">
-                            <PinIcon size={12} />
-                          </span>
-                        ) : null
-                      ) : (
-                        // 鼠标设备：已钉住常驻，未钉住 hover 渐现
-                        <button
-                          onClick={e => onTogglePin(e, model)}
-                          className={`p-0.5 rounded transition-all duration-150 ${
-                            pinned
-                              ? 'text-accent-main-100 opacity-80 hover:opacity-100'
-                              : 'text-text-500 opacity-0 group-hover:opacity-40 hover:!opacity-100'
-                          }`}
-                        >
-                          <PinIcon size={12} />
-                        </button>
+                      <div
+                        aria-hidden="true"
+                        className={`flex items-center gap-1 flex-shrink-0 transition-opacity ${isHL || isSelected ? 'opacity-60' : 'opacity-25'}`}
+                      >
+                        {model.supportsReasoning && <ThinkingIcon size={12} />}
+                        {model.supportsImages && <EyeIcon size={13} />}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-mono flex-shrink-0">
+                      <span className="text-text-500 max-w-[100px] truncate text-right">{model.providerName}</span>
+                      {model.contextLimit > 0 && (
+                        <span className="text-text-500 w-[4ch] text-right hidden sm:inline">{formatContext(model.contextLimit)}</span>
                       )}
+                      {isSelected && (
+                        <span className="w-5 flex items-center justify-center flex-shrink-0 text-accent-secondary-100">
+                          <CheckIcon />
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  {!preferTouchUi && (
+                    <button
+                      type="button"
+                      data-model-key={itemKey}
+                      data-focus-target="pin"
+                      onClick={e => onTogglePin(e, model)}
+                      onFocus={() => {
+                        if (interactiveIndex !== -1) setHighlightedIndex(interactiveIndex)
+                      }}
+                      onKeyDown={e => {
+                        e.stopPropagation()
+                        if (interactiveIndex !== -1) handlePinKeyDown(e, interactiveIndex)
+                      }}
+                      aria-label={`${pinned ? unpinLabel : pinLabel}: ${model.name}`}
+                      className={`w-5 flex items-center justify-center flex-shrink-0 p-0.5 rounded outline-none transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-200 ${
+                        pinned
+                          ? 'text-accent-main-100 opacity-80 hover:opacity-100'
+                          : 'text-text-500 opacity-0 group-hover:opacity-40 group-focus-within:opacity-40 hover:!opacity-100 focus-visible:!opacity-100'
+                      }`}
+                    >
+                      <PinIcon size={12} />
+                    </button>
+                  )}
+
+                  {preferTouchUi && pinned && !isSelected && (
+                    <span className="w-5 flex items-center justify-center flex-shrink-0 text-accent-main-100/60">
+                      <PinIcon size={12} />
                     </span>
-                  </div>
+                  )}
                 </div>
               )
             })}
@@ -353,8 +368,12 @@ export const ModelSelector = memo(
     const menuRef = useRef<HTMLDivElement>(null)
     const ignoreMouseRef = useRef(false)
     const lastMousePosRef = useRef({ x: 0, y: 0 })
+    const openFocusTargetRef = useRef<'search' | 'list'>('search')
+    const openHighlightedIndexRef = useRef(0)
+    const pendingFocusRestoreRef = useRef<{ modelKey: string; target: 'item' | 'pin' } | null>(null)
 
     const idPrefix = trigger === 'header' ? 'ms-item' : 'ms-tb-item'
+    const listboxId = `${idPrefix}-listbox`
 
     // ---- Derived data ----
 
@@ -382,6 +401,36 @@ export const ModelSelector = memo(
       return models.find(m => getModelKey(m) === selectedModelKey) ?? null
     }, [models, selectedModelKey])
 
+    const focusRelativeToTrigger = useCallback((direction: 1 | -1) => {
+      const trigger = triggerRef.current
+      if (!trigger) return
+
+      const focusables = Array.from(
+        document.body.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([type="file"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(element => {
+        if (element.closest('[aria-hidden="true"]')) return false
+        const style = window.getComputedStyle(element)
+        return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
+      })
+      const currentIndex = focusables.findIndex(item => item === trigger)
+      if (currentIndex === -1) return
+      focusables[currentIndex + direction]?.focus()
+    }, [])
+
+    const isFocusableElement = useCallback((target: EventTarget | null) => {
+      const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
+      if (!element) return false
+      const candidate = element.closest<HTMLElement>(
+        'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )
+      if (!candidate) return false
+
+      const style = window.getComputedStyle(candidate)
+      return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
+    }, [])
+
     const displayName =
       trigger === 'header'
         ? selectedModel?.name || t('modelSelector.selectModel')
@@ -389,16 +438,20 @@ export const ModelSelector = memo(
 
     // ---- Open / Close ----
 
-    const openMenu = useCallback(() => {
+    const openMenu = useCallback((focusTarget: 'search' | 'list' = 'search', preferredIndex?: number) => {
       if (disabled || isLoading) return
       let targetIndex = 0
-      if (selectedModelKey) {
+      if (typeof preferredIndex === 'number') {
+        targetIndex = Math.max(0, Math.min(preferredIndex, itemIndices.length - 1))
+      } else if (selectedModelKey) {
         const index = flatList.findIndex(item => item.type === 'item' && getModelKey(item.data) === selectedModelKey)
         if (index !== -1) {
           const interactiveIndex = itemIndices.indexOf(index)
           if (interactiveIndex !== -1) targetIndex = interactiveIndex
         }
       }
+      openFocusTargetRef.current = focusTarget
+      openHighlightedIndexRef.current = targetIndex
       setHighlightedIndex(targetIndex)
       setIsOpen(true)
       setSearchQuery('')
@@ -408,11 +461,20 @@ export const ModelSelector = memo(
       }, 300)
     }, [disabled, isLoading, selectedModelKey, flatList, itemIndices])
 
-    const closeMenu = useCallback(() => {
+    const closeMenu = useCallback((options?: { focusTrigger?: boolean }) => {
       setIsOpen(false)
       setSearchQuery('')
-      if (trigger === 'header') triggerRef.current?.focus()
-    }, [trigger])
+      if (options?.focusTrigger !== false) {
+        triggerRef.current?.focus()
+      }
+    }, [])
+
+    const focusToolbarInput = useCallback(() => {
+      if (trigger !== 'toolbar') return
+      const container = constrainToRef?.current
+      const input = container?.querySelector<HTMLElement>('textarea, input:not([type="file"]):not([disabled]), [contenteditable="true"]')
+      input?.focus()
+    }, [constrainToRef, trigger])
 
     useImperativeHandle(ref, () => ({ openMenu }), [openMenu])
 
@@ -423,14 +485,20 @@ export const ModelSelector = memo(
         const key = getModelKey(model)
         recordModelUsage(model)
         onSelect(key, model)
-        closeMenu()
+        closeMenu({ focusTrigger: trigger !== 'toolbar' })
+        if (trigger === 'toolbar') {
+          window.setTimeout(() => {
+            focusToolbarInput()
+          }, 0)
+        }
         setRefreshTrigger(c => c + 1)
       },
-      [onSelect, closeMenu],
+      [onSelect, closeMenu, focusToolbarInput, trigger],
     )
 
     const handleTogglePin = useCallback((e: React.MouseEvent, model: ModelInfo) => {
       e.stopPropagation()
+      pendingFocusRestoreRef.current = { modelKey: getModelKey(model), target: 'pin' }
       toggleModelPin(model)
       setRefreshTrigger(c => c + 1)
     }, [])
@@ -468,11 +536,38 @@ export const ModelSelector = memo(
       [handleSelect],
     )
 
+    const focusItemAtInteractiveIndex = useCallback(
+      (interactiveIndex: number) => {
+        const globalIndex = itemIndices[interactiveIndex]
+        if (globalIndex == null) return
+        setHighlightedIndex(interactiveIndex)
+        const target = document.getElementById(`${idPrefix}-${globalIndex}`) as HTMLElement | null
+        target?.focus()
+        target?.scrollIntoView({ block: 'nearest' })
+      },
+      [itemIndices, idPrefix],
+    )
+
+    const focusPinButtonForModel = useCallback((modelKey: string, interactiveIndex: number) => {
+      setHighlightedIndex(interactiveIndex)
+      const selector = `button[data-focus-target="pin"][data-model-key="${modelKey}"]`
+      document.querySelector<HTMLElement>(selector)?.focus()
+    }, [])
+
     // ---- Side effects ----
 
     useEffect(() => {
-      if (isOpen) setTimeout(() => searchInputRef.current?.focus(), 50)
-    }, [isOpen])
+      if (!isOpen) return
+      const timerId = window.setTimeout(() => {
+        if (openFocusTargetRef.current === 'list') {
+          focusItemAtInteractiveIndex(openHighlightedIndexRef.current)
+        } else {
+          searchInputRef.current?.focus()
+        }
+      }, 50)
+
+      return () => clearTimeout(timerId)
+    }, [isOpen, focusItemAtInteractiveIndex])
 
     useEffect(() => {
       if (!isOpen) return
@@ -481,15 +576,14 @@ export const ModelSelector = memo(
         if (
           containerRef.current &&
           !containerRef.current.contains(target) &&
-          menuRef.current &&
-          !menuRef.current.contains(target)
+          !menuRef.current?.contains(target)
         ) {
-          closeMenu()
+          closeMenu({ focusTrigger: !isFocusableElement(target) })
         }
       }
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
-    }, [isOpen, closeMenu])
+    }, [isOpen, closeMenu, isFocusableElement])
 
     useEffect(() => {
       if (!isOpen) return
@@ -512,16 +606,47 @@ export const ModelSelector = memo(
       })
     }, [isOpen, highlightedIndex, itemIndices, idPrefix])
 
+    useEffect(() => {
+      if (!isOpen || !pendingFocusRestoreRef.current) return
+
+      const { modelKey, target } = pendingFocusRestoreRef.current
+      const itemIndex = flatList.findIndex(item => item.type === 'item' && getModelKey(item.data) === modelKey)
+      if (itemIndex === -1) {
+        pendingFocusRestoreRef.current = null
+        return
+      }
+
+      const interactiveIndex = itemIndices.indexOf(itemIndex)
+      if (interactiveIndex !== -1) {
+        setHighlightedIndex(interactiveIndex)
+      }
+
+      const timerId = window.setTimeout(() => {
+        const selector = `button[data-focus-target="${target}"][data-model-key="${modelKey}"]`
+        const focusTarget = document.querySelector<HTMLElement>(selector)
+        focusTarget?.focus()
+        pendingFocusRestoreRef.current = null
+      }, 0)
+
+      return () => clearTimeout(timerId)
+    }, [isOpen, flatList, itemIndices])
+
     // ---- Keyboard navigation ----
 
-    const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
+    const handleSearchKeyDown = useCallback(
+      (e: React.KeyboardEvent<HTMLInputElement>) => {
         e.stopPropagation()
 
         if (itemIndices.length === 0) {
           if (e.key === 'Escape') {
             e.preventDefault()
             closeMenu()
+          } else if (e.key === 'Tab') {
+            e.preventDefault()
+            closeMenu({ focusTrigger: false })
+            window.setTimeout(() => {
+              focusRelativeToTrigger(e.shiftKey ? -1 : 1)
+            }, 0)
           }
           return
         }
@@ -529,19 +654,11 @@ export const ModelSelector = memo(
         switch (e.key) {
           case 'ArrowDown':
             e.preventDefault()
-            setHighlightedIndex(prev => {
-              const next = Math.min(prev + 1, itemIndices.length - 1)
-              document.getElementById(`${idPrefix}-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
-              return next
-            })
+            focusItemAtInteractiveIndex(highlightedIndex)
             break
           case 'ArrowUp':
             e.preventDefault()
-            setHighlightedIndex(prev => {
-              const next = Math.max(prev - 1, 0)
-              document.getElementById(`${idPrefix}-${itemIndices[next]}`)?.scrollIntoView({ block: 'nearest' })
-              return next
-            })
+            focusItemAtInteractiveIndex(highlightedIndex)
             break
           case 'Enter': {
             e.preventDefault()
@@ -554,19 +671,129 @@ export const ModelSelector = memo(
             e.preventDefault()
             closeMenu()
             break
+          case 'Tab':
+            e.preventDefault()
+            closeMenu({ focusTrigger: false })
+            window.setTimeout(() => {
+              focusRelativeToTrigger(e.shiftKey ? -1 : 1)
+            }, 0)
+            break
         }
       },
-      [itemIndices, flatList, highlightedIndex, handleSelect, closeMenu, idPrefix],
+      [itemIndices, flatList, highlightedIndex, handleSelect, closeMenu, focusItemAtInteractiveIndex, focusRelativeToTrigger],
+    )
+
+    const handleItemKeyDown = useCallback(
+      (e: React.KeyboardEvent<HTMLButtonElement>, interactiveIndex: number, model: ModelInfo) => {
+        e.stopPropagation()
+
+        switch (e.key) {
+          case 'ArrowDown':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(Math.min(interactiveIndex + 1, itemIndices.length - 1))
+            break
+          case 'ArrowUp':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(Math.max(interactiveIndex - 1, 0))
+            break
+          case 'Home':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(0)
+            break
+          case 'End':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(itemIndices.length - 1)
+            break
+          case 'Escape':
+            e.preventDefault()
+            closeMenu()
+            break
+          case 'Tab':
+            e.preventDefault()
+            if (!preferTouchUi && !e.shiftKey) {
+              focusPinButtonForModel(getModelKey(model), interactiveIndex)
+              break
+            }
+            closeMenu({ focusTrigger: false })
+            window.setTimeout(() => {
+              focusRelativeToTrigger(e.shiftKey ? -1 : 1)
+            }, 0)
+            break
+          case 'Enter':
+          case ' ':
+            e.preventDefault()
+            handleSelect(model)
+            break
+        }
+      },
+      [
+        closeMenu,
+        focusItemAtInteractiveIndex,
+        focusPinButtonForModel,
+        handleSelect,
+        itemIndices.length,
+        focusRelativeToTrigger,
+        preferTouchUi,
+      ],
+    )
+
+    const handlePinKeyDown = useCallback(
+      (e: React.KeyboardEvent<HTMLButtonElement>, interactiveIndex: number) => {
+        switch (e.key) {
+          case 'ArrowDown':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(Math.min(interactiveIndex + 1, itemIndices.length - 1))
+            break
+          case 'ArrowUp':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(Math.max(interactiveIndex - 1, 0))
+            break
+          case 'Home':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(0)
+            break
+          case 'End':
+            e.preventDefault()
+            focusItemAtInteractiveIndex(itemIndices.length - 1)
+            break
+          case 'Escape':
+            e.preventDefault()
+            closeMenu()
+            break
+          case 'Tab':
+            e.preventDefault()
+            if (e.shiftKey) {
+              focusItemAtInteractiveIndex(interactiveIndex)
+              break
+            }
+            closeMenu({ focusTrigger: false })
+            window.setTimeout(() => {
+              focusRelativeToTrigger(e.shiftKey ? -1 : 1)
+            }, 0)
+            break
+        }
+      },
+      [closeMenu, focusItemAtInteractiveIndex, itemIndices.length, focusRelativeToTrigger],
     )
 
     // ---- Trigger button ----
 
     const triggerButton =
-      trigger === 'header' ? (
+                trigger === 'header' ? (
         <button
           ref={triggerRef}
           onClick={() => (isOpen ? closeMenu() : openMenu())}
+          onKeyDown={e => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              openMenu('list')
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              openMenu('list', itemIndices.length - 1)
+            }
+          }}
           disabled={disabled || isLoading}
+          aria-expanded={isOpen}
           className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-all duration-150 active:scale-95 cursor-pointer text-[length:var(--fs-base)]"
           title={displayName}
         >
@@ -579,7 +806,17 @@ export const ModelSelector = memo(
         <button
           ref={triggerRef}
           onClick={() => (isOpen ? closeMenu() : openMenu())}
+          onKeyDown={e => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              openMenu('list')
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              openMenu('list', itemIndices.length - 1)
+            }
+          }}
           disabled={disabled || isLoading}
+          aria-expanded={isOpen}
           className="flex items-center px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
           title={selectedModel?.name || t('modelSelector.selectModel')}
         >
@@ -621,7 +858,8 @@ export const ModelSelector = memo(
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             setHighlightedIndex={setHighlightedIndex}
-            handleKeyDown={handleKeyDown}
+            handleSearchKeyDown={handleSearchKeyDown}
+            handleItemKeyDown={handleItemKeyDown}
             flatList={flatList}
             itemIndices={itemIndices}
             highlightedIndex={highlightedIndex}
@@ -630,14 +868,18 @@ export const ModelSelector = memo(
             onTogglePin={handleTogglePin}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
+            handlePinKeyDown={handlePinKeyDown}
             ignoreMouseRef={ignoreMouseRef}
             lastMousePosRef={lastMousePosRef}
             idPrefix={idPrefix}
+            listboxId={listboxId}
             maxListHeight={listMaxH}
             searchPlaceholder={t('modelSelector.searchModels')}
             noResultsText={t('modelSelector.noModelsFound')}
             noResultsHint={t('modelSelector.tryDifferentKeyword')}
             preferTouchUi={preferTouchUi}
+            pinLabel={t('modelSelector.pinToTop')}
+            unpinLabel={t('modelSelector.unpin')}
           />
         </DropdownMenu>
       </div>

@@ -177,7 +177,12 @@ export const RightPanel = memo(function RightPanel({ directory, sessionId }: Rig
       onClose={() => layoutStore.closeRightPanel()}
       className="pb-[var(--safe-area-inset-bottom)]"
     >
-      <PanelContainer position="right" onNewTerminal={handleNewTerminal} onCloseTerminal={handleCloseTerminal}>
+      <PanelContainer
+        position="right"
+        directory={normalizedDirectory}
+        onNewTerminal={handleNewTerminal}
+        onCloseTerminal={handleCloseTerminal}
+      >
         {renderContent}
       </PanelContainer>
     </ResizablePanel>

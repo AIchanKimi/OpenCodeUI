@@ -83,63 +83,72 @@ function ServerItem({
   return (
     <>
       <div
-        className={`flex items-center gap-3 p-2.5 rounded-lg border transition-colors cursor-pointer group
+        onClick={onSelect}
+        className={`group flex items-center gap-3 p-2.5 rounded-lg border transition-colors
           ${
             isActive ? 'border-accent-main-100/40 bg-accent-main-100/5' : 'border-border-200/40 hover:border-border-300'
           }`}
-        onClick={onSelect}
-        tabIndex={0}
-        onKeyDown={e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onSelect()
-          }
-        }}
       >
-        <GlobeIcon size={14} className={isActive ? 'text-accent-main-100' : 'text-text-400'} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[length:var(--fs-md)] font-medium text-text-100 truncate">{server.name}</span>
-            {isActive && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[length:var(--fs-xxs)] font-medium text-accent-main-100 bg-accent-main-100/10 shrink-0">
-                {t('servers.current')}
-              </span>
-            )}
-          </div>
-          <div className="text-[length:var(--fs-xs)] text-text-400 truncate font-mono flex items-center gap-1">
-            {server.url}
-            {server.auth?.password && <KeyIcon size={10} className="shrink-0 text-text-400" />}
-          </div>
-        </div>
         <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation()
+            onSelect()
+          }}
+          aria-current={isActive ? 'true' : undefined}
+          className="min-w-0 flex flex-1 items-center gap-3 bg-transparent border-none p-0 text-left"
+        >
+          <GlobeIcon size={14} className={isActive ? 'text-accent-main-100' : 'text-text-400'} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[length:var(--fs-md)] font-medium text-text-100 truncate">{server.name}</span>
+              {isActive && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[length:var(--fs-xxs)] font-medium text-accent-main-100 bg-accent-main-100/10 shrink-0">
+                  {t('servers.current')}
+                </span>
+              )}
+            </div>
+            <div className="text-[length:var(--fs-xs)] text-text-400 truncate font-mono flex items-center gap-1">
+              {server.url}
+              {server.auth?.password && <KeyIcon size={10} className="shrink-0 text-text-400" />}
+            </div>
+          </div>
+        </button>
+        <button
+          type="button"
           className="p-2 rounded hover:bg-bg-200 transition-colors"
           onClick={e => {
             e.stopPropagation()
             onCheckHealth()
           }}
           title={statusTitle()}
+          aria-label={statusTitle()}
         >
           {statusIcon()}
         </button>
         {!server.isDefault && (
           <>
             <button
+              type="button"
               className="p-2 rounded text-text-400 hover:text-accent-main-100 hover:bg-accent-main-100/10 transition-all"
               onClick={e => {
                 e.stopPropagation()
                 setEditing(true)
               }}
               title={t('servers.editServer')}
+              aria-label={t('servers.editServer')}
             >
               <PencilIcon size={12} />
             </button>
             <button
+              type="button"
               className="p-2 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 transition-all"
               onClick={e => {
                 e.stopPropagation()
                 setConfirmDelete(true)
               }}
               title={t('common:remove')}
+              aria-label={t('common:remove')}
             >
               <TrashIcon size={12} />
             </button>

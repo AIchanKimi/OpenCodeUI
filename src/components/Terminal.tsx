@@ -6,12 +6,15 @@
 import { useEffect, useRef, memo, useState, useCallback } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SerializeAddon } from '@xterm/addon-serialize'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { getPtyConnectUrl, updatePtySession } from '../api/pty'
-import { layoutStore } from '../store/layoutStore'
+import { useTheme } from '../hooks'
+import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { logger } from '../utils/logger'
+import { parsePtyFrame } from '../utils/ptyProtocol'
 import { isTauri } from '../utils/tauri'
 
 // ============================================
@@ -283,6 +286,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const stickyModifiersRef = useRef<StickyModifiers>(createStickyModifiers())
+  const cursorRef = useRef(0)
   const transportSendRef = useRef<((data: string) => void) | null>(null)
   const transportDisconnectRef = useRef<(() => void) | null>(null)
   const resizeTimeoutRef = useRef<number | null>(null)
@@ -290,7 +294,25 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
   const isPanelResizingRef = useRef(false)
   const [hasBeenActive, setHasBeenActive] = useState(isActive)
   const { preferTouchUi, hasTouch, hasCoarsePointer } = useInputCapabilities()
+  const { manualTerminalTitles } = useTheme()
+  const { panelTabs } = useLayoutStore()
   const touchCapable = hasTouch || hasCoarsePointer
+  const manualTerminalTitlesRef = useRef(manualTerminalTitles)
+  const terminalTab = panelTabs.find(tab => tab.id === ptyId && tab.type === 'terminal')
+  const restoreBuffer = typeof terminalTab?.buffer === 'string' ? terminalTab.buffer : ''
+  const restoreScrollY = typeof terminalTab?.scrollY === 'number' ? terminalTab.scrollY : undefined
+  const restoreCursor =
+    typeof terminalTab?.cursor === 'number' && Number.isSafeInteger(terminalTab.cursor) && terminalTab.cursor >= 0
+      ? terminalTab.cursor
+      : 0
+  const restoreCols =
+    typeof terminalTab?.cols === 'number' && Number.isSafeInteger(terminalTab.cols) && terminalTab.cols > 0
+      ? terminalTab.cols
+      : undefined
+  const restoreRows =
+    typeof terminalTab?.rows === 'number' && Number.isSafeInteger(terminalTab.rows) && terminalTab.rows > 0
+      ? terminalTab.rows
+      : undefined
 
   const clearStickyModifiers = useCallback(() => {
     const next = createStickyModifiers()
@@ -324,6 +346,10 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     [clearStickyModifiers],
   )
 
+  useEffect(() => {
+    manualTerminalTitlesRef.current = manualTerminalTitles
+  }, [manualTerminalTitles])
+
   // 当 tab 第一次变为活动状态时，标记它
   useEffect(() => {
     if (isActive && !hasBeenActive) {
@@ -336,7 +362,10 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     if (!containerRef.current) return
     if (!hasBeenActive) return
 
+    const restoreSize = restoreBuffer && restoreCols && restoreRows ? { cols: restoreCols, rows: restoreRows } : undefined
+
     mountedRef.current = true
+    cursorRef.current = restoreCursor
     let ws: WebSocket | null = null
     let wsConnectTimeout: number | null = null
     let disposeData: { dispose: () => void } | null = null
@@ -357,6 +386,8 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
         "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace",
       fontSize: touchUi ? Math.max(termFontSize, 14) : termFontSize,
       lineHeight: touchUi ? Math.max(termLineHeight, 1.3) : termLineHeight,
+      cols: restoreSize?.cols,
+      rows: restoreSize?.rows,
       cursorBlink: true,
       cursorStyle: 'block',
       smoothScrollDuration: touchUi ? 100 : 0,
@@ -374,6 +405,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     })
 
     const fitAddon = new FitAddon()
+    const serializeAddon = new SerializeAddon()
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
       if (isTauri()) {
         import('@tauri-apps/plugin-opener').then(mod => mod.openUrl(uri)).catch(() => window.open(uri))
@@ -383,6 +415,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     })
 
     terminal.loadAddon(fitAddon)
+    terminal.loadAddon(serializeAddon)
     terminal.loadAddon(webLinksAddon)
 
     terminal.open(containerRef.current)
@@ -398,12 +431,6 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       textarea.setAttribute('spellcheck', 'false')
       textarea.addEventListener('blur', handleTextareaBlur)
     }
-
-    requestAnimationFrame(() => {
-      if (mountedRef.current) {
-        fitAddon.fit()
-      }
-    })
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
@@ -462,6 +489,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       if (!mountedRef.current) return
 
       fitAddon.fit()
+      const cursor = cursorRef.current
 
       if (useNativePtyBridge) {
         logger.log(
@@ -474,10 +502,18 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
             connectTauriPty({
               ptyId,
               directory,
+              cursor,
               onConnected: handleConnected,
               onMessage: chunk => {
                 if (!mountedRef.current) return
-                terminal.write(chunk)
+                const frame = parsePtyFrame(chunk)
+                if (!frame) return
+                if (frame.kind === 'control') {
+                  cursorRef.current = frame.cursor
+                  return
+                }
+                terminal.write(frame.data)
+                cursorRef.current += frame.data.length
               },
               onDisconnected: handleDisconnected,
               onError: message => {
@@ -500,9 +536,10 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
             handleDisconnected({ reason: message })
           })
       } else {
-        const wsUrl = getPtyConnectUrl(ptyId, directory)
+        const wsUrl = getPtyConnectUrl(ptyId, directory, { cursor })
         logger.log('[Terminal] Connecting to:', wsUrl, reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '')
         ws = new WebSocket(wsUrl)
+        ws.binaryType = 'arraybuffer'
         transportSendRef.current = data => {
           if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(data)
@@ -514,7 +551,14 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
 
         ws.onmessage = event => {
           if (!mountedRef.current) return
-          terminal.write(event.data)
+          const frame = parsePtyFrame(event.data as string | ArrayBuffer)
+          if (!frame) return
+          if (frame.kind === 'control') {
+            cursorRef.current = frame.cursor
+            return
+          }
+          terminal.write(frame.data)
+          cursorRef.current += frame.data.length
         }
 
         ws.onclose = e => {
@@ -533,11 +577,25 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       })
     }
 
-    wsConnectTimeout = requestAnimationFrame(connectTransport) as unknown as number
+    const scheduleInitialConnect = () => {
+      wsConnectTimeout = requestAnimationFrame(connectTransport) as unknown as number
+    }
+
+    if (restoreBuffer) {
+      terminal.write(restoreBuffer, () => {
+        if (!mountedRef.current) return
+        if (restoreScrollY !== undefined) {
+          terminal.scrollToLine(restoreScrollY)
+        }
+        scheduleInitialConnect()
+      })
+    } else {
+      scheduleInitialConnect()
+    }
 
     disposeTitle = terminal.onTitleChange(title => {
       if (!mountedRef.current) return
-      layoutStore.updateTerminalTab(ptyId, { title })
+      layoutStore.updateTerminalShellTitle(ptyId, title, manualTerminalTitlesRef.current)
     })
 
     return () => {
@@ -554,6 +612,19 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
         clearTimeout(resizeTimeoutRef.current)
         resizeTimeoutRef.current = null
       }
+
+      try {
+        layoutStore.updateTerminalSnapshot(ptyId, {
+          buffer: serializeAddon.serialize(),
+          scrollY: terminal.buffer.active.viewportY,
+          cursor: cursorRef.current,
+          rows: terminal.rows,
+          cols: terminal.cols,
+        })
+      } catch {
+        // ignore snapshot persistence failures
+      }
+
       transportDisconnectRef.current?.()
       disposeData?.dispose()
       disposeTitle?.dispose()
@@ -561,12 +632,25 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       resetTransport()
       // 显式 dispose addons
       fitAddon.dispose()
+      serializeAddon.dispose()
       webLinksAddon.dispose()
       terminal.dispose()
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [ptyId, directory, hasBeenActive, clearStickyModifiers, sendTerminalData, preferTouchUi])
+  }, [
+    ptyId,
+    directory,
+    hasBeenActive,
+    clearStickyModifiers,
+    sendTerminalData,
+    preferTouchUi,
+    restoreBuffer,
+    restoreScrollY,
+    restoreCursor,
+    restoreCols,
+    restoreRows,
+  ])
 
   useEffect(() => {
     const container = containerRef.current

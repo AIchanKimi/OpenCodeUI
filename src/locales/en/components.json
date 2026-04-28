@@ -43,6 +43,7 @@
     "gateway": "Gateway",
     "tab": "Tab",
     "addTab": "Add Tab",
+    "renameTerminal": "Rename Terminal",
     "moveToRight": "Move to Right Panel",
     "moveToBottom": "Move to Bottom Panel",
     "mcpServers": "MCP Servers"
@@ -180,6 +181,14 @@
   },
   "fullscreenViewer": {
     "lines": "lines"
+  },
+  "desktopTitlebar": {
+    "goBack": "Go Back",
+    "goForward": "Go Forward",
+    "openProject": "Open Project",
+    "openSettings": "Open Settings",
+    "settingsUpdate": "Update available — open settings",
+    "newWindow": "New Window"
   },
   "multiFileDiff": {
     "sessionChanges": "Session Changes",

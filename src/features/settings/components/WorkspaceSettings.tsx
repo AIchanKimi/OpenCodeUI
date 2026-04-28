@@ -5,7 +5,16 @@ import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './Setting
 
 export function WorkspaceSettings() {
   const { t } = useTranslation(['settings'])
-  const { isWideMode, toggleWideMode, diffStyle, setDiffStyle, codeWordWrap, setCodeWordWrap } = useTheme()
+  const {
+    isWideMode,
+    toggleWideMode,
+    diffStyle,
+    setDiffStyle,
+    codeWordWrap,
+    setCodeWordWrap,
+    manualTerminalTitles,
+    setManualTerminalTitles,
+  } = useTheme()
   const { sidebarFolderRecents, sidebarFolderRecentsShowDiff, sidebarShowChildSessions, wakeLock } = useLayoutStore()
 
   return (
@@ -35,6 +44,25 @@ export function WorkspaceSettings() {
           onClick={() => setCodeWordWrap(!codeWordWrap)}
         >
           <Toggle enabled={codeWordWrap} onChange={() => setCodeWordWrap(!codeWordWrap)} />
+        </SettingRow>
+
+        <SettingRow
+          label={t('workspace.manualTerminalTitles')}
+          description={t('workspace.manualTerminalTitlesDesc')}
+          onClick={() => {
+            const next = !manualTerminalTitles
+            setManualTerminalTitles(next)
+            layoutStore.syncTerminalTitleMode(next)
+          }}
+        >
+          <Toggle
+            enabled={manualTerminalTitles}
+            onChange={() => {
+              const next = !manualTerminalTitles
+              setManualTerminalTitles(next)
+              layoutStore.syncTerminalTitleMode(next)
+            }}
+          />
         </SettingRow>
 
         <div>

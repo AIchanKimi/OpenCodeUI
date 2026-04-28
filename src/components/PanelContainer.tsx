@@ -21,6 +21,9 @@ import {
 } from './Icons'
 import { layoutStore, useLayoutStore, type PanelTab, type PanelPosition, type PanelTabType } from '../store/layoutStore'
 import { useGatewayAvailability } from '../hooks/useGatewayAvailability'
+import { updatePtySession } from '../api/pty'
+import { useTheme } from '../hooks'
+import { uiErrorHandler } from '../utils'
 
 // ============================================
 // Types
@@ -29,6 +32,7 @@ import { useGatewayAvailability } from '../hooks/useGatewayAvailability'
 interface PanelContainerProps {
   position: PanelPosition
   children: (activeTab: PanelTab | null) => React.ReactNode
+  directory?: string
   onNewTerminal?: () => void // 仅 bottom 面板需要
   onCloseTerminal?: (ptyId: string) => void // Terminal 关闭回调
 }
@@ -89,10 +93,12 @@ function getTabLabel(tab: PanelTab, tabs: PanelTab[], t: (key: string) => string
 export const PanelContainer = memo(function PanelContainer({
   position,
   children,
+  directory,
   onNewTerminal,
   onCloseTerminal,
 }: PanelContainerProps) {
   const { t } = useTranslation(['components', 'common'])
+  const { manualTerminalTitles } = useTheme()
   const layout = useLayoutStore()
 
   const isOpen = position === 'bottom' ? layout.bottomPanelOpen : layout.rightPanelOpen
@@ -109,6 +115,10 @@ export const PanelContainer = memo(function PanelContainer({
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const renamePendingRef = useRef(false)
 
   // Tabs 容器 ref（用于水平滚动）
   const tabsContainerRef = useRef<HTMLDivElement>(null)
@@ -157,6 +167,23 @@ export const PanelContainer = memo(function PanelContainer({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [contextMenu])
+
+  useEffect(() => {
+    if (!editingTabId) return
+    if (!manualTerminalTitles) {
+      setEditingTabId(null)
+      return
+    }
+    if (!tabs.some(tab => tab.id === editingTabId && tab.type === 'terminal')) {
+      setEditingTabId(null)
+    }
+  }, [editingTabId, manualTerminalTitles, tabs])
+
+  useEffect(() => {
+    if (!editingTabId) return
+    renameInputRef.current?.focus()
+    renameInputRef.current?.select()
+  }, [editingTabId])
 
   // 折叠面板
   const handleCollapse = useCallback(() => {
@@ -207,6 +234,48 @@ export const PanelContainer = memo(function PanelContainer({
     setContextMenu(null)
   }, [contextMenu, position, tabs])
 
+  const startRename = useCallback(
+    (tab: PanelTab) => {
+      if (tab.type !== 'terminal' || !manualTerminalTitles) return
+      setContextMenu(null)
+      setEditingTabId(tab.id)
+      setEditingValue(tab.customTitle ?? tab.title ?? '')
+      layoutStore.setActiveTab(position, tab.id)
+    },
+    [manualTerminalTitles, position],
+  )
+
+  const cancelRename = useCallback(() => {
+    renamePendingRef.current = false
+    setEditingTabId(null)
+    setEditingValue('')
+  }, [])
+
+  const submitRename = useCallback(
+    async (tab: PanelTab) => {
+      if (tab.type !== 'terminal' || renamePendingRef.current) return
+
+      const nextTitle = editingValue.trim()
+      if (!nextTitle || nextTitle === (tab.customTitle ?? tab.title ?? '')) {
+        cancelRename()
+        return
+      }
+
+      renamePendingRef.current = true
+      try {
+        await updatePtySession(tab.id, { title: nextTitle }, directory)
+        layoutStore.updateTerminalCustomTitle(tab.id, nextTitle)
+      } catch (error) {
+        uiErrorHandler('rename terminal', error)
+      } finally {
+        cancelRename()
+      }
+    },
+    [cancelRename, directory, editingValue],
+  )
+
+  const contextTab = contextMenu ? tabs.find(tab => tab.id === contextMenu.tabId) ?? null : null
+
   // 拖拽处理
   const handleDragStart = useCallback((tabId: string) => {
     setDraggedId(tabId)
@@ -234,7 +303,6 @@ export const PanelContainer = memo(function PanelContainer({
   }
 
   const otherPanelLabel = position === 'bottom' ? t('panelContainer.moveToRight') : t('panelContainer.moveToBottom')
-  const contextMenuTab = contextMenu ? (tabs.find(item => item.id === contextMenu.tabId) ?? null) : null
 
   return (
     <>
@@ -257,9 +325,17 @@ export const PanelContainer = memo(function PanelContainer({
               onClick={() => handleSelectTab(tab.id)}
               onClose={e => handleCloseTab(tab.id, tab, e)}
               onContextMenu={e => handleContextMenu(e, tab.id)}
+              onDoubleClick={() => startRename(tab)}
               onDragStart={() => handleDragStart(tab.id)}
               onDragOver={() => handleDragOver(tab.id)}
               onDragEnd={handleDragEnd}
+              canRename={manualTerminalTitles && tab.type === 'terminal'}
+              isEditing={editingTabId === tab.id}
+              editingValue={editingValue}
+              editInputRef={renameInputRef}
+              onEditingValueChange={setEditingValue}
+              onEditSubmit={() => void submitRename(tab)}
+              onEditCancel={cancelRename}
             />
           ))}
 
@@ -319,7 +395,15 @@ export const PanelContainer = memo(function PanelContainer({
             className="fixed z-[9999] bg-bg-100 border border-border-200 rounded-lg shadow-lg p-1 min-w-[160px]"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
-            {contextMenuTab?.type !== 'gateway' && (
+            {manualTerminalTitles && contextTab?.type === 'terminal' && (
+              <button
+                onClick={() => startRename(contextTab)}
+                className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
+              >
+                {t('panelContainer.renameTerminal')}
+              </button>
+            )}
+            {contextTab?.type !== 'gateway' && (
               <button
                 onClick={handleMoveToOtherPanel}
                 className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
@@ -461,9 +545,17 @@ interface PanelTabButtonProps {
   onClick: () => void
   onClose?: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
+  onDoubleClick: () => void
   onDragStart: () => void
   onDragOver: () => void
   onDragEnd: () => void
+  canRename: boolean
+  isEditing: boolean
+  editingValue: string
+  editInputRef: React.RefObject<HTMLInputElement | null>
+  onEditingValueChange: (value: string) => void
+  onEditSubmit: () => void
+  onEditCancel: () => void
 }
 
 const PanelTabButton = memo(function PanelTabButton({
@@ -475,9 +567,17 @@ const PanelTabButton = memo(function PanelTabButton({
   onClick,
   onClose,
   onContextMenu,
+  onDoubleClick,
   onDragStart,
   onDragOver,
   onDragEnd,
+  canRename,
+  isEditing,
+  editingValue,
+  editInputRef,
+  onEditingValueChange,
+  onEditSubmit,
+  onEditCancel,
 }: PanelTabButtonProps) {
   const { t } = useTranslation(['components', 'common'])
   // Terminal 状态颜色
@@ -556,7 +656,9 @@ const PanelTabButton = memo(function PanelTabButton({
   return (
     <div
       data-tab-id={tab.id}
-      draggable
+      title={tab.type === 'terminal' ? label : undefined}
+      aria-label={tab.type === 'terminal' ? label : undefined}
+      draggable={!isEditing}
       onDragStart={handleDragStart}
       onDragOver={e => {
         e.preventDefault()
@@ -565,6 +667,7 @@ const PanelTabButton = memo(function PanelTabButton({
       onDragEnd={onDragEnd}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onDoubleClick={canRename ? onDoubleClick : undefined}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -588,7 +691,31 @@ const PanelTabButton = memo(function PanelTabButton({
       <span className="opacity-60 shrink-0">{TAB_ICONS[tab.type]}</span>
 
       {/* Label */}
-      <span className="truncate max-w-[100px]">{label}</span>
+      {isEditing ? (
+        <input
+          ref={editInputRef}
+          type="text"
+          value={editingValue}
+          onChange={e => onEditingValueChange(e.target.value)}
+          onBlur={onEditSubmit}
+          onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          onDragStart={e => e.stopPropagation()}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              onEditSubmit()
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              onEditCancel()
+            }
+          }}
+          className="truncate max-w-[140px] bg-transparent border-none outline-none text-[length:var(--fs-sm)] text-text-100"
+        />
+      ) : (
+        <span className="truncate max-w-[100px]">{label}</span>
+      )}
 
       {/* Close Button (only for closeable tabs like terminal) */}
       {onClose && (
@@ -601,6 +728,7 @@ const PanelTabButton = memo(function PanelTabButton({
           onMouseDown={e => e.stopPropagation()}
           onDragStart={e => e.stopPropagation()}
           draggable={false}
+          aria-label={t('common:close')}
           className={`
             touch-target-sm
             p-1 -mr-0.5 rounded shrink-0

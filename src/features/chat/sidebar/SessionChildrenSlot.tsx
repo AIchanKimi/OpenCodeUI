@@ -47,13 +47,13 @@ export function SessionChildrenSlot({
 
   useEffect(() => {
     if (!fetchAll) {
-      return
+      const frameId = requestAnimationFrame(() => setLoading(false))
+      return () => cancelAnimationFrame(frameId)
     }
+
     let cancelled = false
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setLoading(true)
-      }
+    const loadingFrameId = requestAnimationFrame(() => {
+      if (!cancelled) setLoading(true)
     })
     getSessionChildren(parentSession.id, parentSession.directory)
       .then(data => {
@@ -65,6 +65,7 @@ export function SessionChildrenSlot({
       })
     return () => {
       cancelled = true
+      cancelAnimationFrame(loadingFrameId)
     }
   }, [fetchAll, parentSession.id, parentSession.directory])
 

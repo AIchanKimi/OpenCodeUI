@@ -1,5 +1,67 @@
 # Changelog
 
+## [v0.5.17] - 2026-04-28
+
+- fix: keep session actions tied to visible focus (0e16597)
+- ci: update GitHub artifact actions (d9e49c6)
+
+## [v0.5.16] - 2026-04-28
+
+- fix: hide session actions after mouse selection (1d6b4be)
+- ci: upgrade GitHub Actions Node runtimes (ff10d7b)
+
+## [v0.5.15] - 2026-04-28
+
+- fix: restore model selector typography scaling (121b762)
+
+## [v0.5.14] - 2026-04-28
+
+- fix: close the remaining review regressions (58a03dc)
+- fix: clear lint regressions and selector focus artifacts (1b85707)
+- fix: preserve injected desktop titlebar controls (7e60acf)
+- fix: reveal session row actions on keyboard focus (a568535)
+- fix: ignore hidden controls during menu dismissal (2db0cd0)
+- fix: normalize menu focus target detection (c981584)
+- fix: harden menu close paths against hidden targets (c1ac600)
+- fix: make portal menus inert only after close (f82b285)
+- fix: route tab exits through real control order (ce3ad2d)
+- fix: keep selector focus stable during keyboard actions (6fbefae)
+- fix: finish keyboard flows for selection popups (110cb06)
+- fix: complete keyboard navigation for selection menus (ce247ee)
+- fix: stabilize stacked dialog and toolbar menu focus (3d3c542)
+- fix: align keyboard paths across dialogs and selectors (8f7b01f)
+- fix: tighten follow-up focus and visibility behavior (7618593)
+- fix: close the remaining interaction accessibility gaps (f634223)
+- fix: polish remaining high-traffic control semantics (5c88ad0)
+- fix: resolve remaining session and dialog correctness issues (7bde507)
+- fix: tighten menu and diff accessibility (399471d)
+- fix: finish button semantics in project controls (c05d5c9)
+- fix: improve semantic buttons in settings and sidebar (3a1b5bf)
+- fix: harden session updates and menu interactions (1d673df)
+- fix: update context usage immediately after compaction (df01835)
+
+## [v0.5.13] - 2026-04-27
+
+- fix: restore drag and drop in secondary desktop windows (36d489e)
+
+## [v0.5.12] - 2026-04-27
+
+- fix: create the Android main window explicitly (1c20510)
+
+## [v0.5.11] - 2026-04-26
+
+- fix: defer desktop windows until the first frame is ready (1b1e186)
+- fix: remove titlebar separator that misaligns with sidebar border (ed14752)
+- fix: prevent overlay sidebars from being obscured by desktop titlebar (8b20d80)
+- feat: add titlebar actions — back/forward, open project, settings, new window (65abc23)
+- fix: keep fullscreen viewers below desktop chrome (40e1ef4)
+
+## [v0.5.10] - 2026-04-26
+
+- feat: add manual terminal labels and restore state (b42a90d)
+- fix: align terminal PTY handling with upstream (093f2f2)
+- fix: avoid macOS traffic light overlap in fullscreen headers (a5a3554)
+
 ## [v0.5.9] - 2026-04-23
 
 - fix: harden live tool timing updates (d6c963a)

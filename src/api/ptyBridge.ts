@@ -15,6 +15,7 @@ interface BridgeEvent {
 interface ConnectTauriPtyParams {
   ptyId: string
   directory?: string
+  cursor?: number
   onConnected: () => void
   onMessage: (chunk: string) => void
   onDisconnected: (info: { code?: number; reason?: string }) => void
@@ -29,13 +30,14 @@ export interface TauriPtyConnection {
 export async function connectTauriPty({
   ptyId,
   directory,
+  cursor,
   onConnected,
   onMessage,
   onDisconnected,
   onError,
 }: ConnectTauriPtyParams): Promise<TauriPtyConnection> {
   const { invoke, Channel } = await import('@tauri-apps/api/core')
-  const url = getPtyConnectUrl(ptyId, directory, { includeAuthInUrl: false })
+  const url = getPtyConnectUrl(ptyId, directory, { includeAuthInUrl: false, cursor })
   const authHeader = getAuthHeader()['Authorization'] || null
   const onEvent = new Channel<BridgeEvent>()
   let closed = false

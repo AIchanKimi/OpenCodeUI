@@ -11,7 +11,7 @@
  * 容器 fixed inset-0 铺满视口。
  */
 
-import { memo, type ReactNode } from 'react'
+import { memo, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useModalAnimation } from '../../hooks/useModalAnimation'
 
@@ -21,9 +21,11 @@ interface ModalShellProps {
   children: ReactNode
   /** z-index，默认 100 */
   zIndex?: number
+  /** 外层容器样式，允许调用方限制覆盖范围 */
+  style?: CSSProperties
 }
 
-export const ModalShell = memo(function ModalShell({ isOpen, onClose, children, zIndex = 100 }: ModalShellProps) {
+export const ModalShell = memo(function ModalShell({ isOpen, onClose, children, zIndex = 100, style }: ModalShellProps) {
   const { isVisible, shouldRender } = useModalAnimation(isOpen, onClose)
 
   if (!shouldRender) return null
@@ -34,6 +36,7 @@ export const ModalShell = memo(function ModalShell({ isOpen, onClose, children, 
       style={{
         zIndex,
         opacity: isVisible ? 1 : 0,
+        ...style,
       }}
       role="dialog"
       aria-modal="true"

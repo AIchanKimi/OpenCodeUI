@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ModelSelector } from './ModelSelector'
 import type { ModelInfo } from '../../api'
@@ -72,6 +73,75 @@ describe('ModelSelector', () => {
     fireEvent.click(screen.getByTitle('GPT-4.1'))
     fireEvent.click(screen.getByText('GPT-4o Mini'))
 
+    expect(onSelect).toHaveBeenCalledWith('openai:gpt-4o-mini', expect.objectContaining({ name: 'GPT-4o Mini' }))
+  })
+
+  it('exposes accessible combobox-like semantics for search and options', () => {
+    render(<ModelSelector models={MODELS} selectedModelKey={'openai:gpt-4.1'} onSelect={vi.fn()} />)
+
+    fireEvent.click(screen.getByTitle('GPT-4.1'))
+
+    const searchInput = screen.getByRole('textbox', { name: 'Search models...' })
+    const selectedOption = document.getElementById('ms-item-1') as HTMLButtonElement | null
+    const pinButtons = screen.getAllByRole('button', { name: /Pin to top|Unpin/ })
+
+    expect(selectedOption).not.toBeNull()
+    expect(selectedOption).not.toContainElement(pinButtons[0])
+    expect(pinButtons.length).toBeGreaterThan(0)
+
+    fireEvent.change(searchInput, { target: { value: 'nope' } })
+
+    expect(screen.getByRole('status')).toHaveTextContent('No models found')
+  })
+
+  it('opens from ArrowUp at the last model and allows tabbing to pin controls', async () => {
+    render(<ModelSelector models={MODELS} selectedModelKey={'openai:gpt-4.1'} onSelect={vi.fn()} />)
+
+    const trigger = screen.getByTitle('GPT-4.1')
+    fireEvent.keyDown(trigger, { key: 'ArrowUp' })
+
+    const lastOption = document.getElementById('ms-item-2') as HTMLButtonElement | null
+    await waitFor(() => expect(lastOption).toHaveFocus())
+
+    fireEvent.keyDown(lastOption!, { key: 'Escape' })
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+
+    const selectedOption = document.getElementById('ms-item-1') as HTMLButtonElement | null
+    const firstPinButton = screen.getByRole('button', { name: /Pin to top: GPT-4.1/i })
+
+    await waitFor(() => expect(selectedOption).toHaveFocus())
+
+    fireEvent.keyDown(selectedOption!, { key: 'Tab' })
+
+    await waitFor(() => expect(firstPinButton).toHaveFocus())
+  })
+
+  it('returns focus to the toolbar input after selecting a model', async () => {
+    const onSelect = vi.fn()
+
+    function ToolbarSelectorHarness() {
+      const containerRef = useRef<HTMLDivElement>(null)
+
+      return (
+        <div ref={containerRef}>
+          <textarea aria-label="Chat input" />
+          <ModelSelector
+            models={MODELS}
+            selectedModelKey={'openai:gpt-4.1'}
+            onSelect={onSelect}
+            trigger="toolbar"
+            constrainToRef={containerRef}
+          />
+        </div>
+      )
+    }
+
+    render(<ToolbarSelectorHarness />)
+
+    fireEvent.click(screen.getByTitle('GPT-4.1'))
+    fireEvent.click(screen.getByText('GPT-4o Mini'))
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Chat input' })).toHaveFocus())
     expect(onSelect).toHaveBeenCalledWith('openai:gpt-4o-mini', expect.objectContaining({ name: 'GPT-4o Mini' }))
   })
 })

@@ -231,7 +231,12 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
       onClose={() => layoutStore.closeBottomPanel()}
       className="pb-[var(--safe-area-inset-bottom)]"
     >
-      <PanelContainer position="bottom" onNewTerminal={handleNewTerminal} onCloseTerminal={handleCloseTerminal}>
+      <PanelContainer
+        position="bottom"
+        directory={normalizedDirectory}
+        onNewTerminal={handleNewTerminal}
+        onCloseTerminal={handleCloseTerminal}
+      >
         {renderContent}
       </PanelContainer>
     </ResizablePanel>

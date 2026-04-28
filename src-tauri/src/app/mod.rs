@@ -37,9 +37,82 @@ fn extract_directory_from_args(args: &[String]) -> Option<String> {
     None
 }
 
+#[cfg(not(target_os = "android"))]
+fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+    if let Some(window) = app.get_webview_window("main") {
+        return Ok(window);
+    }
+
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+        .expect("main window config missing");
+
+    configure_desktop_window_builder(tauri::WebviewWindowBuilder::from_config(app, &config)?)
+        .visible(false)
+        .build()
+}
+
+#[cfg(target_os = "android")]
+fn create_main_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+    if let Some(window) = app.get_webview_window("main") {
+        return Ok(window);
+    }
+
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+        .expect("main window config missing");
+
+    tauri::WebviewWindowBuilder::from_config(app, &config)?.build()
+}
+
+#[cfg(not(target_os = "android"))]
+fn create_hidden_content_window(
+    app: &tauri::AppHandle,
+    label: &str,
+) -> Result<tauri::WebviewWindow, tauri::Error> {
+    let builder = configure_desktop_window_builder(tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        tauri::WebviewUrl::App("index.html".into()),
+    ))
+    .title("OpenCode")
+    .inner_size(800.0, 600.0);
+
+    #[cfg(windows)]
+    let builder = builder.disable_drag_drop_handler();
+
+    builder.visible(false).build()
+}
+
+#[cfg(not(target_os = "android"))]
+fn finish_desktop_window_setup(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    let _ = window.create_overlay_titlebar();
+}
+
+#[cfg(not(target_os = "android"))]
+pub(crate) fn mark_window_ready<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+) -> Result<(), tauri::Error> {
+    window.show()?;
+    let _ = window.set_focus();
+
+    Ok(())
+}
+
 /// 创建新窗口，可选地关联一个目录（多窗口支持）
 #[cfg(not(target_os = "android"))]
-fn create_new_window(app: &tauri::AppHandle, directory: Option<String>) {
+pub(crate) fn create_new_window(app: &tauri::AppHandle, directory: Option<String>) {
     static WIN_COUNTER: AtomicU64 = AtomicU64::new(1);
     let label = format!("win-{}", WIN_COUNTER.fetch_add(1, Ordering::SeqCst));
 
@@ -52,16 +125,9 @@ fn create_new_window(app: &tauri::AppHandle, directory: Option<String>) {
         }
     }
 
-    match configure_desktop_window_builder(
-        tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into())),
-    )
-        .title("OpenCode")
-        .inner_size(800.0, 600.0)
-        .build()
-    {
+    match create_hidden_content_window(app, &label) {
         Ok(window) => {
-            #[cfg(windows)]
-            let _ = window.create_overlay_titlebar();
+            finish_desktop_window_setup(&window);
 
             log::info!(
                 "Created new window '{}' for directory: {:?}",
@@ -120,15 +186,18 @@ pub fn run() {
                     .build(),
             )?;
 
-            // 自动打开 devtools，方便调试（相当于浏览器 F12）
-            #[cfg(debug_assertions)]
-            if let Some(window) = app.get_webview_window("main") {
-                window.open_devtools();
+            #[cfg(not(target_os = "android"))]
+            {
+                let main_window = create_main_window(&app.handle())?;
+                finish_desktop_window_setup(&main_window);
+
+                #[cfg(debug_assertions)]
+                main_window.open_devtools();
             }
 
-            #[cfg(windows)]
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.create_overlay_titlebar();
+            #[cfg(target_os = "android")]
+            {
+                let _main_window = create_main_window(&app.handle())?;
             }
 
             // Desktop: 解析 CLI 参数，存入 pending state
@@ -179,6 +248,8 @@ pub fn run() {
             commands::bridge::bridge_send,
             commands::bridge::bridge_disconnect,
             commands::utils::get_cli_directory,
+            commands::utils::open_new_window,
+            commands::utils::desktop_window_ready,
             commands::opencode::check_opencode_service,
             commands::opencode::start_opencode_service,
             commands::opencode::stop_opencode_service,
@@ -207,16 +278,16 @@ pub fn run() {
                 if let Ok(path) = url.to_file_path() {
                     if path.is_dir() {
                         let dir = path.to_string_lossy().to_string();
-                        log::info!("macOS Opened directory: {}", dir);
+                            log::info!("macOS Opened directory: {}", dir);
 
-                        // 如果只有 main 窗口且它还没消费目录，说明是冷启动，设给 main
-                        // 否则新建窗口
-                        if let Some(state) = _app_handle.try_state::<OpenDirectoryState>() {
-                            let pending = state.pending().pin();
-                            let win_count = _app_handle.webview_windows().len();
-                            if win_count <= 1 && !pending.contains_key("main") {
-                                pending.insert("main".to_string(), Arc::from(dir.clone()));
-                                let _ = _app_handle.emit("open-directory", dir);
+                            // 如果只有 main 窗口且它还没消费目录，说明是冷启动，设给 main
+                            // 否则新建窗口
+                            if let Some(state) = _app_handle.try_state::<OpenDirectoryState>() {
+                                let pending = state.pending().pin();
+                                let win_count = _app_handle.webview_windows().len();
+                                if win_count <= 1 && !pending.contains_key("main") {
+                                    pending.insert("main".to_string(), Arc::from(dir.clone()));
+                                    let _ = _app_handle.emit("open-directory", dir);
                             } else {
                                 create_new_window(_app_handle, Some(dir));
                             }

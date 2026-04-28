@@ -36,6 +36,8 @@ export function ProjectSelector({
     projectId: null,
   })
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // ==========================================
   // Click Outside
@@ -52,6 +54,14 @@ export function ProjectSelector({
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (isOpen) return
+    const activeElement = document.activeElement as Node | null
+    if (activeElement && dropdownRef.current?.contains(activeElement)) {
+      triggerRef.current?.focus()
+    }
   }, [isOpen])
 
   // ==========================================
@@ -94,8 +104,11 @@ export function ProjectSelector({
     <div ref={containerRef} className="relative">
       {/* Trigger Button */}
       <button
+        ref={triggerRef}
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
+        aria-expanded={isOpen}
         className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-bg-200/50 transition-colors group text-left"
         title={getPath(currentProject)}
       >
@@ -112,11 +125,14 @@ export function ProjectSelector({
 
       {/* Dropdown */}
       <div
+        ref={dropdownRef}
         className={`
           absolute top-full left-0 right-0 mt-1 z-50
           transition-all duration-200 origin-top
           ${isOpen ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'}
         `}
+        aria-hidden={!isOpen}
+        style={{ visibility: isOpen ? 'visible' : 'hidden' }}
       >
         <div className="glass border border-border-200/60 rounded-xl shadow-lg overflow-hidden">
           <div className="max-h-[280px] overflow-y-auto custom-scrollbar p-1">
@@ -152,6 +168,7 @@ export function ProjectSelector({
           {/* Add Button */}
           <div className="p-1 border-t border-border-200/50">
             <button
+              type="button"
               onClick={() => {
                 onAddProject()
                 setIsOpen(false)
@@ -200,37 +217,45 @@ function ProjectItem({ project, displayName, path, onSelect, onRemove }: Project
   const isGlobal = project.id === 'global'
 
   return (
-    <button
-      onClick={onSelect}
-      className="group w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-bg-100 transition-colors"
-      title={path}
-    >
-      <div
-        className={`
-        w-7 h-7 rounded-lg flex items-center justify-center shrink-0
-        ${isGlobal ? 'bg-accent-main-100/15 text-accent-main-100' : 'bg-bg-200 text-text-400'}
-      `}
+    <div className="group w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-bg-100 transition-colors" onClick={onSelect}>
+      <button
+        type="button"
+        onClick={e => {
+          e.stopPropagation()
+          onSelect()
+        }}
+        className="min-w-0 flex flex-1 items-center gap-2.5 text-left bg-transparent border-none p-0"
+        title={path}
       >
-        {isGlobal ? <GlobeIcon className="w-3.5 h-3.5" /> : <FolderIcon className="w-3.5 h-3.5" />}
-      </div>
+        <div
+          className={`
+          w-7 h-7 rounded-lg flex items-center justify-center shrink-0
+          ${isGlobal ? 'bg-accent-main-100/15 text-accent-main-100' : 'bg-bg-200 text-text-400'}
+        `}
+        >
+          {isGlobal ? <GlobeIcon className="w-3.5 h-3.5" /> : <FolderIcon className="w-3.5 h-3.5" />}
+        </div>
 
-      <div className="flex-1 min-w-0 text-left">
-        <div className="text-[length:var(--fs-base)] text-text-200 truncate">{displayName}</div>
-        <div className="text-[length:var(--fs-xxs)] text-text-400/60 truncate font-mono">{path}</div>
-      </div>
+        <div className="flex-1 min-w-0 text-left">
+          <div className="text-[length:var(--fs-base)] text-text-200 truncate">{displayName}</div>
+          <div className="text-[length:var(--fs-xxs)] text-text-400/60 truncate font-mono">{path}</div>
+        </div>
+      </button>
 
       {onRemove && (
-        <div
+        <button
+          type="button"
           onClick={e => {
             e.stopPropagation()
             onRemove()
           }}
-          className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 transition-all"
+          aria-label={t('common:remove')}
+          className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-colors"
           title={t('common:remove')}
         >
           <TrashIcon className="w-3 h-3" />
-        </div>
+        </button>
       )}
-    </button>
+    </div>
   )
 }

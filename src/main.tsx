@@ -132,11 +132,7 @@ window.addEventListener('unhandledrejection', event => {
   event.preventDefault()
 })
 
-async function bootstrap() {
-  if (isNativeTauri) {
-    await getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
-  }
-
+function bootstrap() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <Suspense fallback={null}>
@@ -148,6 +144,10 @@ async function bootstrap() {
       </Suspense>
     </StrictMode>,
   )
+
+  if (isNativeTauri) {
+    void getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
+  }
 }
 
 void bootstrap()

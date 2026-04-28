@@ -121,6 +121,7 @@ const DEFAULT_IMMERSIVE_MODE = false
 const DEFAULT_COMPACT_INLINE_PERMISSION = false
 const DEFAULT_GLASS_EFFECT = true
 const DEFAULT_QUEUE_FOLLOWUP_MESSAGES = false
+const DEFAULT_MANUAL_TERMINAL_TITLES = false
 
 export interface ThemeState {
   /** 当前选中的主题风格 ID */
@@ -165,6 +166,8 @@ export interface ThemeState {
   glassEffect: boolean
   /** 忙碌时后续消息是否进入队列 */
   queueFollowupMessages: boolean
+  /** 终端标签是否改为手动命名模式 */
+  manualTerminalTitles: boolean
 }
 
 export type ThemeBackup = ThemeState
@@ -194,6 +197,7 @@ const STORAGE_KEY_IMMERSIVE_MODE = 'immersive-mode'
 const STORAGE_KEY_COMPACT_INLINE_PERMISSION = 'compact-inline-permission'
 const STORAGE_KEY_GLASS_EFFECT = 'glass-effect'
 const STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES = 'queue-followup-messages'
+const STORAGE_KEY_MANUAL_TERMINAL_TITLES = 'manual-terminal-titles'
 
 // ============================================
 // DOM Style Element IDs
@@ -306,6 +310,10 @@ class ThemeStore {
     const queueFollowupMessages =
       savedQueueFollowupMessages === null ? DEFAULT_QUEUE_FOLLOWUP_MESSAGES : savedQueueFollowupMessages === 'true'
 
+    const savedManualTerminalTitles = localStorage.getItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES)
+    const manualTerminalTitles =
+      savedManualTerminalTitles === null ? DEFAULT_MANUAL_TERMINAL_TITLES : savedManualTerminalTitles === 'true'
+
     this.state = {
       presetId: normalizedPreset,
       colorMode: savedMode,
@@ -328,6 +336,7 @@ class ThemeStore {
       compactInlinePermission,
       glassEffect,
       queueFollowupMessages,
+      manualTerminalTitles,
     }
   }
 
@@ -399,6 +408,9 @@ class ThemeStore {
   }
   get queueFollowupMessages() {
     return this.state.queueFollowupMessages
+  }
+  get manualTerminalTitles() {
+    return this.state.manualTerminalTitles
   }
 
   /** 获取当前主题预设（内置主题返回对象，自定义返回 undefined） */
@@ -653,6 +665,13 @@ class ThemeStore {
     this.emit()
   }
 
+  setManualTerminalTitles(enabled: boolean) {
+    if (this.state.manualTerminalTitles === enabled) return
+    this.state = { ...this.state, manualTerminalTitles: enabled }
+    localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(enabled))
+    this.emit()
+  }
+
   // ---- Theme Application ----
 
   /** 初始化：应用当前主题到 DOM */
@@ -889,6 +908,10 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
       typeof parsed?.queueFollowupMessages === 'boolean'
         ? parsed.queueFollowupMessages
         : DEFAULT_QUEUE_FOLLOWUP_MESSAGES,
+    manualTerminalTitles:
+      typeof parsed?.manualTerminalTitles === 'boolean'
+        ? parsed.manualTerminalTitles
+        : DEFAULT_MANUAL_TERMINAL_TITLES,
   }
 }
 
@@ -928,4 +951,5 @@ export function importThemeBackup(raw: unknown): void {
   localStorage.setItem(STORAGE_KEY_COMPACT_INLINE_PERMISSION, String(backup.compactInlinePermission))
   localStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(backup.glassEffect))
   localStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(backup.queueFollowupMessages))
+  localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(backup.manualTerminalTitles))
 }

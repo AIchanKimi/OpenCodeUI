@@ -205,6 +205,8 @@
   "workspace": {
     "layout": "Layout & Reading",
     "layoutDesc": "Workspace layout, reading comfort, and code viewing preferences",
+    "manualTerminalTitles": "Manual Terminal Labels",
+    "manualTerminalTitlesDesc": "When enabled, terminal tabs stop following shell title changes and can be renamed manually. When disabled, terminal tabs continue to follow shell or process titles automatically.",
     "sidebar": "Sidebar",
     "sidebarDesc": "Sidebar layout and recent chat organization"
   },

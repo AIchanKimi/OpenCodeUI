@@ -23,7 +23,12 @@ export const RetryPartView = memo(function RetryPartView({ part }: RetryPartView
 
   return (
     <div className="px-3 py-2 rounded-md bg-warning-100/10 border border-warning-100/20">
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 bg-transparent border-none p-0 text-left"
+      >
         <RetryIcon className="w-4 h-4 text-warning-100 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <span className="text-[length:var(--fs-base)] text-warning-100">{t('system.retryAttempt', { attempt })}</span>
@@ -37,7 +42,7 @@ export const RetryPartView = memo(function RetryPartView({ part }: RetryPartView
         <ChevronDownIcon
           className={`w-4 h-4 text-text-400 transition-transform duration-300 ${expanded ? '' : '-rotate-90'}`}
         />
-      </div>
+      </button>
 
       <div
         className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
@@ -101,9 +106,11 @@ export const PatchPartView = memo(function PatchPartView({ part }: PatchPartView
 
   return (
     <div className="rounded-md border border-border-200/60 bg-bg-100/50 overflow-hidden">
-      <div
-        className="flex items-center gap-2 px-3 h-8 cursor-pointer hover:bg-bg-200/30 transition-colors"
+      <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        className="flex h-8 w-full items-center gap-2 px-3 text-left bg-transparent border-none hover:bg-bg-200/30 transition-colors"
       >
         <PatchIcon className="w-4 h-4 text-text-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
@@ -113,7 +120,7 @@ export const PatchPartView = memo(function PatchPartView({ part }: PatchPartView
         <ChevronDownIcon
           className={`w-4 h-4 text-text-400 transition-transform duration-300 ${expanded ? '' : '-rotate-90'}`}
         />
-      </div>
+      </button>
 
       <div
         className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${

@@ -15,6 +15,7 @@ interface PtyConnectUrlOptions {
    * true  = 在 URL 里放认证（浏览器原生 WebSocket 无法设 header）
    */
   includeAuthInUrl?: boolean
+  cursor?: number
 }
 
 function normalizePty(pty: LegacyPty): Pty {
@@ -82,13 +83,17 @@ export function getPtyConnectUrl(ptyId: string, directory?: string, options?: Pt
   const httpBase = getApiBaseUrl()
   const wsBase = httpBase.replace(/^http/, 'ws')
   const includeAuthInUrl = options?.includeAuthInUrl ?? true
+  const cursor =
+    typeof options?.cursor === 'number' && Number.isSafeInteger(options.cursor) && options.cursor >= 0
+      ? options.cursor
+      : undefined
 
   const auth = serverStore.getActiveAuth()
   const formatted = formatPathForApi(directory)
 
   // Tauri bridge 不需要在 URL 里放认证
   if (!includeAuthInUrl) {
-    return `${wsBase}/pty/${ptyId}/connect${buildQueryString({ directory: formatted })}`
+    return `${wsBase}/pty/${ptyId}/connect${buildQueryString({ directory: formatted, cursor })}`
   }
 
   // 浏览器原生 WebSocket：
@@ -102,7 +107,7 @@ export function getPtyConnectUrl(ptyId: string, directory?: string, options?: Pt
     }
   })()
 
-  const queryParams: Record<string, string | undefined> = { directory: formatted }
+  const queryParams: Record<string, string | number | undefined> = { directory: formatted, cursor }
 
   let wsUrl = wsBase
   if (auth?.password) {

@@ -2,7 +2,7 @@
 // useModelSelection - 模型选择逻辑
 // ============================================
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import type { ModelInfo } from '../api'
 import {
   getModelKey,
@@ -33,10 +33,21 @@ interface UseModelSelectionReturn {
 }
 
 export function useModelSelection({ models, sessionId = null }: UseModelSelectionOptions): UseModelSelectionReturn {
+  const sessionSelection = sessionId ? getSessionModelSelection(sessionId) : undefined
+  const initialSessionSelection = sessionId ? getSessionModelSelection(sessionId) : undefined
+  const initialSessionModel = initialSessionSelection ? findModelByKey(models, initialSessionSelection.modelKey) : undefined
+
   const [{ selectedModelKey, selectedVariant }, setSelection] = useState<{
     selectedModelKey: string | null
     selectedVariant: string | undefined
   }>(() => {
+    if (initialSessionSelection && initialSessionModel) {
+      return {
+        selectedModelKey: initialSessionSelection.modelKey,
+        selectedVariant: initialSessionSelection.variant ?? getModelVariantPref(initialSessionSelection.modelKey),
+      }
+    }
+
     const initialModelKey = serverStorage.get(STORAGE_KEY_SELECTED_MODEL)
 
     return {
@@ -44,7 +55,8 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
       selectedVariant: initialModelKey ? getModelVariantPref(initialModelKey) : undefined,
     }
   })
-  const hydratedSessionRef = useRef<string | null>(sessionId)
+  const hydratedSessionRef = useRef<string | null>(initialSessionSelection && !initialSessionModel ? null : sessionId)
+  const skipPersistenceRef = useRef<string | null>(null)
 
   const persistedModel = selectedModelKey ? findModelByKey(models, selectedModelKey) : undefined
   const currentModel = useMemo(() => persistedModel ?? models[0], [models, persistedModel])
@@ -63,24 +75,38 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
 
     if (hydratedSessionRef.current === sessionId) return
 
-    const sessionSelection = getSessionModelSelection(sessionId)
     if (!sessionSelection) {
       hydratedSessionRef.current = sessionId
       return
     }
 
     const restoredModel = findModelByKey(models, sessionSelection.modelKey)
-    if (!restoredModel) return
+    if (!restoredModel) {
+      if (models.length > 0) {
+        hydratedSessionRef.current = sessionId
+      }
+      return
+    }
 
     const nextVariant = sessionSelection.variant ?? getModelVariantPref(sessionSelection.modelKey)
+    // Restoring the session-local model needs to happen before persistence runs,
+    // otherwise the previous session's selection can be briefly written into the new session.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelection({
       selectedModelKey: sessionSelection.modelKey,
       selectedVariant: nextVariant,
     })
+    skipPersistenceRef.current = sessionId
     hydratedSessionRef.current = sessionId
-  }, [models, sessionId])
+  }, [models, sessionId, sessionSelection])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (sessionId && sessionSelection && hydratedSessionRef.current !== sessionId) return
+    if (sessionId && skipPersistenceRef.current === sessionId) {
+      skipPersistenceRef.current = null
+      return
+    }
+
     if (resolvedModelKey) {
       serverStorage.set(STORAGE_KEY_SELECTED_MODEL, resolvedModelKey)
       if (sessionId) {
@@ -90,7 +116,7 @@ export function useModelSelection({ models, sessionId = null }: UseModelSelectio
     }
 
     serverStorage.remove(STORAGE_KEY_SELECTED_MODEL)
-  }, [resolvedModelKey, resolvedSelectedVariant, sessionId])
+  }, [resolvedModelKey, resolvedSelectedVariant, sessionId, sessionSelection])
 
   // 切换模型
   const handleModelChange = useCallback(

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ApiAgent } from '../../../api/client'
 import { InputToolbar } from './InputToolbar'
 
 const useIsMobileMock = vi.fn()
@@ -7,6 +8,10 @@ const isTauriMock = vi.fn()
 const isTauriMobileMock = vi.fn()
 const openMock = vi.fn()
 const readFileMock = vi.fn()
+const agents: ApiAgent[] = [
+  { name: 'build', description: 'Build things', mode: 'primary', permission: [], options: {} },
+  { name: 'plan', description: 'Plan work', mode: 'primary', permission: [], options: {} },
+]
 
 vi.mock('../../../hooks', () => ({
   useIsMobile: () => useIsMobileMock(),
@@ -47,11 +52,30 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
 vi.mock('../../../components/ui', () => ({
   DropdownMenu: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
     isOpen ? <div>{children}</div> : null,
-  MenuItem: ({ label, onClick }: { label: string; onClick: () => void }) => (
-    <button type="button" onClick={onClick}>
-      {label}
-    </button>
-  ),
+  MenuItem: ({
+    label,
+    onClick,
+    selectionRole,
+    selected,
+  }: {
+    label: string
+    onClick: () => void
+    selectionRole?: 'menuitemradio' | 'option'
+    selected?: boolean
+  }) => {
+    const selectionProps =
+      selectionRole === 'menuitemradio'
+        ? { role: selectionRole, 'aria-checked': selected, tabIndex: selected ? 0 : -1 }
+        : selectionRole === 'option'
+          ? { role: selectionRole, 'aria-selected': selected, tabIndex: selected ? 0 : -1 }
+          : {}
+
+    return (
+      <button type="button" onClick={onClick} {...selectionProps}>
+        {label}
+      </button>
+    )
+  },
   IconButton: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>
       {children}
@@ -133,5 +157,54 @@ describe('InputToolbar file selection', () => {
     expect(files).toHaveLength(1)
     expect(files[0].name).toBe('photo.png')
     expect(files[0].type).toBe('image/png')
+  })
+
+  it('moves focus into the opened agent menu and exposes menu semantics', async () => {
+    render(
+      <InputToolbar
+        agents={agents}
+        selectedAgent="build"
+        onAgentChange={vi.fn()}
+        fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
+        onFilesSelected={vi.fn()}
+        canSend={false}
+        onSend={vi.fn()}
+      />,
+    )
+
+    const trigger = screen.getByTitle('build: Build things')
+
+    fireEvent.click(trigger)
+
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('menuitemradio', { name: 'Build' })).toHaveFocus()
+    })
+  })
+
+  it('closes the agent menu on Tab and moves focus to the next toolbar control', async () => {
+    render(
+      <InputToolbar
+        agents={agents}
+        selectedAgent="build"
+        onAgentChange={vi.fn()}
+        fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
+        canSend={true}
+        onFilesSelected={vi.fn()}
+        onSend={vi.fn()}
+      />,
+    )
+
+    const trigger = screen.getByTitle('build: Build things')
+    fireEvent.click(trigger)
+
+    const selectedItem = await screen.findByRole('menuitemradio', { name: 'Build' })
+    fireEvent.keyDown(selectedItem, { key: 'Tab' })
+
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.getByRole('button', { name: 'Send message' })).toHaveFocus()
+    })
   })
 })

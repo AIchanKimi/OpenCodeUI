@@ -210,6 +210,10 @@ export function useTheme() {
     themeStore.setImmersiveMode(enabled)
   }, [])
 
+  const setManualTerminalTitles = useCallback((enabled: boolean) => {
+    themeStore.setManualTerminalTitles(enabled)
+  }, [])
+
   return {
     // 日夜模式（向后兼容）
     mode: state.colorMode,
@@ -298,5 +302,9 @@ export function useTheme() {
     setGlassEffect: useCallback((enabled: boolean) => {
       themeStore.setGlassEffect(enabled)
     }, []),
+
+    // 终端标签标题模式
+    manualTerminalTitles: state.manualTerminalTitles,
+    setManualTerminalTitles,
   }
 }

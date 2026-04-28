@@ -205,6 +205,8 @@
   "workspace": {
     "layout": "布局和阅读",
     "layoutDesc": "工作区布局、阅读舒适度和代码查看偏好",
+    "manualTerminalTitles": "手动终端标签",
+    "manualTerminalTitlesDesc": "开启后，终端标签不再跟随 shell 自动更新，可手动重命名。关闭后，终端标签会继续按 shell 或进程标题自动变化。",
     "sidebar": "侧边栏",
     "sidebarDesc": "侧边栏布局和最近对话的组织方式"
   },

@@ -43,6 +43,7 @@
     "gateway": "网关",
     "tab": "标签",
     "addTab": "添加标签",
+    "renameTerminal": "重命名终端",
     "moveToRight": "移动到右侧面板",
     "moveToBottom": "移动到底部面板",
     "mcpServers": "MCP 服务器"
@@ -179,6 +180,14 @@
   },
   "fullscreenViewer": {
     "lines": "行"
+  },
+  "desktopTitlebar": {
+    "goBack": "后退",
+    "goForward": "前进",
+    "openProject": "打开项目",
+    "openSettings": "打开设置",
+    "settingsUpdate": "有新版本可用，打开设置",
+    "newWindow": "新建窗口"
   },
   "multiFileDiff": {
     "sessionChanges": "会话变更",

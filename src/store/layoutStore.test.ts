@@ -261,4 +261,37 @@ describe('LayoutStore panel and terminal layout', () => {
 
     expect(store.getState().activeTabId.right).toBe('files')
   })
+
+  it('persists terminal snapshots and restores them on the next sync', () => {
+    const store = new LayoutStore()
+
+    store.syncTerminalSessions('dir-a', [{ id: 'term-a1', title: 'A1', status: 'connected' }])
+    store.updateTerminalSnapshot('term-a1', {
+      buffer: 'pwd\r\n/workspace\r\n',
+      scrollY: 2,
+      cursor: 18,
+      rows: 24,
+      cols: 80,
+    })
+
+    const persisted = JSON.parse(localStorage.getItem('opencode-terminal-layout') ?? 'null')
+    expect(persisted.directories['dir-a'].sessions['term-a1']).toMatchObject({
+      buffer: 'pwd\r\n/workspace\r\n',
+      scrollY: 2,
+      cursor: 18,
+      rows: 24,
+      cols: 80,
+    })
+
+    const restored = new LayoutStore()
+    restored.syncTerminalSessions('dir-a', [{ id: 'term-a1', title: 'A1', status: 'connected' }])
+
+    expect(restored.getState().panelTabs.find(tab => tab.id === 'term-a1')).toMatchObject({
+      buffer: 'pwd\r\n/workspace\r\n',
+      scrollY: 2,
+      cursor: 18,
+      rows: 24,
+      cols: 80,
+    })
+  })
 })

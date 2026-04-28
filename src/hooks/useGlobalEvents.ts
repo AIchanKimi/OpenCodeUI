@@ -8,7 +8,7 @@
 // 3. 追踪子 session 关系（用于权限请求冒泡）
 // 4. 与具体 session 无关，处理所有 session 的事件
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { messageStore, childSessionStore, paneLayoutStore, serverStore } from '../store'
 import { activeSessionStore } from '../store/activeSessionStore'
 import { notificationStore } from '../store/notificationStore'
@@ -146,6 +146,27 @@ function drainPending<T>(map: Map<string, PendingRequest<T>[]>, sessionID: strin
   return arr.map(item => item.request)
 }
 
+function getScopeKey(directories?: string[]) {
+  if (!directories || directories.length === 0) return '__global__'
+  return directories.join('|')
+}
+
+function removePendingByRequestId<T extends { id: string }>(
+  map: Map<string, PendingRequest<T>[]>,
+  sessionID: string,
+  requestID: string,
+) {
+  const arr = map.get(sessionID)
+  if (!arr || arr.length === 0) return
+
+  const filtered = arr.filter(item => item.request.id !== requestID)
+  if (filtered.length === 0) {
+    map.delete(sessionID)
+  } else if (filtered.length !== arr.length) {
+    map.set(sessionID, filtered)
+  }
+}
+
 async function fetchActiveScopeData(directories?: string[]) {
   const scopes = directories && directories.length > 0 ? directories : [undefined]
   const results = await Promise.all(
@@ -248,6 +269,20 @@ export function useGlobalEvents(directories?: string[]) {
     // 节流滚动
     let scrollPending = false
     const pendingScrollSessionIds = new Set<string>()
+    let fetchVersion = 0
+    let activeFetchVersion = 0
+    let disposed = false
+    const latePendingRequests = new Map<
+      string,
+      {
+        requestId: string
+        sessionId: string
+        type: 'permission' | 'question'
+        description?: string
+        scopeKey: string
+        directory?: string
+      }
+    >()
 
     const scheduleScroll = (sessionId: string) => {
       pendingScrollSessionIds.add(sessionId)
@@ -269,11 +304,32 @@ export function useGlobalEvents(directories?: string[]) {
     // ============================================
 
     const fetchAndInitialize = () => {
-      fetchActiveScopeData(directoriesRef.current).then(({ statusMap, permissions, questions, sessionMetaEntries }) => {
-        activeSessionStore.initialize(statusMap)
-        activeSessionStore.initializePendingRequests(permissions, questions)
-        activeSessionStore.setSessionMetaBulk(sessionMetaEntries)
-      })
+      const currentVersion = ++fetchVersion
+      activeFetchVersion = currentVersion
+      void fetchActiveScopeData(directoriesRef.current)
+        .then(({ statusMap, permissions, questions, sessionMetaEntries }) => {
+          if (disposed || currentVersion !== fetchVersion) return
+          activeSessionStore.initialize(statusMap)
+          activeSessionStore.initializePendingRequests(permissions, questions)
+          const currentDirectories = directoriesRef.current
+          const currentScopeKey = getScopeKey(directoriesRef.current)
+          for (const pending of latePendingRequests.values()) {
+            const matchesScope = pending.directory
+              ? !currentDirectories || currentDirectories.length === 0 || currentDirectories.includes(pending.directory)
+              : pending.scopeKey === currentScopeKey
+            if (!matchesScope) continue
+            activeSessionStore.addPendingRequest(pending.requestId, pending.sessionId, pending.type, pending.description)
+          }
+          activeSessionStore.setSessionMetaBulk(sessionMetaEntries)
+        })
+        .catch(() => {
+          // best effort: 下次目录切换或 SSE 重连会再拉一次
+        })
+        .finally(() => {
+          if (currentVersion === fetchVersion) {
+            activeFetchVersion = 0
+          }
+        })
     }
 
     refreshRef.current = fetchAndInitialize
@@ -401,6 +457,16 @@ export function useGlobalEvents(directories?: string[]) {
 
         // Active 列表：注册 pending request
         activeSessionStore.addPendingRequest(request.id, request.sessionID, 'permission', desc)
+        if (activeFetchVersion !== 0) {
+          latePendingRequests.set(request.id, {
+            requestId: request.id,
+            sessionId: request.sessionID,
+            type: 'permission',
+            description: desc,
+            scopeKey: getScopeKey(directoriesRef.current),
+            directory: meta?.directory,
+          })
+        }
 
         // Toast 通知 — 不属于当前 session family 的才弹
         if (!belongsToCurrentSession(request.sessionID)) {
@@ -418,7 +484,8 @@ export function useGlobalEvents(directories?: string[]) {
       },
 
       onPermissionReplied: data => {
-        pendingPermissions.delete(data.sessionID)
+        removePendingByRequestId(pendingPermissions, data.sessionID, data.requestID)
+        latePendingRequests.delete(data.requestID)
         activeSessionStore.resolvePendingRequest(data.requestID)
 
         if (belongsToCurrentSession(data.sessionID)) {
@@ -437,6 +504,16 @@ export function useGlobalEvents(directories?: string[]) {
 
         // Active 列表：注册 pending request
         activeSessionStore.addPendingRequest(request.id, request.sessionID, 'question', desc)
+        if (activeFetchVersion !== 0) {
+          latePendingRequests.set(request.id, {
+            requestId: request.id,
+            sessionId: request.sessionID,
+            type: 'question',
+            description: desc,
+            scopeKey: getScopeKey(directoriesRef.current),
+            directory: meta?.directory,
+          })
+        }
 
         // Toast 通知
         if (!belongsToCurrentSession(request.sessionID)) {
@@ -453,7 +530,8 @@ export function useGlobalEvents(directories?: string[]) {
       },
 
       onQuestionReplied: data => {
-        pendingQuestions.delete(data.sessionID)
+        removePendingByRequestId(pendingQuestions, data.sessionID, data.requestID)
+        latePendingRequests.delete(data.requestID)
         activeSessionStore.resolvePendingRequest(data.requestID)
 
         if (belongsToCurrentSession(data.sessionID)) {
@@ -462,7 +540,8 @@ export function useGlobalEvents(directories?: string[]) {
       },
 
       onQuestionRejected: data => {
-        pendingQuestions.delete(data.sessionID)
+        removePendingByRequestId(pendingQuestions, data.sessionID, data.requestID)
+        latePendingRequests.delete(data.requestID)
         activeSessionStore.resolvePendingRequest(data.requestID)
 
         if (belongsToCurrentSession(data.sessionID)) {
@@ -515,6 +594,7 @@ export function useGlobalEvents(directories?: string[]) {
     fetchAndInitialize()
 
     return () => {
+      disposed = true
       if (refreshRef.current === fetchAndInitialize) {
         refreshRef.current = null
       }
@@ -522,7 +602,7 @@ export function useGlobalEvents(directories?: string[]) {
     }
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     directoriesRef.current = directories
     if (initializedDirectoriesRef.current) {
       refreshRef.current?.()

@@ -154,6 +154,8 @@ export function SidePanel({
   const sessionSelectionAnchorIdRef = useRef<string | null>(null)
   const projectSelectionAnchorIdRef = useRef<string | null>(null)
   const recentsSelectionRootRef = useRef<HTMLDivElement>(null)
+  const projectToggleRef = useRef<HTMLButtonElement>(null)
+  const projectsDropdownRef = useRef<HTMLDivElement>(null)
   // 批量删除确认弹窗
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
   const [batchRemoveProjectConfirm, setBatchRemoveProjectConfirm] = useState(false)
@@ -235,6 +237,14 @@ export function SidePanel({
 
   const showLabels = isExpanded || isMobile
   const newChatShortcut = useKeybindingLabel('newSession')
+
+  useEffect(() => {
+    if (showLabels && projectsExpanded) return
+    const activeElement = document.activeElement as Node | null
+    if (activeElement && projectsDropdownRef.current?.contains(activeElement)) {
+      projectToggleRef.current?.focus()
+    }
+  }, [projectsExpanded, showLabels])
 
   // Session stats
   const { messages } = useMessageStore()
@@ -818,7 +828,9 @@ export function SidePanel({
       <div className="flex flex-col gap-0.5 mx-2">
         {/* New Chat - 图标始终在 padding-left: 6px 位置，收起时刚好居中 */}
         <button
+          type="button"
           onClick={onNewSession}
+          aria-label={t('sidebar.newChat')}
           className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden"
           style={{
             width: showLabels ? '100%' : 32,
@@ -847,7 +859,10 @@ export function SidePanel({
         {/* Project Selector - 只在展开时显示 */}
         {showLabels && (
           <button
+            ref={projectToggleRef}
+            type="button"
             onClick={() => setProjectsExpanded(!projectsExpanded)}
+            aria-expanded={projectsExpanded}
             className={`h-8 flex items-center rounded-lg active:scale-[0.98] transition-all duration-300 overflow-hidden ${
               projectsExpanded ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200'
             }`}
@@ -881,12 +896,16 @@ export function SidePanel({
 
         {/* Projects Dropdown */}
         <div
+          ref={projectsDropdownRef}
           className="overflow-hidden transition-all duration-300 ease-out"
           style={{
             maxHeight: showLabels && projectsExpanded ? 300 : 0,
             opacity: showLabels && projectsExpanded ? 1 : 0,
             marginTop: showLabels && projectsExpanded ? 4 : 0,
+            visibility: showLabels && projectsExpanded ? 'visible' : 'hidden',
+            pointerEvents: showLabels && projectsExpanded ? 'auto' : 'none',
           }}
+          aria-hidden={!showLabels || !projectsExpanded}
         >
           <div className="rounded-lg border border-border-200/50 bg-bg-100/80 overflow-hidden">
             <div className="max-h-48 overflow-y-auto custom-scrollbar py-1">
@@ -901,47 +920,51 @@ export function SidePanel({
                   <div
                     key={project.id}
                     onClick={() => handleSelectProject(project.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        handleSelectProject(project.id)
-                      }
-                    }}
-                    className={`group w-full flex items-center gap-2 px-2 py-1.5 transition-colors cursor-default ${
+                    className={`group w-full flex items-center gap-2 px-2 py-1.5 transition-colors ${
                       isActive ? 'bg-bg-200/60 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
                     }`}
-                    title={project.worktree}
                   >
-                    <span className="w-5 h-5 flex items-center justify-center shrink-0">
-                      {isGlobal ? <GlobeIcon size={14} className="text-accent-main-100" /> : <FolderIcon size={14} />}
-                    </span>
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="text-left text-[length:var(--fs-sm)]">
-                        <div
-                          className="overflow-hidden whitespace-nowrap text-left"
-                          style={{
-                            WebkitMaskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                            maskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                          }}
-                        >
-                          {itemLabel}
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        handleSelectProject(project.id)
+                      }}
+                      aria-current={isActive ? 'true' : undefined}
+                      className="min-w-0 flex flex-1 items-center gap-2 text-left bg-transparent border-none p-0"
+                      title={project.worktree}
+                    >
+                      <span className="w-5 h-5 flex items-center justify-center shrink-0">
+                        {isGlobal ? <GlobeIcon size={14} className="text-accent-main-100" /> : <FolderIcon size={14} />}
+                      </span>
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="text-left text-[length:var(--fs-sm)]">
+                          <div
+                            className="overflow-hidden whitespace-nowrap text-left"
+                            style={{
+                              WebkitMaskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
+                              maskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
+                            }}
+                          >
+                            {itemLabel}
+                          </div>
                         </div>
+                        {!isGlobal && project.worktree && (
+                          <div className="text-[length:var(--fs-xxs)] text-text-400 truncate font-mono opacity-70">
+                            {getParentPath(project.worktree)}
+                          </div>
+                        )}
                       </div>
-                      {!isGlobal && project.worktree && (
-                        <div className="text-[length:var(--fs-xxs)] text-text-400 truncate font-mono opacity-70">
-                          {getParentPath(project.worktree)}
-                        </div>
-                      )}
-                    </div>
+                    </button>
                     {!isGlobal && (
                       <button
+                        type="button"
                         onClick={e => {
                           e.stopPropagation()
                           setProjectDeleteConfirm({ isOpen: true, projectId: project.id })
                         }}
-                        className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 transition-all"
+                        aria-label={t('sidebar.removeProject')}
+                        className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-all"
                         title={t('common:remove')}
                       >
                         <TrashIcon size={12} />
@@ -953,6 +976,7 @@ export function SidePanel({
             </div>
             <div className="border-t border-border-200/50 p-1">
               <button
+                type="button"
                 onClick={onAddProject}
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[length:var(--fs-sm)] text-text-400 hover:text-text-100 hover:bg-bg-200/50 transition-colors"
               >
@@ -978,13 +1002,17 @@ export function SidePanel({
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-400 w-3.5 h-3.5 group-focus-within:text-accent-main-100 transition-colors" />
             <input
               type="text"
+              name="sidebar-chat-search"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t('sidebar.searchChats')}
-              className="w-full bg-bg-200/40 hover:bg-bg-200/60 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-1.5 pl-[30px] pr-8 text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400/70 focus:outline-none transition-all"
+              aria-label={t('sidebar.searchChats')}
+              autoComplete="off"
+              className="w-full bg-bg-200/40 hover:bg-bg-200/60 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-1.5 pl-[30px] pr-8 text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400/70 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset transition-all"
             />
             {search && (
               <button
+                type="button"
                 onClick={() => setSearch('')}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-400 hover:text-text-100 text-[length:var(--fs-base)]"
                 aria-label={t('sidebar.clearSearch')}
@@ -999,6 +1027,7 @@ export function SidePanel({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex items-center mx-2 gap-1 shrink-0">
             <button
+              type="button"
               onClick={() => {
                 setSidebarTab('recents')
                 if (sidebarTab !== 'recents') exitEditMode()
@@ -1010,6 +1039,7 @@ export function SidePanel({
               {t('sidebar.recents')}
             </button>
             <button
+              type="button"
               onClick={() => {
                 setSidebarTab('active')
                 exitEditMode()
@@ -1034,8 +1064,10 @@ export function SidePanel({
             {/* 编辑按钮 — 只在 Recents tab 显示 */}
             {sidebarTab === 'recents' && (
               <button
+                type="button"
                 onMouseDown={e => e.preventDefault()}
                 onClick={isEditMode ? exitEditMode : enterEditMode}
+                aria-label={isEditMode ? t('common:done') : t('common:edit')}
                 className={`ml-auto p-1 rounded-md transition-colors duration-150 ${
                   isEditMode
                     ? 'text-accent-main-100 hover:bg-accent-main-100/10'

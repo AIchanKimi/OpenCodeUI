@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invoke } from '@tauri-apps/api/core'
 import { Sidebar } from './features/chat'
 import { ChatPane } from './features/chat/ChatPane'
 import { SplitContainer } from './features/chat/SplitContainer'
@@ -34,6 +35,7 @@ import { initNotificationSound } from './utils/notificationSoundBridge'
 import { createPtySession } from './api/pty'
 import type { TerminalTab } from './store/layoutStore'
 import type { SettingsTab } from './features/settings/SettingsDialog'
+import { isTauri, isTauriMobile } from './utils/tauri'
 
 const SettingsDialog = lazy(() =>
   import('./features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })),
@@ -82,6 +84,14 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!isTauri() || isTauriMobile()) return
+
+    void invoke('desktop_window_ready').catch(() => {
+      // best effort only
+    })
+  }, [])
+
+  useEffect(() => {
     if (import.meta.env.DEV) return
     void updateStore.checkForUpdates()
   }, [])
@@ -110,7 +120,7 @@ function App() {
     if (paneLayout.focusedSessionId === routeSessionId) return
     syncingFromRouteRef.current = true
     paneLayoutStore.setFocusedSession(routeSessionId)
-  }, [routeSessionId])
+  }, [paneLayout.focusedSessionId, routeSessionId])
 
   // focused pane session -> URL（路由只反映当前 focused pane）
   useEffect(() => {
@@ -226,6 +236,18 @@ function App() {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const openProject = useCallback(() => setProjectDialogOpen(true), [])
   const closeProjectDialog = useCallback(() => setProjectDialogOpen(false), [])
+
+  // 桌面标题栏通过 CustomEvent 触发打开项目/设置
+  useEffect(() => {
+    const onOpenProject = () => openProject()
+    const onOpenSettings = () => openSettings()
+    window.addEventListener('titlebar:open-project', onOpenProject)
+    window.addEventListener('titlebar:open-settings', onOpenSettings)
+    return () => {
+      window.removeEventListener('titlebar:open-project', onOpenProject)
+      window.removeEventListener('titlebar:open-settings', onOpenSettings)
+    }
+  }, [openProject, openSettings])
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 

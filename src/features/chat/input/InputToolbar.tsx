@@ -110,6 +110,95 @@ export function InputToolbar({
   const variantTriggerRef = useRef<HTMLButtonElement>(null)
   const variantMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const agentMenuFocusRef = useRef<'selected' | 'first' | 'last'>('selected')
+  const variantMenuFocusRef = useRef<'selected' | 'first' | 'last'>('selected')
+  const agentMenuId = 'input-toolbar-agent-menu'
+  const variantMenuId = 'input-toolbar-variant-menu'
+
+  const focusMenuItem = useCallback((menu: HTMLDivElement | null, mode: 'selected' | 'first' | 'last') => {
+    if (!menu) return
+
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"], button'))
+    if (items.length === 0) return
+
+    const selectedItem = menu.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+    const target = mode === 'first' ? items[0] : mode === 'last' ? items[items.length - 1] : selectedItem ?? items[0]
+    target?.focus()
+  }, [])
+
+  const focusRelativeToTrigger = useCallback((trigger: HTMLButtonElement | null, direction: 1 | -1) => {
+    if (!trigger) return
+
+    const focusables = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([type="file"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(element => {
+      if (element.closest('[aria-hidden="true"]')) return false
+      const style = window.getComputedStyle(element)
+      return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
+    })
+    const currentIndex = focusables.findIndex(item => item === trigger)
+    if (currentIndex === -1) return
+    const nextIndex = currentIndex + direction
+    focusables[nextIndex]?.focus()
+  }, [])
+
+  const isFocusableElement = useCallback((target: EventTarget | null) => {
+    const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
+    if (!element) return false
+    const candidate = element.closest<HTMLElement>(
+      'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )
+    if (!candidate) return false
+
+    const style = window.getComputedStyle(candidate)
+    return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0'
+  }, [])
+
+  const handleMenuKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>, menu: HTMLDivElement | null, onClose: () => void, trigger: HTMLButtonElement | null) => {
+      const items = Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"], button') ?? [])
+      if (items.length === 0) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          onClose()
+          trigger?.focus()
+        }
+        return
+      }
+
+      const currentIndex = items.findIndex(item => item === document.activeElement)
+      const focusByIndex = (index: number) => items[index]?.focus()
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % items.length
+        focusByIndex(nextIndex)
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        const nextIndex = currentIndex === -1 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length
+        focusByIndex(nextIndex)
+      } else if (event.key === 'Home') {
+        event.preventDefault()
+        focusByIndex(0)
+      } else if (event.key === 'End') {
+        event.preventDefault()
+        focusByIndex(items.length - 1)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        trigger?.focus()
+      } else if (event.key === 'Tab') {
+        event.preventDefault()
+        onClose()
+        window.setTimeout(() => {
+          focusRelativeToTrigger(trigger, event.shiftKey ? -1 : 1)
+        }, 0)
+      }
+    },
+    [focusRelativeToTrigger],
+  )
 
   // 文件选择器（Tauri 原生 / 浏览器 fallback）
   const handleFileClick = useCallback(async () => {
@@ -158,23 +247,45 @@ export function InputToolbar({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
-        agentMenuRef.current &&
-        !agentMenuRef.current.contains(e.target as Node) &&
+        agentMenuOpen &&
+        !agentMenuRef.current?.contains(e.target as Node) &&
         !agentTriggerRef.current?.contains(e.target as Node)
       ) {
         setAgentMenuOpen(false)
+        if (!isFocusableElement(e.target)) {
+          agentTriggerRef.current?.focus()
+        }
       }
       if (
-        variantMenuRef.current &&
-        !variantMenuRef.current.contains(e.target as Node) &&
+        variantMenuOpen &&
+        !variantMenuRef.current?.contains(e.target as Node) &&
         !variantTriggerRef.current?.contains(e.target as Node)
       ) {
         setVariantMenuOpen(false)
+        if (!isFocusableElement(e.target)) {
+          variantTriggerRef.current?.focus()
+        }
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [agentMenuOpen, variantMenuOpen, isFocusableElement])
+
+  useEffect(() => {
+    if (!agentMenuOpen) return
+    const timerId = window.setTimeout(() => {
+      focusMenuItem(agentMenuRef.current, agentMenuFocusRef.current)
+    }, 0)
+    return () => clearTimeout(timerId)
+  }, [agentMenuOpen, focusMenuItem])
+
+  useEffect(() => {
+    if (!variantMenuOpen) return
+    const timerId = window.setTimeout(() => {
+      focusMenuItem(variantMenuRef.current, variantMenuFocusRef.current)
+    }, 0)
+    return () => clearTimeout(timerId)
+  }, [variantMenuOpen, focusMenuItem])
 
   const selectableAgents = agents.filter(a => a.mode !== 'subagent' && !a.hidden)
   const currentAgent = agents.find(a => a.name === selectedAgent)
@@ -202,8 +313,22 @@ export function InputToolbar({
           <div className="relative">
             <button
               ref={agentTriggerRef}
-              onClick={() => setAgentMenuOpen(!agentMenuOpen)}
+              type="button"
+              onClick={() => {
+                agentMenuFocusRef.current = 'selected'
+                setAgentMenuOpen(!agentMenuOpen)
+              }}
+              onKeyDown={e => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  agentMenuFocusRef.current = e.key === 'ArrowUp' ? 'last' : 'first'
+                  setAgentMenuOpen(true)
+                }
+              }}
               disabled={controlsDisabled}
+              aria-haspopup="menu"
+              aria-expanded={agentMenuOpen}
+              aria-controls={agentMenuOpen ? agentMenuId : undefined}
               className="flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
               title={
                 currentAgent
@@ -231,7 +356,15 @@ export function InputToolbar({
               align="left"
               constrainToRef={inputContainerRef}
             >
-              <div ref={agentMenuRef}>
+              <div
+                id={agentMenuId}
+                ref={agentMenuRef}
+                role="menu"
+                aria-label="Agent menu"
+                onKeyDown={event =>
+                  handleMenuKeyDown(event, agentMenuRef.current, () => setAgentMenuOpen(false), agentTriggerRef.current)
+                }
+              >
                 {selectableAgents.map(agent => (
                   <MenuItem
                     key={agent.name}
@@ -243,9 +376,11 @@ export function InputToolbar({
                       </span>
                     }
                     selected={selectedAgent === agent.name}
+                    selectionRole="menuitemradio"
                     onClick={() => {
                       onAgentChange?.(agent.name)
                       setAgentMenuOpen(false)
+                      agentTriggerRef.current?.focus()
                     }}
                   />
                 ))}
@@ -259,8 +394,22 @@ export function InputToolbar({
           <div className="relative">
             <button
               ref={variantTriggerRef}
-              onClick={() => setVariantMenuOpen(!variantMenuOpen)}
+              type="button"
+              onClick={() => {
+                variantMenuFocusRef.current = 'selected'
+                setVariantMenuOpen(!variantMenuOpen)
+              }}
+              onKeyDown={e => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  variantMenuFocusRef.current = e.key === 'ArrowUp' ? 'last' : 'first'
+                  setVariantMenuOpen(true)
+                }
+              }}
               disabled={controlsDisabled}
+              aria-haspopup="menu"
+              aria-expanded={variantMenuOpen}
+              aria-controls={variantMenuOpen ? variantMenuId : undefined}
               className="flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
               title={
                 selectedVariant
@@ -290,14 +439,24 @@ export function InputToolbar({
               minWidth="auto"
               constrainToRef={inputContainerRef}
             >
-              <div ref={variantMenuRef}>
+              <div
+                id={variantMenuId}
+                ref={variantMenuRef}
+                role="menu"
+                aria-label="Variant menu"
+                onKeyDown={event =>
+                  handleMenuKeyDown(event, variantMenuRef.current, () => setVariantMenuOpen(false), variantTriggerRef.current)
+                }
+              >
                 <MenuItem
                   label={t('inputToolbar.default')}
                   icon={<ThinkingIcon />}
                   selected={!selectedVariant}
+                  selectionRole="menuitemradio"
                   onClick={() => {
                     onVariantChange?.(undefined)
                     setVariantMenuOpen(false)
+                    variantTriggerRef.current?.focus()
                   }}
                 />
                 {variants.map(variant => (
@@ -306,9 +465,11 @@ export function InputToolbar({
                     label={variant.charAt(0).toUpperCase() + variant.slice(1)}
                     icon={<ThinkingIcon />}
                     selected={selectedVariant === variant}
+                    selectionRole="menuitemradio"
                     onClick={() => {
                       onVariantChange?.(variant)
                       setVariantMenuOpen(false)
+                      variantTriggerRef.current?.focus()
                     }}
                   />
                 ))}

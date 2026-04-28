@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
+import { waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelInfo } from '../api'
 import { STORAGE_KEY_SELECTED_MODEL } from '../constants'
@@ -157,5 +158,39 @@ describe('useModelSelection', () => {
 
     expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini')
     expect(sessionSelections.get('session-1')).toEqual({ modelKey: 'openai:gpt-4o-mini' })
+  })
+
+  it('does not overwrite the target session storage with the previous session model during restore', () => {
+    sessionSelections.set('session-2', { modelKey: 'openai:gpt-4o-mini' })
+
+    const { rerender } = renderHook(({ sessionId }) => useModelSelection({ models: MODELS, sessionId }), {
+      initialProps: { sessionId: 'session-1' as string | null },
+    })
+
+    rerender({ sessionId: 'session-2' })
+
+    expect(sessionSelections.get('session-2')).toEqual({ modelKey: 'openai:gpt-4o-mini' })
+  })
+
+  it('restores the saved session model on the first mount for an existing session', () => {
+    sessionSelections.set('session-1', { modelKey: 'openai:gpt-4o-mini' })
+
+    const { result } = renderHook(() => useModelSelection({ models: MODELS, sessionId: 'session-1' }))
+
+    expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini')
+  })
+
+  it('restores the saved session model after models load asynchronously', async () => {
+    sessionSelections.set('session-1', { modelKey: 'openai:gpt-4o-mini' })
+
+    const { result, rerender } = renderHook(({ models }) => useModelSelection({ models, sessionId: 'session-1' }), {
+      initialProps: { models: [] as ModelInfo[] },
+    })
+
+    expect(result.current.selectedModelKey).toBeNull()
+
+    rerender({ models: MODELS })
+
+    await waitFor(() => expect(result.current.selectedModelKey).toBe('openai:gpt-4o-mini'))
   })
 })

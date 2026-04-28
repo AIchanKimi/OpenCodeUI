@@ -1,9 +1,20 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DESKTOP_TITLEBAR_HEIGHT } from '../constants'
 import { FullscreenViewer } from './FullscreenViewer'
+
+const { usesCustomDesktopTitlebarMock } = vi.hoisted(() => ({
+  usesCustomDesktopTitlebarMock: vi.fn(() => false),
+}))
+
+vi.mock('../utils/tauri', () => ({
+  usesCustomDesktopTitlebar: usesCustomDesktopTitlebarMock,
+}))
 
 describe('FullscreenViewer', () => {
   beforeEach(() => {
+    usesCustomDesktopTitlebarMock.mockReset()
+    usesCustomDesktopTitlebarMock.mockReturnValue(false)
     vi.useFakeTimers()
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
       return window.setTimeout(() => cb(performance.now()), 0)
@@ -65,5 +76,23 @@ describe('FullscreenViewer', () => {
     expect(screen.getByTestId('content')).toBeInTheDocument()
     // header 不应该存在
     expect(screen.queryByText('closeEsc')).not.toBeInTheDocument()
+  })
+
+  it('starts below the custom desktop titlebar when desktop chrome is enabled', () => {
+    usesCustomDesktopTitlebarMock.mockReturnValue(true)
+
+    render(
+      <FullscreenViewer isOpen={true} onClose={vi.fn()} title="app.ts">
+        <div data-testid="content">hello</div>
+      </FullscreenViewer>,
+    )
+
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    expect(screen.getByRole('dialog')).toHaveStyle({
+      top: `calc(var(--safe-area-inset-top) + ${DESKTOP_TITLEBAR_HEIGHT}px)`,
+    })
   })
 })
