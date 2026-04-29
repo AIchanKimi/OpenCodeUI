@@ -6,7 +6,7 @@ import { createPtySession, removePtySession } from '../api/pty'
 import type { TerminalTab } from '../store/layoutStore'
 import { ResizablePanel } from './ui/ResizablePanel'
 import { logger } from '../utils/logger'
-import { normalizeToForwardSlash, uiErrorHandler } from '../utils'
+import { normalizeToForwardSlash, resolveFilePanelDirectory, uiErrorHandler } from '../utils'
 import { useChatViewport } from '../features/chat/chatViewport'
 
 const SessionChangesPanel = lazy(() =>
@@ -228,6 +228,7 @@ const FilesContent = memo(function FilesContent({
 }: FilesContentProps) {
   const { panelTabs } = useLayoutStore()
   const fileTabs = panelTabs.filter(t => t.position === 'right' && t.type === 'files')
+  const explorerDirectory = resolveFilePanelDirectory(directory)
 
   return (
     <>
@@ -235,7 +236,7 @@ const FilesContent = memo(function FilesContent({
         <div key={tab.id} className={tab.id === activeTab.id ? 'h-full' : 'hidden'}>
           <FileExplorer
             panelTabId={tab.id}
-            directory={directory}
+            directory={explorerDirectory}
             previewFile={tab.previewFile ?? null}
             previewFiles={tab.previewFiles ?? []}
             position="right"

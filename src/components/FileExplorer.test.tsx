@@ -184,6 +184,18 @@ describe('FileExplorer directory download', () => {
     expect(screen.getByLabelText('download README.md')).toBeInTheDocument()
   })
 
+  it('only renders download actions for workspace paths when browsing from unix root', () => {
+    treeMock = [
+      { path: 'workspace', name: 'workspace', type: 'directory', absolute: '/workspace' },
+      { path: 'Users', name: 'Users', type: 'directory', absolute: '/Users' },
+    ]
+
+    render(<FileExplorer panelTabId="files" directory="/" previewFile={null} previewFiles={[]} />)
+
+    expect(screen.getByLabelText('download workspace')).toBeInTheDocument()
+    expect(screen.queryByLabelText('download Users')).not.toBeInTheDocument()
+  })
+
   it('downloads a directory archive without toggling the directory row', async () => {
     downloadDirectoryArchiveMock.mockResolvedValue({
       blob: new Blob(['zip-data'], { type: 'application/zip' }),

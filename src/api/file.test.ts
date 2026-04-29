@@ -4,6 +4,7 @@ import {
   downloadFileAsset,
   getFileContent,
   getFileServiceAvailability,
+  isFileServicePathSupported,
   saveFileContent,
 } from './file'
 
@@ -89,6 +90,29 @@ describe('downloadDirectoryArchive', () => {
       {
         path: 'src',
         directory: '/workspace/project',
+      },
+      {
+        signal: undefined,
+        timeout: 0,
+      },
+    )
+  })
+
+  it('maps unix root workspace paths into the file-service workspace before archive download', async () => {
+    getBinaryMock.mockResolvedValue(
+      new Response('zip-data', {
+        status: 200,
+        headers: { 'Content-Type': 'application/zip' },
+      }),
+    )
+
+    await downloadDirectoryArchive('workspace/demo', '/')
+
+    expect(getBinaryMock).toHaveBeenCalledWith(
+      '/file/archive',
+      {
+        path: 'demo',
+        directory: '/workspace',
       },
       {
         signal: undefined,
@@ -215,6 +239,26 @@ describe('downloadFileAsset', () => {
       },
     )
   })
+
+  it('maps unix root workspace child paths before requesting file download', async () => {
+    getBinaryMock.mockResolvedValue(
+      new Response('hello world', { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }),
+    )
+
+    await downloadFileAsset('workspace/demo/test.txt', '/')
+
+    expect(getBinaryMock).toHaveBeenCalledWith(
+      '/file/download',
+      {
+        path: 'demo/test.txt',
+        directory: '/workspace',
+      },
+      {
+        signal: undefined,
+        timeout: 0,
+      },
+    )
+  })
 })
 
 describe('getFileContent', () => {
@@ -257,6 +301,17 @@ describe('getFileContent', () => {
     })
   })
 
+  it('maps unix root workspace child paths into the file-service workspace', async () => {
+    getMock.mockResolvedValue({ type: 'text', content: 'hello', mimeType: 'text/plain' })
+
+    await getFileContent('workspace/demo/test.txt', '/')
+
+    expect(getMock).toHaveBeenCalledWith('/file/content', {
+      path: 'demo/test.txt',
+      directory: '/workspace',
+    })
+  })
+
   it('preserves non-docker paths and undefined directory values', async () => {
     getMock.mockResolvedValue({ type: 'text', content: 'hello', mimeType: 'text/plain' })
 
@@ -282,6 +337,31 @@ describe('getFileContent', () => {
       path: 'outside.txt',
       directory: '/root',
     })
+  })
+
+  it('falls back to the backend preview route for unsupported unix root paths', async () => {
+    getMock.mockResolvedValue({ type: 'text', content: 'outside root file', mimeType: 'text/plain' })
+
+    await getFileContent('Users/demo/outside.txt', '/')
+
+    expect(getMock).toHaveBeenCalledWith('/backend/file/content', {
+      path: 'Users/demo/outside.txt',
+      directory: '/',
+    })
+  })
+})
+
+describe('isFileServicePathSupported', () => {
+  it('only allows workspace subtree when browsing from unix root', () => {
+    expect(isFileServicePathSupported('workspace', '/')).toBe(true)
+    expect(isFileServicePathSupported('workspace/demo/test.txt', '/')).toBe(true)
+    expect(isFileServicePathSupported('Users/demo/test.txt', '/')).toBe(false)
+    expect(isFileServicePathSupported('Applications', '/')).toBe(false)
+  })
+
+  it('keeps legacy docker root subdirectories outside workspace unsupported', () => {
+    expect(isFileServicePathSupported('outside.txt', '/root/demo')).toBe(false)
+    expect(isFileServicePathSupported('workspace/demo.txt', '/root')).toBe(true)
   })
 })
 

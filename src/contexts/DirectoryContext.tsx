@@ -5,7 +5,14 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { getPath, type ApiPath } from '../api'
 import { useRouter } from '../hooks/useRouter'
-import { handleError, normalizeToForwardSlash, getDirectoryName, isSameDirectory, serverStorage } from '../utils'
+import {
+  handleError,
+  isRootDirectory,
+  normalizeToForwardSlash,
+  getDirectoryName,
+  isSameDirectory,
+  serverStorage,
+} from '../utils'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { serverStore } from '../store/serverStore'
 import { isTauri } from '../utils/tauri'
@@ -73,6 +80,11 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 添加目录
   const addDirectory = useCallback(
     (path: string) => {
+      if (isRootDirectory(path)) {
+        setCurrentDirectory(undefined)
+        return
+      }
+
       let normalized = normalizeToForwardSlash(path)
 
       // normalizeToForwardSlash 会去掉尾斜杠，导致根路径 "/" → "" 和 "C:/" → "C:"

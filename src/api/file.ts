@@ -18,6 +18,7 @@ const fileServiceAvailabilityCache = new Map<string, { available: boolean; expir
 const fileServiceAvailabilityInflight = new Map<string, Promise<boolean>>()
 const LEGACY_DOCKER_WORKSPACE_PREFIX = '/root/workspace'
 const LEGACY_DOCKER_ROOT_PREFIX = '/root'
+const UNIX_ROOT_PREFIX = '/'
 const FILE_SERVICE_WORKSPACE_PREFIX = '/workspace'
 
 interface FileServiceRequestTarget {
@@ -64,6 +65,14 @@ function stripWorkspacePrefix(path: string): string {
   return path
 }
 
+function isFileServiceRootBrowseDirectory(directory: string): boolean {
+  return (
+    directory === UNIX_ROOT_PREFIX ||
+    directory === LEGACY_DOCKER_ROOT_PREFIX ||
+    directory.startsWith(`${LEGACY_DOCKER_ROOT_PREFIX}/`)
+  )
+}
+
 function resolveFileServiceRequestTarget(path: string, directory?: string): FileServiceRequestTarget {
   const normalizedDirectory = normalizeDirectoryForFileService(directory)
 
@@ -71,10 +80,7 @@ function resolveFileServiceRequestTarget(path: string, directory?: string): File
     return { directory: normalizedDirectory, path, supported: true }
   }
 
-  if (
-    normalizedDirectory === LEGACY_DOCKER_ROOT_PREFIX ||
-    normalizedDirectory.startsWith(`${LEGACY_DOCKER_ROOT_PREFIX}/`)
-  ) {
+  if (isFileServiceRootBrowseDirectory(normalizedDirectory)) {
     if (path === 'workspace' || path.startsWith('workspace/')) {
       return {
         directory: FILE_SERVICE_WORKSPACE_PREFIX,

@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProjectDialog } from './ProjectDialog'
 import { getPath, listDirectory } from '../../api'
+import { notificationStore } from '../../store'
 
 vi.mock('../../components/ui/Dialog', () => ({
   Dialog: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
@@ -14,6 +15,12 @@ vi.mock('../../api', () => ({
     { name: 'src', type: 'directory', absolute: '/workspace/project/src' },
     { name: 'docs', type: 'directory', absolute: '/workspace/project/docs' },
   ]),
+}))
+
+vi.mock('../../store', () => ({
+  notificationStore: {
+    push: vi.fn(),
+  },
 }))
 
 describe('ProjectDialog', () => {
@@ -42,5 +49,43 @@ describe('ProjectDialog', () => {
     await waitFor(() => expect(vi.mocked(getPath).mock.calls.length).toBeGreaterThanOrEqual(2))
     await waitFor(() => expect(vi.mocked(listDirectory).mock.calls.length).toBeGreaterThanOrEqual(2))
     expect(await screen.findByText('src')).toBeInTheDocument()
+  })
+
+  it('does not allow adding unix root as a project', async () => {
+    const onSelect = vi.fn()
+
+    render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={onSelect} initialPath="/" />)
+
+    expect(await screen.findByDisplayValue('/')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Add current'))
+
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(notificationStore.push).toHaveBeenCalledWith(
+      'error',
+      'Add current',
+      'Root directory is already available in Global mode',
+      'project-dialog',
+      undefined,
+    )
+  })
+
+  it('does not allow adding windows root as a project', async () => {
+    const onSelect = vi.fn()
+
+    render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={onSelect} initialPath="C:/" />)
+
+    expect(await screen.findByDisplayValue('C:/')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Add current'))
+
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(notificationStore.push).toHaveBeenCalledWith(
+      'error',
+      'Add current',
+      'Root directory is already available in Global mode',
+      'project-dialog',
+      undefined,
+    )
   })
 })

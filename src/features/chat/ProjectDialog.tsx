@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderIcon, ArrowUpIcon, SpinnerIcon, PlusIcon } from '../../components/Icons'
 import { listDirectory, getPath } from '../../api'
-import { fileErrorHandler } from '../../utils'
+import { fileErrorHandler, isRootDirectory } from '../../utils'
 import { Dialog } from '../../components/ui/Dialog'
+import { notificationStore } from '../../store'
 
 // ============================================
 // Types
@@ -82,6 +83,18 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
     const lower = filterText.toLowerCase()
     return items.filter(item => item.name.toLowerCase().startsWith(lower))
   }, [items, filterText])
+
+  const notifyRootPathUnavailable = useCallback(() => {
+    notificationStore.push(
+      'error',
+      t('projectDialog.addCurrent'),
+      t('projectDialog.rootAlreadyAvailableInGlobal', {
+        defaultValue: 'Root directory is already available in Global mode',
+      }),
+      'project-dialog',
+      undefined,
+    )
+  }, [t])
 
   // ==========================================
   // Initialize
@@ -233,11 +246,15 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
     if (path.endsWith(PATH_SEP) && path !== PATH_SEP && !/^[a-zA-Z]:\/$/.test(path)) {
       path = path.slice(0, -1)
     }
+    if (isRootDirectory(path)) {
+      notifyRootPathUnavailable()
+      return
+    }
     // 只阻止空路径和 "."
     if (!path || path === '.') return
     onSelect(path)
     onClose()
-  }, [inputValue, onSelect, onClose])
+  }, [inputValue, notifyRootPathUnavailable, onClose, onSelect])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -272,15 +289,21 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '' }: P
           e.preventDefault()
           if (filteredItems.length > 0) {
             const selectedPath = filteredItems[selectedIndex].path
-            if (selectedPath) {
+            if (selectedPath && !isRootDirectory(selectedPath)) {
               onSelect(selectedPath)
               onClose()
+            } else if (selectedPath) {
+              notifyRootPathUnavailable()
             }
           } else {
             // 去掉尾斜杠，但保留根路径（/ 或 C:/）
             let path = inputValue
             if (path.endsWith(PATH_SEP) && path !== PATH_SEP && !/^[a-zA-Z]:\/$/.test(path)) {
               path = path.slice(0, -1)
+            }
+            if (isRootDirectory(path)) {
+              notifyRootPathUnavailable()
+              return
             }
             if (path && path !== '.') {
               onSelect(path)

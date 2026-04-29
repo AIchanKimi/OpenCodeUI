@@ -7,7 +7,7 @@ import { createPtySession, removePtySession, listPtySessions } from '../api/pty'
 import { useMessageStore } from '../store'
 import { ResizablePanel } from './ui/ResizablePanel'
 import { logger } from '../utils/logger'
-import { normalizeToForwardSlash, uiErrorHandler } from '../utils'
+import { normalizeToForwardSlash, resolveFilePanelDirectory, uiErrorHandler } from '../utils'
 import { useChatViewport } from '../features/chat/chatViewport'
 
 const Terminal = lazy(() => import('./Terminal').then(module => ({ default: module.Terminal })))
@@ -41,6 +41,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
 
   const [isRestoring, setIsRestoring] = useState(false)
   const normalizedDirectory = directory ? normalizeToForwardSlash(directory) : undefined
+  const terminalCwd = resolveFilePanelDirectory(directory)
 
   useEffect(() => {
     layoutStore.setCurrentTerminalDirectory(normalizedDirectory)
@@ -101,8 +102,8 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
   // 创建新终端
   const handleNewTerminal = useCallback(async () => {
     try {
-      logger.log('[BottomPanel] Creating PTY session, directory:', normalizedDirectory)
-      const pty = await createPtySession({ cwd: normalizedDirectory }, normalizedDirectory)
+      logger.log('[BottomPanel] Creating PTY session, directory:', normalizedDirectory, 'cwd:', terminalCwd)
+      const pty = await createPtySession({ cwd: terminalCwd }, normalizedDirectory)
       logger.log('[BottomPanel] PTY created:', pty)
       const tab: TerminalTab = {
         id: pty.id,
@@ -113,7 +114,7 @@ export const BottomPanel = memo(function BottomPanel({ directory }: BottomPanelP
     } catch (error) {
       uiErrorHandler('create terminal', error)
     }
-  }, [normalizedDirectory])
+  }, [normalizedDirectory, terminalCwd])
 
   // 关闭终端
   const handleCloseTerminal = useCallback(
@@ -282,6 +283,7 @@ const FilesContent = memo(function FilesContent({
 }: FilesContentProps) {
   const { panelTabs } = useLayoutStore()
   const fileTabs = panelTabs.filter(t => t.position === 'bottom' && t.type === 'files')
+  const explorerDirectory = resolveFilePanelDirectory(directory)
 
   return (
     <>
@@ -289,7 +291,7 @@ const FilesContent = memo(function FilesContent({
         <div key={tab.id} className={tab.id === activeTab.id ? 'h-full' : 'hidden'}>
           <FileExplorer
             panelTabId={tab.id}
-            directory={directory}
+            directory={explorerDirectory}
             previewFile={tab.previewFile ?? null}
             previewFiles={tab.previewFiles ?? []}
             position="bottom"

@@ -225,6 +225,26 @@ export function normalizeToForwardSlash(dir: string | undefined | null): string 
 }
 
 /**
+ * 判断路径是否为 Unix/Windows 根目录。
+ */
+export function isRootDirectory(dir: string | undefined | null): boolean {
+  if (!dir) return false
+
+  const normalized = dir.replace(/\\/g, '/').replace(/\/+$/, '/')
+  return normalized === '/' || /^[a-zA-Z]:\/$/.test(normalized)
+}
+
+/**
+ * 文件面板在全局模式下回落到根目录，避免 FileExplorer 因 undefined 显示空状态。
+ */
+export function resolveFilePanelDirectory(dir: string | undefined | null): string {
+  if (isRootDirectory(dir)) return dir!.replace(/\\/g, '/').replace(/\/+$/, '/')
+
+  const normalized = normalizeToForwardSlash(dir)
+  return normalized || '/'
+}
+
+/**
  * 规范化目录路径用于比较
  * - 统一使用正斜杠
  * - 移除末尾斜杠
