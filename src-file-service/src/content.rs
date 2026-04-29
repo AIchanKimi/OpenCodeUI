@@ -77,7 +77,12 @@ pub async fn get_file_content(
         }
     };
     if metadata.len() > state.config().max_read_bytes() {
-        return AppError::FileTooLarge.into_response();
+        return AppError::FileTooLarge {
+            path: query.path.clone(),
+            size_bytes: metadata.len(),
+            max_read_bytes: state.config().max_read_bytes(),
+        }
+        .into_response();
     }
 
     if should_read_as_text(&mime_type) {
@@ -157,7 +162,10 @@ pub async fn put_file_content(
         };
 
         if expected_content != current_content {
-            return AppError::Conflict.into_response();
+            return AppError::Conflict {
+                path: query.path.clone(),
+            }
+            .into_response();
         }
     }
 

@@ -66,6 +66,16 @@ impl Config {
         }
     }
 
+    #[cfg(test)]
+    pub fn set_max_read_bytes_for_test(&mut self, max_read_bytes: u64) {
+        self.max_read_bytes = max_read_bytes;
+    }
+
+    #[cfg(test)]
+    pub fn set_password_for_test(&mut self, password: String) {
+        self.password = password;
+    }
+
     pub fn base_path(&self) -> &PathBuf {
         &self.base_path
     }

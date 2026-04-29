@@ -78,7 +78,12 @@ pub async fn download_archive(
 
     let permit = match state.archive_slots().clone().try_acquire_owned() {
         Ok(permit) => permit,
-        Err(_) => return AppError::TooManyConcurrentArchives.into_response(),
+        Err(_) => {
+            return AppError::TooManyConcurrentArchives {
+                max_concurrent_archives: state.config().max_concurrent_archives(),
+            }
+            .into_response();
+        }
     };
 
     let target_path = match resolve_directory_path(
@@ -137,7 +142,12 @@ pub async fn download_archive(
             metadata.len(),
             state.config().max_archive_bytes()
         );
-        return AppError::ArchiveTooLarge.into_response();
+        return AppError::ArchiveTooLarge {
+            path: query.path.clone(),
+            size_bytes: metadata.len(),
+            max_archive_bytes: state.config().max_archive_bytes(),
+        }
+        .into_response();
     }
 
     let body = stream_archive_file(
