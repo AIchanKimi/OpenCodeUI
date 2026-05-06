@@ -93,8 +93,8 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
                 onDragEnd={handleDragEnd}
                 className={
                   isActive
-                    ? `tab-active relative z-10 flex h-full ${tabWidthClassName} shrink-0 items-center gap-1 bg-bg-100 text-text-100`
-                    : `relative flex h-full ${tabWidthClassName} shrink-0 items-center gap-1 overflow-hidden bg-transparent text-text-400 mx-px hover:bg-bg-100/60 hover:text-text-200 ${isDragOver ? 'bg-accent-main-100/8' : ''}`
+                    ? `tab-active relative z-10 mx-px flex h-full ${tabWidthClassName} shrink-0 items-center gap-1 bg-bg-100 text-text-100`
+                    : `relative mx-px flex h-[24px] ${tabWidthClassName} shrink-0 items-center gap-1 overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400 hover:bg-bg-200/50 hover:text-text-100 transition-colors ${isDragOver ? 'bg-accent-main-100/8' : ''}`
                 }
                 title={item.title}
               >

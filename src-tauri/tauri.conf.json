@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "OpenCode",
-  "version": "0.5.17",
+  "version": "0.6.4",
   "identifier": "com.opencodeui.app",
   "build": {
     "frontendDist": "../dist",
@@ -22,7 +22,7 @@
         "hiddenTitle": true,
         "trafficLightPosition": {
           "x": 12,
-          "y": 18
+          "y": 16
         },
         "resizable": true,
         "fullscreen": false,

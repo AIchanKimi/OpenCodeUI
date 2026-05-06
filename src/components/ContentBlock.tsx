@@ -7,12 +7,12 @@
  * - Loading 状态 -> Skeleton
  */
 
-import { memo, useState, useMemo, useEffect, useRef } from 'react'
+import { memo, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
 import { CopyButton } from './ui'
-import { DiffViewer, type ViewMode } from './DiffViewer'
+import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { CodePreview } from './CodePreview'
 import { detectLanguage } from '../utils/languageUtils'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
@@ -26,6 +26,10 @@ import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
 export interface ContentBlockProps {
   /** 标签 */
   label: string
+  /** 标签前的图标 */
+  labelIcon?: ReactNode
+  /** 隐藏标签文本，仅保留图标 / 文件名 */
+  hideLabel?: boolean
   /** 文件路径 */
   filePath?: string
   /** 语言 */
@@ -64,6 +68,8 @@ export interface ContentBlockProps {
 
 export const ContentBlock = memo(function ContentBlock({
   label,
+  labelIcon,
+  hideLabel = false,
   filePath,
   language,
   variant = 'default',
@@ -130,6 +136,7 @@ export const ContentBlock = memo(function ContentBlock({
     if (typeof diff === 'object') return diff
     return extractContentFromUnifiedDiff(diff)
   }, [diff])
+  const diffViewerData = useDiffViewerData(resolvedDiff?.before ?? '', resolvedDiff?.after ?? '', lang, false, isDiff)
 
   // 自动响应式切换 diff view mode
   useEffect(() => {
@@ -185,14 +192,23 @@ export const ContentBlock = memo(function ContentBlock({
               {collapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}
             </span>
           )}
-          <span
-            className={`font-medium font-mono leading-none whitespace-nowrap ${
-              isError ? 'text-danger-100' : 'text-text-300'
-            }`}
-          >
-            {label}
-          </span>
-          {fileName && <span className="text-text-500 truncate font-mono min-w-0 flex-1 ml-0.5">{fileName}</span>}
+          {labelIcon && <span className="flex h-4 w-4 shrink-0 items-center justify-center">{labelIcon}</span>}
+          {!hideLabel && (
+            <span
+              className={`font-medium font-mono leading-4 whitespace-nowrap ${
+                isError ? 'text-danger-100' : 'text-text-300'
+              }`}
+            >
+              {label}
+            </span>
+          )}
+          {fileName && (
+            <span
+              className={`text-text-500 truncate font-mono leading-4 min-w-0 flex-1 ${hideLabel ? '' : 'ml-0.5'}`}
+            >
+              {fileName}
+            </span>
+          )}
 
           {/* Loading spinner */}
           {isLoading && (
@@ -262,6 +278,7 @@ export const ContentBlock = memo(function ContentBlock({
                   language={lang}
                   viewMode={diffViewMode}
                   maxHeight={maxHeight}
+                  data={diffViewerData}
                 />
               ) : content?.trim() ? (
                 <CodePreview code={content} language={lang} maxHeight={maxHeight} />
@@ -286,12 +303,14 @@ export const ContentBlock = memo(function ContentBlock({
             )
           }
           headerRight={<ViewModeSwitch viewMode={fullscreenDiffViewMode} onChange={setFullscreenDiffViewMode} />}
+          deferContent
         >
           <DiffViewer
             before={resolvedDiff.before}
             after={resolvedDiff.after}
             language={lang}
             viewMode={fullscreenDiffViewMode}
+            data={diffViewerData}
           />
         </FullscreenViewer>
       ) : content?.trim() ? (

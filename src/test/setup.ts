@@ -38,6 +38,34 @@ if (typeof HTMLElement !== 'undefined' && typeof HTMLElement.prototype.scrollInt
   HTMLElement.prototype.scrollIntoView = () => {}
 }
 
+if (typeof Range !== 'undefined') {
+  const emptyClientRects = () => ({
+    length: 0,
+    item: () => null,
+    [Symbol.iterator]: function* () {},
+  })
+
+  const emptyRect = () => ({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    toJSON: () => ({}),
+  })
+
+  if (typeof Range.prototype.getClientRects !== 'function') {
+    Range.prototype.getClientRects = emptyClientRects as Range['getClientRects']
+  }
+
+  if (typeof Range.prototype.getBoundingClientRect !== 'function') {
+    Range.prototype.getBoundingClientRect = emptyRect as Range['getBoundingClientRect']
+  }
+}
+
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

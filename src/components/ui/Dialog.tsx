@@ -164,8 +164,8 @@ export function Dialog({
     [allowTouchBackdropClose],
   )
   const handleBackdropClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget && mouseDownOnBackdrop.current) {
+    (_e: React.MouseEvent) => {
+      if (mouseDownOnBackdrop.current) {
         requestClose()
       }
       mouseDownOnBackdrop.current = false
@@ -290,76 +290,90 @@ export function Dialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0 transition-all duration-200 ease-out"
+      className="fixed inset-0 z-[300]"
       style={{
-        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.15)' : 'hsl(var(--always-black) / 0)',
+        backgroundColor: isVisible ? 'hsl(var(--always-black) / 0.2)' : 'hsl(var(--always-black) / 0)',
+        transition: 'background-color 150ms ease-out',
       }}
       onPointerDown={handleBackdropPointerDown}
       onClick={handleBackdropClick}
     >
-      {/* Dialog Panel */}
       <div
-        ref={dialogRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`
-          relative glass border border-border-200/60 rounded-xl shadow-lg 
-          flex flex-col overflow-hidden
-          ${isDraggingActive ? '' : 'transition-all duration-200 ease-out'}
-          ${className}
-        `}
-        style={{
-          width: typeof width === 'number' ? `${width}px` : width,
-          maxWidth: '100%',
-          opacity: isVisible ? (dragY > 0 ? Math.max(0.3, 1 - dragY / 300) : 1) : 0,
-          transform: isVisible ? `scale(1) translateY(${dragY}px)` : 'scale(0.95) translateY(8px)',
+        className="absolute inset-x-0 bottom-0 top-[var(--desktop-titlebar-height,0px)] flex items-center justify-center p-4"
+        onPointerDown={e => {
+          handleBackdropPointerDown(e)
+          e.stopPropagation()
         }}
-        role="dialog"
-        aria-modal="true"
-        data-dialog-open={isOpen || undefined}
-        aria-labelledby={!rawContent && title ? titleId : undefined}
-        aria-label={rawContent ? ariaLabel || (typeof title === 'string' && title ? title : undefined) : ariaLabel}
-        tabIndex={-1}
-        onClick={e => e.stopPropagation()}
+        onClick={e => {
+          handleBackdropClick(e)
+          e.stopPropagation()
+        }}
       >
-        {/* Drag Handle (mobile) - 触摸下滑关闭的唯一触发区域 */}
+        {/* Dialog Panel */}
         <div
-          ref={dragHandleRef}
-          className="md:hidden flex justify-center pt-3 pb-2 shrink-0 cursor-grab active:cursor-grabbing"
+          ref={dialogRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className={`
+            relative glass border border-border-200/60 rounded-xl shadow-lg 
+            flex flex-col overflow-hidden
+            ${isDraggingActive ? '' : 'transition-all duration-200 ease-out'}
+            ${className}
+          `}
+          style={{
+            width: typeof width === 'number' ? `${width}px` : width,
+            maxWidth: '100%',
+            maxHeight: '100%',
+            opacity: isVisible ? (dragY > 0 ? Math.max(0.3, 1 - dragY / 300) : 1) : 0,
+            transform: isVisible ? `scale(1) translateY(${dragY}px)` : 'scale(0.95) translateY(8px)',
+          }}
+          role="dialog"
+          aria-modal="true"
+          data-dialog-open={isOpen || undefined}
+          aria-labelledby={!rawContent && title ? titleId : undefined}
+          aria-label={rawContent ? ariaLabel || (typeof title === 'string' && title ? title : undefined) : ariaLabel}
+          tabIndex={-1}
+          onClick={e => e.stopPropagation()}
         >
-          <div className="w-10 h-1 rounded-full bg-bg-300" />
-        </div>
+          {/* Drag Handle (mobile) - 触摸下滑关闭的唯一触发区域 */}
+          <div
+            ref={dragHandleRef}
+            className="md:hidden flex justify-center pt-3 pb-2 shrink-0 cursor-grab active:cursor-grabbing"
+          >
+            <div className="w-10 h-1 rounded-full bg-bg-300" />
+          </div>
 
-        {rawContent ? (
-          /* rawContent 模式：children 完全控制内容布局 */
-          children
-        ) : (
-          <>
-            {/* Header */}
-            {(title || showCloseButton) && (
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border-100/50">
-                <div id={title ? titleId : undefined} className="text-[length:var(--fs-heading-2)] font-semibold text-text-100">
-                  {title}
+          {rawContent ? (
+            /* rawContent 模式：children 完全控制内容布局 */
+            children
+          ) : (
+            <>
+              {/* Header */}
+              {(title || showCloseButton) && (
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border-100/50">
+                  <div id={title ? titleId : undefined} className="text-[length:var(--fs-heading-2)] font-semibold text-text-100">
+                    {title}
+                  </div>
+                  {showCloseButton && (
+                    <button
+                      type="button"
+                      onClick={requestClose}
+                      aria-label={t('common:close')}
+                      className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
+                      title={t('common:close')}
+                    >
+                      <CloseIcon size={18} />
+                    </button>
+                  )}
                 </div>
-                {showCloseButton && (
-                  <button
-                    type="button"
-                    onClick={requestClose}
-                    aria-label={t('common:close')}
-                    className="p-2 text-text-400 hover:text-text-200 hover:bg-bg-100 rounded-md transition-colors"
-                    title={t('common:close')}
-                  >
-                    <CloseIcon size={18} />
-                  </button>
-                )}
-              </div>
-            )}
+              )}
 
-            {/* Content */}
-            <div className="p-5 overflow-y-auto custom-scrollbar max-h-[80vh]">{children}</div>
-          </>
-        )}
+              {/* Content */}
+              <div className="p-5 overflow-y-auto custom-scrollbar max-h-[80vh]">{children}</div>
+            </>
+          )}
+        </div>
       </div>
     </div>,
     document.body,

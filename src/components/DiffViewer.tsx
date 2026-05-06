@@ -9,13 +9,14 @@
  * 不再按文件大小、行数、字符数降级高亮或 diff
  */
 
-import { memo, useMemo, useRef, useState, useEffect, useCallback, useSyncExternalStore } from 'react'
+import { memo, useMemo, useRef, useState, useEffect, useCallback, useSyncExternalStore, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines, diffWords } from 'diff'
 import { useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 import { useDynamicVirtualScroll } from '../hooks/useDynamicVirtualScroll'
 import { themeStore } from '../store/themeStore'
 import type { DiffStyle } from '../store/themeStore'
+import { getLineCount, getLineNumberColumnWidth } from '../utils/lineNumberUtils'
 
 // ============================================
 // 常量
@@ -42,6 +43,15 @@ export interface DiffViewerProps {
   maxHeight?: number
   isResizing?: boolean
   wordWrap?: boolean
+  data?: DiffViewerData
+}
+
+export interface DiffViewerData {
+  beforeTokens: HighlightTokens | null
+  afterTokens: HighlightTokens | null
+  pairedLines: PairedLine[]
+  unifiedLines: UnifiedLine[]
+  lineNumberWidth: number
 }
 
 export type LineType = 'add' | 'delete' | 'context' | 'empty'
@@ -72,6 +82,9 @@ interface CollapsedPairedLine {
   count: number
   /** 在原始 lines 数组中的起始索引，用于展开 */
   id: number
+  isFirst: boolean
+  isLast: boolean
+  chunked: boolean
 }
 
 type PairedLineOrCollapsed = PairedLine | CollapsedPairedLine
@@ -85,6 +98,9 @@ interface CollapsedUnifiedLine {
   collapsed: true
   count: number
   id: number
+  isFirst: boolean
+  isLast: boolean
+  chunked: boolean
 }
 
 type UnifiedLineOrCollapsed = UnifiedLine | CollapsedUnifiedLine
@@ -95,11 +111,27 @@ function isCollapsed(
   return 'collapsed' in line && line.collapsed === true
 }
 
+function expandRegion(prev: Map<number, ExpansionRegion>, id: number, direction: ExpandDirection): Map<number, ExpansionRegion> {
+  const next = new Map(prev)
+  const current = next.get(id) ?? { fromStart: 0, fromEnd: 0 }
+  next.set(id, {
+    fromStart: current.fromStart + (direction === 'up' || direction === 'both' ? EXPANSION_LINE_COUNT : 0),
+    fromEnd: current.fromEnd + (direction === 'down' || direction === 'both' ? EXPANSION_LINE_COUNT : 0),
+  })
+  return next
+}
+
 /** 上下文行保留数：变更前后各保留 CONTEXT_LINES 行 */
 const CONTEXT_LINES = 3
+const EXPANSION_LINE_COUNT = 100
+type ExpandDirection = 'up' | 'down' | 'both'
+interface ExpansionRegion {
+  fromStart: number
+  fromEnd: number
+}
 
 /** 将连续 context 行折叠，只保留变更前后各 CONTEXT_LINES 行 */
-function collapseContextPaired(lines: PairedLine[], expandedIds?: ReadonlySet<number>): PairedLineOrCollapsed[] {
+function collapseContextPaired(lines: PairedLine[], expandedRegions?: ReadonlyMap<number, ExpansionRegion>): PairedLineOrCollapsed[] {
   if (lines.length === 0) return []
 
   const result: PairedLineOrCollapsed[] = []
@@ -114,10 +146,28 @@ function collapseContextPaired(lines: PairedLine[], expandedIds?: ReadonlySet<nu
       if (contextStart !== -1) {
         const ctxLen = i - contextStart
         const minToCollapse = CONTEXT_LINES * 2 + 2
-        if (ctxLen > minToCollapse && !expandedIds?.has(contextStart)) {
-          for (let j = contextStart; j < contextStart + CONTEXT_LINES; j++) result.push(lines[j])
-          result.push({ collapsed: true, count: ctxLen - CONTEXT_LINES * 2, id: contextStart })
-          for (let j = i - CONTEXT_LINES; j < i; j++) result.push(lines[j])
+        if (ctxLen > minToCollapse) {
+          const isFirst = contextStart === 0
+          const isLast = i === lines.length
+          const keepBefore = isFirst ? 0 : CONTEXT_LINES
+          const keepAfter = isLast ? 0 : CONTEXT_LINES
+          const expanded = expandedRegions?.get(contextStart) ?? { fromStart: 0, fromEnd: 0 }
+          const prefixCount = Math.min(ctxLen, keepBefore + expanded.fromStart)
+          const suffixStart = Math.max(prefixCount, ctxLen - keepAfter - expanded.fromEnd)
+
+          for (let j = contextStart; j < contextStart + prefixCount; j++) result.push(lines[j])
+          if (suffixStart > prefixCount) {
+            const count = suffixStart - prefixCount
+            result.push({
+              collapsed: true,
+              count,
+              id: contextStart,
+              isFirst,
+              isLast,
+              chunked: count > EXPANSION_LINE_COUNT,
+            })
+          }
+          for (let j = contextStart + suffixStart; j < i; j++) result.push(lines[j])
         } else {
           for (let j = contextStart; j < i; j++) result.push(lines[j])
         }
@@ -130,7 +180,7 @@ function collapseContextPaired(lines: PairedLine[], expandedIds?: ReadonlySet<nu
   return result
 }
 
-function collapseContextUnified(lines: UnifiedLine[], expandedIds?: ReadonlySet<number>): UnifiedLineOrCollapsed[] {
+function collapseContextUnified(lines: UnifiedLine[], expandedRegions?: ReadonlyMap<number, ExpansionRegion>): UnifiedLineOrCollapsed[] {
   if (lines.length === 0) return []
 
   const result: UnifiedLineOrCollapsed[] = []
@@ -145,10 +195,28 @@ function collapseContextUnified(lines: UnifiedLine[], expandedIds?: ReadonlySet<
       if (contextStart !== -1) {
         const ctxLen = i - contextStart
         const minToCollapse = CONTEXT_LINES * 2 + 2
-        if (ctxLen > minToCollapse && !expandedIds?.has(contextStart)) {
-          for (let j = contextStart; j < contextStart + CONTEXT_LINES; j++) result.push(lines[j])
-          result.push({ collapsed: true, count: ctxLen - CONTEXT_LINES * 2, id: contextStart })
-          for (let j = i - CONTEXT_LINES; j < i; j++) result.push(lines[j])
+        if (ctxLen > minToCollapse) {
+          const isFirst = contextStart === 0
+          const isLast = i === lines.length
+          const keepBefore = isFirst ? 0 : CONTEXT_LINES
+          const keepAfter = isLast ? 0 : CONTEXT_LINES
+          const expanded = expandedRegions?.get(contextStart) ?? { fromStart: 0, fromEnd: 0 }
+          const prefixCount = Math.min(ctxLen, keepBefore + expanded.fromStart)
+          const suffixStart = Math.max(prefixCount, ctxLen - keepAfter - expanded.fromEnd)
+
+          for (let j = contextStart; j < contextStart + prefixCount; j++) result.push(lines[j])
+          if (suffixStart > prefixCount) {
+            const count = suffixStart - prefixCount
+            result.push({
+              collapsed: true,
+              count,
+              id: contextStart,
+              isFirst,
+              isLast,
+              chunked: count > EXPANSION_LINE_COUNT,
+            })
+          }
+          for (let j = contextStart + suffixStart; j < i; j++) result.push(lines[j])
         } else {
           for (let j = contextStart; j < i; j++) result.push(lines[j])
         }
@@ -191,45 +259,234 @@ function getGutterBgClass(type: LineType): string {
   }
 }
 
+function getContentBgClass(type: LineType): string {
+  if (type === 'empty') return 'diff-empty-content-buffer'
+  return getLineBgClass(type)
+}
+
+function getEmptyBufferBackgroundStyle(yOffset: number, xOffset = 0): CSSProperties {
+  return { backgroundPosition: `${5 + xOffset}px ${-yOffset}px` }
+}
+
+function getEmptyBufferRowStyle(height: number, yOffset = 0, xOffset = 0): CSSProperties {
+  return { height, ...getEmptyBufferBackgroundStyle(yOffset, xOffset) }
+}
+
+function estimateWrappedVisualLineCount(content: string, availableWidth: number): number {
+  if (!content) return 1
+  if (availableWidth <= 0) return 1
+
+  const charWidth = 8
+  const charsPerLine = Math.max(1, Math.floor(availableWidth / charWidth))
+  let visualLines = 0
+
+  for (const segment of content.split('\n')) {
+    visualLines += Math.max(1, Math.ceil(segment.length / charsPerLine))
+  }
+
+  return visualLines
+}
+
+function getWrappedPairContent(pair: PairedLine): string {
+  return pair.left.content.length >= pair.right.content.length ? pair.left.content : pair.right.content
+}
+
+function useDiffLineNumberWidth(before: string, after: string): number {
+  return useMemo(
+    () => getLineNumberColumnWidth(Math.max(getLineCount(before), getLineCount(after))),
+    [before, after],
+  )
+}
+
+function LineNumberCell({ lineNo, width, type }: { lineNo?: number; width: number; type?: LineType }) {
+  const toneClass = type === 'add' || type === 'delete' ? 'text-text-300' : 'text-text-400'
+  return (
+    <div
+      className={`shrink-0 pl-4 pr-3 text-right text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none ${toneClass}`}
+      style={{ width }}
+    >
+      {lineNo}
+    </div>
+  )
+}
+
+function DiffMarkerCell({ type }: { type: LineType }) {
+  return (
+    <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
+      {type === 'add' && <span className="text-success-100">+</span>}
+      {type === 'delete' && <span className="text-danger-100">−</span>}
+    </div>
+  )
+}
+
+function EmptyContentBuffer({ height, yOffset = 0, xOffset = 0 }: { height: number; yOffset?: number; xOffset?: number }) {
+  return <div className="diff-empty-content-buffer min-w-full" style={getEmptyBufferRowStyle(height, yOffset, xOffset)} />
+}
+
 /** Change bar 样式 — 行号左侧的 3px 竖条，add 实心 / delete 虚线 */
-function getChangeBarProps(type: LineType): { className: string; style?: React.CSSProperties } {
+function getChangeBarProps(type: LineType, yOffset = 0): { className: string; style?: React.CSSProperties } {
   switch (type) {
     case 'add':
-      return { className: 'w-[3px] shrink-0 bg-success-100' }
+      return { className: 'w-1 shrink-0 bg-success-100' }
     case 'delete':
       return {
-        className: 'w-[3px] shrink-0',
-        style: {
-          background:
-            'repeating-linear-gradient(to bottom, var(--color-danger-100) 0px, var(--color-danger-100) 2px, transparent 2px, transparent 4px)',
-        },
+        className: 'diff-change-bar-delete w-1 shrink-0',
+        style: { backgroundPositionY: `${-yOffset}px` },
       }
     default:
-      return { className: 'w-[3px] shrink-0' }
+      return { className: 'w-1 shrink-0' }
   }
 }
 
-/** 折叠占位条 — "N lines unchanged"，点击可展开 */
-function CollapsedBar({
+function alignDeleteChangeBars(container: HTMLElement, yOffset: number) {
+  for (const bar of container.querySelectorAll<HTMLElement>('.diff-change-bar-delete')) {
+    bar.style.backgroundPositionY = `${-yOffset}px`
+  }
+}
+
+/** Pierre-like 折叠按钮，放在 gutter 区域 */
+function ExpandIcon({ type }: { type: ExpandDirection }) {
+  if (type === 'both') {
+    return (
+      <svg aria-hidden="true" data-icon="" className="diff-separator-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M11.47 9.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06L8 12.94zM7.526 1.418a.75.75 0 0 1 1.004.052l4 4a.75.75 0 1 1-1.06 1.06L8 3.06 4.53 6.53a.75.75 0 1 1-1.06-1.06l4-4z" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg
+      aria-hidden="true"
+      data-icon=""
+      className="diff-separator-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+    >
+      <path d="M3.47 5.47a.75.75 0 0 1 1.06 0L8 8.94l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
+    </svg>
+  )
+}
+
+function getSeparatorDirections({ isFirst, isLast, chunked }: { isFirst?: boolean; isLast?: boolean; chunked?: boolean }): ExpandDirection[] {
+  if (!chunked) return [!isFirst && !isLast ? 'both' : isFirst ? 'down' : 'up']
+  const directions: ExpandDirection[] = []
+  if (!isFirst) directions.push('up')
+  if (!isLast) directions.push('down')
+  return directions
+}
+
+function CollapsedExpandButton({
+  directions,
+  onExpand,
+  width,
+}: {
+  directions: ExpandDirection[]
+  onExpand?: (direction: ExpandDirection) => void
+  width?: number
+}) {
+  const buttonWidth = width !== undefined && directions.length > 0 ? width / directions.length : undefined
+
+  return (
+    <div data-separator-wrapper="" className="diff-separator-button-group" style={width !== undefined ? { width, flexBasis: width } : undefined}>
+      {directions.map(direction => (
+        <button
+          key={direction}
+          type="button"
+          data-compact=""
+          data-expand-button=""
+          data-expand-up={direction === 'up' ? '' : undefined}
+          data-expand-down={direction === 'down' ? '' : undefined}
+          data-expand-both={direction === 'both' ? '' : undefined}
+          className="diff-separator-button"
+          style={buttonWidth !== undefined ? { width: buttonWidth, minWidth: 0, flexBasis: buttonWidth } : undefined}
+          title={direction === 'up' ? 'Expand upward' : direction === 'down' ? 'Expand downward' : 'Expand hidden lines'}
+          onClick={() => onExpand?.(direction)}
+        >
+          <ExpandIcon type={direction} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** 折叠文案区，放在 content 区域 */
+function CollapsedLabel({
   count,
   t,
+  leadingDirections = [],
   onExpand,
   height = 24,
 }: {
   count: number
   t: (key: string, opts?: Record<string, unknown>) => string
-  onExpand?: () => void
+  leadingDirections?: ExpandDirection[]
+  onExpand?: (direction: ExpandDirection) => void
   height?: number
 }) {
   return (
-    <div
-      className="box-border flex items-center justify-center text-[length:var(--fs-code)] text-text-500 select-none bg-bg-200/40 border-y border-border-100/30 cursor-pointer hover:bg-bg-200/60 transition-colors"
-      style={{ height }}
-      onClick={onExpand}
-    >
-      <span className="px-3 py-0.5 rounded bg-bg-300/50 text-text-400 font-mono">
-        {t('diffViewer.linesUnchanged', { count })}
-      </span>
+    <div className="diff-separator-content-row" style={{ height }}>
+      {leadingDirections.length > 0 && <CollapsedExpandButton directions={leadingDirections} onExpand={onExpand} />}
+      <div data-separator-content="" className="diff-separator-content">
+        <button type="button" data-compact="" data-unmodified-lines="" className="diff-separator-text-button" onClick={() => onExpand?.('both')}>
+          {t('diffViewer.linesUnchanged', { count })}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CollapsedLabelOverlay({
+  count,
+  t,
+  onExpand,
+  height,
+  left,
+}: {
+  count: number
+  t: (key: string, opts?: Record<string, unknown>) => string
+  onExpand?: (direction: ExpandDirection) => void
+  height: number
+  left: number
+}) {
+  return (
+    <div className="diff-separator-label-overlay" style={{ height, left }}>
+      <CollapsedLabel count={count} t={t} onExpand={onExpand} height={height} />
+    </div>
+  )
+}
+
+/** 右侧/续接区域，只显示同一条 separator 的延伸背景 */
+function CollapsedContinuation({ height = 24 }: { height?: number }) {
+  return <div className="diff-separator-continuation" style={{ height }} />
+}
+
+/** Wrapped 模式直接横跨整行 */
+function CollapsedBar({
+  count,
+  t,
+  isFirst,
+  isLast,
+  chunked,
+  onExpand,
+  height = 24,
+  lineNumberAreaWidth,
+}: {
+  count: number
+  t: (key: string, opts?: Record<string, unknown>) => string
+  isFirst?: boolean
+  isLast?: boolean
+  chunked?: boolean
+  onExpand?: (direction: ExpandDirection) => void
+  height?: number
+  lineNumberAreaWidth?: number
+}) {
+  const directions = getSeparatorDirections({ isFirst, isLast, chunked })
+  return (
+    <div data-separator="line-info" data-expand-index="" className="diff-separator-surface" style={{ height }}>
+      <CollapsedExpandButton directions={directions} onExpand={onExpand} width={lineNumberAreaWidth} />
+      <CollapsedLabel count={count} t={t} onExpand={onExpand} height={height} />
     </div>
   )
 }
@@ -238,18 +495,56 @@ function CollapsedBar({
 // Main Component
 // ============================================
 
+// eslint-disable-next-line react-refresh/only-export-components -- DiffViewer consumers share this data with fullscreen instances.
+export function useDiffViewerData(before: string, after: string, language = 'text', isResizing = false, enabled = true): DiffViewerData {
+  const shouldHighlight = enabled && !isResizing && language !== 'text'
+  const { output: beforeTokens } = useSyntaxHighlight(before, {
+    lang: language,
+    mode: 'tokens',
+    enabled: shouldHighlight,
+  })
+  const { output: afterTokens } = useSyntaxHighlight(after, {
+    lang: language,
+    mode: 'tokens',
+    enabled: shouldHighlight,
+  })
+  const skipWordDiff = isResizing
+  const pairedLines = useMemo(() => (enabled ? computePairedLines(before, after, skipWordDiff) : []), [before, after, enabled, skipWordDiff])
+  const unifiedLines = useMemo(() => (enabled ? computeUnifiedLines(before, after) : []), [before, after, enabled])
+  const lineNumberWidth = useDiffLineNumberWidth(enabled ? before : '', enabled ? after : '')
+
+  return useMemo(
+    () => ({ beforeTokens, afterTokens, pairedLines, unifiedLines, lineNumberWidth }),
+    [afterTokens, beforeTokens, lineNumberWidth, pairedLines, unifiedLines],
+  )
+}
+
 export const DiffViewer = memo(function DiffViewer({
+  data,
+  ...props
+}: DiffViewerProps) {
+  if (data) return <DiffViewerContent {...props} data={data} />
+  return <DiffViewerWithData {...props} />
+})
+
+function DiffViewerWithData({ before, after, language = 'text', isResizing = false, ...props }: DiffViewerProps) {
+  const data = useDiffViewerData(before, after, language, isResizing)
+  return <DiffViewerContent before={before} after={after} language={language} isResizing={isResizing} {...props} data={data} />
+}
+
+const DiffViewerContent = memo(function DiffViewerContent({
   before,
   after,
-  language = 'text',
   viewMode = 'split',
   maxHeight,
   isResizing = false,
   wordWrap,
-}: DiffViewerProps) {
+  data,
+}: DiffViewerProps & { data: DiffViewerData }) {
   const { diffStyle, codeWordWrap, codeFontScale } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
   const resolvedWordWrap = wordWrap ?? codeWordWrap
   const lineHeight = codeLineHeight(codeFontScale)
+  const resolvedData = data
 
   // 纯增加或纯删除时，split 模式另一边是空的没意义，自动降级为 unified
   const isAddOnly = !before.trim()
@@ -260,9 +555,10 @@ export const DiffViewer = memo(function DiffViewer({
     if (resolvedWordWrap) {
       return (
         <WrappedSplitDiffView
-          before={before}
-          after={after}
-          language={language}
+          beforeTokens={resolvedData.beforeTokens}
+          afterTokens={resolvedData.afterTokens}
+          pairedLines={resolvedData.pairedLines}
+          lineNumberWidth={resolvedData.lineNumberWidth}
           isResizing={isResizing}
           maxHeight={maxHeight}
           diffStyle={diffStyle}
@@ -273,9 +569,10 @@ export const DiffViewer = memo(function DiffViewer({
 
     return (
       <SplitDiffView
-        before={before}
-        after={after}
-        language={language}
+        beforeTokens={resolvedData.beforeTokens}
+        afterTokens={resolvedData.afterTokens}
+        pairedLines={resolvedData.pairedLines}
+        lineNumberWidth={resolvedData.lineNumberWidth}
         isResizing={isResizing}
         maxHeight={maxHeight}
         diffStyle={diffStyle}
@@ -287,9 +584,10 @@ export const DiffViewer = memo(function DiffViewer({
   if (resolvedWordWrap) {
     return (
       <WrappedUnifiedDiffView
-        before={before}
-        after={after}
-        language={language}
+        beforeTokens={resolvedData.beforeTokens}
+        afterTokens={resolvedData.afterTokens}
+        lines={resolvedData.unifiedLines}
+        lineNumberWidth={resolvedData.lineNumberWidth}
         isResizing={isResizing}
         maxHeight={maxHeight}
         diffStyle={diffStyle}
@@ -300,9 +598,10 @@ export const DiffViewer = memo(function DiffViewer({
 
   return (
     <UnifiedDiffView
-      before={before}
-      after={after}
-      language={language}
+      beforeTokens={resolvedData.beforeTokens}
+      afterTokens={resolvedData.afterTokens}
+      lines={resolvedData.unifiedLines}
+      lineNumberWidth={resolvedData.lineNumberWidth}
       isResizing={isResizing}
       maxHeight={maxHeight}
       diffStyle={diffStyle}
@@ -312,50 +611,65 @@ export const DiffViewer = memo(function DiffViewer({
 })
 
 const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
-  before,
-  after,
-  language,
+  beforeTokens,
+  afterTokens,
+  pairedLines,
+  lineNumberWidth,
   isResizing,
   maxHeight,
   diffStyle,
   lineHeight,
 }: {
-  before: string
-  after: string
-  language: string
+  beforeTokens: HighlightTokens | null
+  afterTokens: HighlightTokens | null
+  pairedLines: PairedLine[]
+  lineNumberWidth: number
   isResizing: boolean
   maxHeight?: number
   diffStyle: DiffStyle
   lineHeight: number
 }) {
   const { t } = useTranslation(['components', 'common'])
-
-  const shouldHighlight = !isResizing && language !== 'text'
-  const { output: beforeTokens } = useSyntaxHighlight(before, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-  const { output: afterTokens } = useSyntaxHighlight(after, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-
-  const skipWordDiff = isResizing
-  const pairedLines = useMemo(() => computePairedLines(before, after, skipWordDiff), [before, after, skipWordDiff])
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
-  const displayLines = useMemo(() => collapseContextPaired(pairedLines, expandedIds), [pairedLines, expandedIds])
-  const handleExpand = useCallback((id: number) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
+  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const displayLines = useMemo(() => collapseContextPaired(pairedLines, expandedRegions), [pairedLines, expandedRegions])
+  const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
+    setExpandedRegions(prev => expandRegion(prev, id, direction))
   }, [])
 
+  const useChangeBars = diffStyle === 'changeBars'
+  const gutterWidth = useChangeBars ? lineNumberWidth + 4 : lineNumberWidth + 20
+  const estimateRowHeight = useCallback(
+    (index: number, containerWidth: number) => {
+      const item = displayLines[index]
+      if (!item || isCollapsed(item)) return lineHeight
+
+      const panelWidth = Math.max(0, containerWidth / 2 - gutterWidth - 16)
+      return estimateWrappedVisualLineCount(getWrappedPairContent(item as PairedLine), panelWidth) * lineHeight
+    },
+    [displayLines, gutterWidth, lineHeight],
+  )
+
   const { containerRef, totalHeight, startIndex, endIndex, offsetY, handleScroll, measureRef } =
-    useDynamicVirtualScroll({ lineCount: displayLines.length, isResizing, estimateLineHeight: lineHeight })
+    useDynamicVirtualScroll({
+      lineCount: displayLines.length,
+      isResizing,
+      estimateLineHeight: lineHeight,
+      estimateHeight: estimateRowHeight,
+    })
+
+  const measureWrappedRowRef = useCallback(
+    (index: number, el: HTMLDivElement | null) => {
+      measureRef(index, el)
+      if (!el) return
+
+      const rowTop = offsetY + el.offsetTop
+      for (const buffer of el.querySelectorAll<HTMLElement>('.diff-empty-content-buffer')) {
+        buffer.style.backgroundPosition = `5px ${-rowTop}px`
+      }
+      alignDeleteChangeBars(el, rowTop)
+    },
+    [measureRef, offsetY],
+  )
 
   if (pairedLines.length === 0) {
     return (
@@ -365,45 +679,48 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
     )
   }
 
-  const useChangeBars = diffStyle === 'changeBars'
-  const gutterWidth = useChangeBars ? 35 : 52
-
   const visibleRows: React.ReactNode[] = []
   for (let i = startIndex; i < endIndex; i++) {
     const item = displayLines[i]
 
     if (isCollapsed(item)) {
       visibleRows.push(
-        <div key={`c-${i}`} ref={el => measureRef(i, el)}>
-          <CollapsedBar count={item.count} t={t} onExpand={() => handleExpand(item.id)} />
+        <div key={`c-${i}`} ref={el => measureWrappedRowRef(i, el)}>
+          <CollapsedBar
+            count={item.count}
+            t={t}
+            isFirst={item.isFirst}
+            isLast={item.isLast}
+            chunked={item.chunked}
+            onExpand={direction => handleExpand(item.id, direction)}
+            lineNumberAreaWidth={lineNumberWidth}
+            height={lineHeight}
+          />
         </div>,
       )
       continue
     }
 
     const pair = item as PairedLine
+    const leftEmptyStyle = pair.left.type === 'empty' ? getEmptyBufferBackgroundStyle(0) : undefined
+    const rightEmptyStyle = pair.right.type === 'empty' ? getEmptyBufferBackgroundStyle(0) : undefined
     visibleRows.push(
-      <div key={i} ref={el => measureRef(i, el)} className="flex items-stretch">
+      <div key={i} ref={el => measureWrappedRowRef(i, el)} className="flex items-stretch">
         {/* Left panel */}
         <div
-          className={`flex-1 flex items-stretch min-w-0 border-r border-border-100/30 ${getLineBgClass(pair.left.type)}`}
+          className={`flex-1 flex items-stretch min-w-0 border-r border-border-100/30 ${getContentBgClass(pair.left.type)}`}
+          style={leftEmptyStyle}
         >
           <div className="shrink-0" style={{ width: gutterWidth }}>
             {useChangeBars ? (
               <div className="flex items-stretch h-full">
                 <div {...getChangeBarProps(pair.left.type)} />
-                <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                  {pair.left.lineNo}
-                </div>
+                <LineNumberCell lineNo={pair.left.lineNo} width={lineNumberWidth} type={pair.left.type} />
               </div>
             ) : (
               <div className="flex h-full">
-                <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                  {pair.left.lineNo}
-                </div>
-                <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-                  {pair.left.type === 'delete' && <span className="text-danger-100">−</span>}
-                </div>
+                <LineNumberCell lineNo={pair.left.lineNo} width={lineNumberWidth} type={pair.left.type} />
+                <DiffMarkerCell type={pair.left.type} />
               </div>
             )}
           </div>
@@ -417,23 +734,17 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
         </div>
 
         {/* Right panel */}
-        <div className={`flex-1 flex items-stretch min-w-0 ${getLineBgClass(pair.right.type)}`}>
+        <div className={`flex-1 flex items-stretch min-w-0 ${getContentBgClass(pair.right.type)}`} style={rightEmptyStyle}>
           <div className="shrink-0" style={{ width: gutterWidth }}>
             {useChangeBars ? (
               <div className="flex items-stretch h-full">
                 <div {...getChangeBarProps(pair.right.type)} />
-                <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                  {pair.right.lineNo}
-                </div>
+                <LineNumberCell lineNo={pair.right.lineNo} width={lineNumberWidth} type={pair.right.type} />
               </div>
             ) : (
               <div className="flex h-full">
-                <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                  {pair.right.lineNo}
-                </div>
-                <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-                  {pair.right.type === 'add' && <span className="text-success-100">+</span>}
-                </div>
+                <LineNumberCell lineNo={pair.right.lineNo} width={lineNumberWidth} type={pair.right.type} />
+                <DiffMarkerCell type={pair.right.type} />
               </div>
             )}
           </div>
@@ -482,17 +793,19 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
 // ============================================
 
 const SplitDiffView = memo(function SplitDiffView({
-  before,
-  after,
-  language,
+  beforeTokens,
+  afterTokens,
+  pairedLines,
+  lineNumberWidth,
   isResizing,
   maxHeight,
   diffStyle,
   lineHeight,
 }: {
-  before: string
-  after: string
-  language: string
+  beforeTokens: HighlightTokens | null
+  afterTokens: HighlightTokens | null
+  pairedLines: PairedLine[]
+  lineNumberWidth: number
   isResizing: boolean
   maxHeight?: number
   diffStyle: DiffStyle
@@ -514,29 +827,13 @@ const SplitDiffView = memo(function SplitDiffView({
   const [rightContentWidth, setRightContentWidth] = useState(0)
   const [leftClientWidth, setLeftClientWidth] = useState(0)
   const [rightClientWidth, setRightClientWidth] = useState(0)
+  const [leftScrollLeft, setLeftScrollLeft] = useState(0)
+  const [rightScrollLeft, setRightScrollLeft] = useState(0)
 
-  const shouldHighlight = !isResizing && language !== 'text'
-  const { output: beforeTokens } = useSyntaxHighlight(before, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-  const { output: afterTokens } = useSyntaxHighlight(after, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-
-  const skipWordDiff = isResizing
-  const pairedLines = useMemo(() => computePairedLines(before, after, skipWordDiff), [before, after, skipWordDiff])
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
-  const displayLines = useMemo(() => collapseContextPaired(pairedLines, expandedIds), [pairedLines, expandedIds])
-  const handleExpand = useCallback((id: number) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
+  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const displayLines = useMemo(() => collapseContextPaired(pairedLines, expandedRegions), [pairedLines, expandedRegions])
+  const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
+    setExpandedRegions(prev => expandRegion(prev, id, direction))
   }, [])
 
   const totalHeight = displayLines.length * lineHeight
@@ -615,6 +912,7 @@ const SplitDiffView = memo(function SplitDiffView({
   const handleLeftScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (leftScrollSourceRef.current === 'content') return
     leftScrollSourceRef.current = 'scrollbar'
+    setLeftScrollLeft(e.currentTarget.scrollLeft)
     if (leftContentRef.current) leftContentRef.current.scrollLeft = e.currentTarget.scrollLeft
     requestAnimationFrame(() => {
       leftScrollSourceRef.current = null
@@ -623,6 +921,7 @@ const SplitDiffView = memo(function SplitDiffView({
   const handleRightScrollbar = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (rightScrollSourceRef.current === 'content') return
     rightScrollSourceRef.current = 'scrollbar'
+    setRightScrollLeft(e.currentTarget.scrollLeft)
     if (rightContentRef.current) rightContentRef.current.scrollLeft = e.currentTarget.scrollLeft
     requestAnimationFrame(() => {
       rightScrollSourceRef.current = null
@@ -631,6 +930,7 @@ const SplitDiffView = memo(function SplitDiffView({
   const handleLeftContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (leftScrollSourceRef.current === 'scrollbar') return
     leftScrollSourceRef.current = 'content'
+    setLeftScrollLeft(e.currentTarget.scrollLeft)
     if (leftScrollbarRef.current) leftScrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
     requestAnimationFrame(() => {
       leftScrollSourceRef.current = null
@@ -639,6 +939,7 @@ const SplitDiffView = memo(function SplitDiffView({
   const handleRightContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (rightScrollSourceRef.current === 'scrollbar') return
     rightScrollSourceRef.current = 'content'
+    setRightScrollLeft(e.currentTarget.scrollLeft)
     if (rightScrollbarRef.current) rightScrollbarRef.current.scrollLeft = e.currentTarget.scrollLeft
     requestAnimationFrame(() => {
       rightScrollSourceRef.current = null
@@ -655,8 +956,7 @@ const SplitDiffView = memo(function SplitDiffView({
 
   // 渲染可见行 — 分别生成 gutter 和 content
   const useChangeBars = diffStyle === 'changeBars'
-  // markers: 行号(32) + 符号(20) = 52px;  changeBars: bar(3) + 行号(32) = 35px
-  const gutterWidth = useChangeBars ? 35 : 52
+  const gutterWidth = useChangeBars ? lineNumberWidth + 4 : lineNumberWidth + 20
 
   const leftGutterRows: React.ReactNode[] = []
   const leftContentRows: React.ReactNode[] = []
@@ -667,57 +967,83 @@ const SplitDiffView = memo(function SplitDiffView({
     const item = displayLines[i]
 
     if (isCollapsed(item)) {
-      const barNode = (
-        <CollapsedBar key={i} count={item.count} t={t} onExpand={() => handleExpand(item.id)} height={lineHeight} />
-      )
+      const directions = getSeparatorDirections(item)
       leftGutterRows.push(
         <div
           key={i}
-          className="box-border bg-bg-200/40 border-y border-border-100/30"
+          data-separator="line-info"
+          data-expand-index=""
+          className="diff-separator-surface relative overflow-visible"
           style={{ height: lineHeight }}
-        />,
+        >
+          <CollapsedExpandButton
+            directions={directions}
+            onExpand={direction => handleExpand(item.id, direction)}
+            width={lineNumberWidth}
+          />
+          <CollapsedLabelOverlay
+            count={item.count}
+            t={t}
+            onExpand={direction => handleExpand(item.id, direction)}
+            height={lineHeight}
+            left={lineNumberWidth}
+          />
+        </div>,
       )
-      leftContentRows.push(barNode)
+      leftContentRows.push(
+        <div
+          key={i}
+          data-separator="line-info"
+          data-expand-index=""
+          className="diff-separator-surface"
+          style={{ height: lineHeight }}
+        >
+          <CollapsedContinuation height={lineHeight} />
+        </div>,
+      )
       rightGutterRows.push(
         <div
           key={i}
-          className="box-border bg-bg-200/40 border-y border-border-100/30"
+          data-separator="line-info"
+          className="diff-separator-surface"
           style={{ height: lineHeight }}
         />,
       )
       rightContentRows.push(
         <div
           key={i}
-          className="box-border bg-bg-200/40 border-y border-border-100/30"
+          data-separator="line-info"
+          className="diff-separator-surface"
           style={{ height: lineHeight }}
-        />,
+        >
+          <CollapsedContinuation height={lineHeight} />
+        </div>,
       )
       continue
     }
 
     const pair = item as PairedLine
+    const leftGutterClass = pair.left.type === 'empty' ? 'diff-empty-content-buffer' : getGutterBgClass(pair.left.type)
+    const rightGutterClass = pair.right.type === 'empty' ? 'diff-empty-content-buffer' : getGutterBgClass(pair.right.type)
+    const rowTop = i * lineHeight
+    const leftGutterStyle = getEmptyBufferRowStyle(lineHeight, rowTop)
+    const rightGutterStyle = getEmptyBufferRowStyle(lineHeight, rowTop)
 
     // Left gutter
     leftGutterRows.push(
       useChangeBars ? (
         <div
           key={i}
-          className={`flex items-stretch ${getGutterBgClass(pair.left.type)}`}
-          style={{ height: lineHeight }}
+          className={`flex items-stretch ${leftGutterClass}`}
+          style={pair.left.type === 'empty' ? leftGutterStyle : { height: lineHeight }}
         >
-          <div {...getChangeBarProps(pair.left.type)} />
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {pair.left.lineNo}
-          </div>
+          <div {...getChangeBarProps(pair.left.type, rowTop)} />
+          <LineNumberCell lineNo={pair.left.lineNo} width={lineNumberWidth} type={pair.left.type} />
         </div>
       ) : (
-        <div key={i} className={`flex ${getGutterBgClass(pair.left.type)}`} style={{ height: lineHeight }}>
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {pair.left.lineNo}
-          </div>
-          <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-            {pair.left.type === 'delete' && <span className="text-danger-100">−</span>}
-          </div>
+        <div key={i} className={`flex ${leftGutterClass}`} style={pair.left.type === 'empty' ? leftGutterStyle : { height: lineHeight }}>
+          <LineNumberCell lineNo={pair.left.lineNo} width={lineNumberWidth} type={pair.left.type} />
+          <DiffMarkerCell type={pair.left.type} />
         </div>
       ),
     )
@@ -726,10 +1052,10 @@ const SplitDiffView = memo(function SplitDiffView({
     leftContentRows.push(
       <div
         key={i}
-        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre ${getLineBgClass(pair.left.type)}`}
+        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre ${pair.left.type === 'empty' ? '' : getContentBgClass(pair.left.type)}`}
         style={{ height: lineHeight }}
       >
-        {pair.left.type !== 'empty' && <LineContent line={pair.left} tokens={beforeTokens} />}
+        {pair.left.type === 'empty' ? <EmptyContentBuffer height={lineHeight} yOffset={rowTop} xOffset={leftScrollLeft - gutterWidth} /> : <LineContent line={pair.left} tokens={beforeTokens} />}
       </div>,
     )
 
@@ -738,22 +1064,16 @@ const SplitDiffView = memo(function SplitDiffView({
       useChangeBars ? (
         <div
           key={i}
-          className={`flex items-stretch ${getGutterBgClass(pair.right.type)}`}
-          style={{ height: lineHeight }}
+          className={`flex items-stretch ${rightGutterClass}`}
+          style={pair.right.type === 'empty' ? rightGutterStyle : { height: lineHeight }}
         >
-          <div {...getChangeBarProps(pair.right.type)} />
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {pair.right.lineNo}
-          </div>
+          <div {...getChangeBarProps(pair.right.type, rowTop)} />
+          <LineNumberCell lineNo={pair.right.lineNo} width={lineNumberWidth} type={pair.right.type} />
         </div>
       ) : (
-        <div key={i} className={`flex ${getGutterBgClass(pair.right.type)}`} style={{ height: lineHeight }}>
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {pair.right.lineNo}
-          </div>
-          <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-            {pair.right.type === 'add' && <span className="text-success-100">+</span>}
-          </div>
+        <div key={i} className={`flex ${rightGutterClass}`} style={pair.right.type === 'empty' ? rightGutterStyle : { height: lineHeight }}>
+          <LineNumberCell lineNo={pair.right.lineNo} width={lineNumberWidth} type={pair.right.type} />
+          <DiffMarkerCell type={pair.right.type} />
         </div>
       ),
     )
@@ -762,10 +1082,10 @@ const SplitDiffView = memo(function SplitDiffView({
     rightContentRows.push(
       <div
         key={i}
-        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre ${getLineBgClass(pair.right.type)}`}
+        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre ${pair.right.type === 'empty' ? '' : getContentBgClass(pair.right.type)}`}
         style={{ height: lineHeight }}
       >
-        {pair.right.type !== 'empty' && <LineContent line={pair.right} tokens={afterTokens} />}
+        {pair.right.type === 'empty' ? <EmptyContentBuffer height={lineHeight} yOffset={rowTop} xOffset={rightScrollLeft - gutterWidth} /> : <LineContent line={pair.right} tokens={afterTokens} />}
       </div>,
     )
   }
@@ -782,7 +1102,7 @@ const SplitDiffView = memo(function SplitDiffView({
           {/* 左面板 */}
           <div className="flex-1 flex min-w-0 border-r border-border-100/30">
             {/* 左 gutter */}
-            <div className="shrink-0 overflow-hidden" style={{ width: gutterWidth }}>
+            <div className="shrink-0 overflow-visible" style={{ width: gutterWidth }}>
               {leftGutterRows}
             </div>
             {/* 左 content — 隐藏自身滚动条，由 proxy 控制 */}
@@ -798,7 +1118,7 @@ const SplitDiffView = memo(function SplitDiffView({
           {/* 右面板 */}
           <div className="flex-1 flex min-w-0">
             {/* 右 gutter */}
-            <div className="shrink-0 overflow-hidden" style={{ width: gutterWidth }}>
+            <div className="shrink-0 overflow-visible" style={{ width: gutterWidth }}>
               {rightGutterRows}
             </div>
             {/* 右 content */}
@@ -861,17 +1181,19 @@ const SplitDiffView = memo(function SplitDiffView({
 // ============================================
 
 const UnifiedDiffView = memo(function UnifiedDiffView({
-  before,
-  after,
-  language,
+  beforeTokens,
+  afterTokens,
+  lines,
+  lineNumberWidth,
   isResizing,
   maxHeight,
   diffStyle,
   lineHeight,
 }: {
-  before: string
-  after: string
-  language: string
+  beforeTokens: HighlightTokens | null
+  afterTokens: HighlightTokens | null
+  lines: UnifiedLine[]
+  lineNumberWidth: number
   isResizing: boolean
   maxHeight?: number
   diffStyle: DiffStyle
@@ -888,27 +1210,10 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
   const [contentWidth, setContentWidth] = useState(0)
   const [contentClientWidth, setContentClientWidth] = useState(0)
 
-  const shouldHighlight = !isResizing && language !== 'text'
-  const { output: beforeTokens } = useSyntaxHighlight(before, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-  const { output: afterTokens } = useSyntaxHighlight(after, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-
-  const lines = useMemo(() => computeUnifiedLines(before, after), [before, after])
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
-  const displayLines = useMemo(() => collapseContextUnified(lines, expandedIds), [lines, expandedIds])
-  const handleExpand = useCallback((id: number) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
+  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const displayLines = useMemo(() => collapseContextUnified(lines, expandedRegions), [lines, expandedRegions])
+  const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
+    setExpandedRegions(prev => expandRegion(prev, id, direction))
   }, [])
 
   const totalHeight = displayLines.length * lineHeight
@@ -993,10 +1298,8 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
     )
   }
 
-  // markers: oldLineNo(32) + newLineNo(32) + 符号(20) = 84px
-  // changeBars: bar(3) + oldLineNo(32) + newLineNo(32) = 67px
   const useChangeBars = diffStyle === 'changeBars'
-  const GUTTER_WIDTH = useChangeBars ? 67 : 84
+  const GUTTER_WIDTH = useChangeBars ? lineNumberWidth * 2 + 4 : lineNumberWidth * 2 + 20
 
   const gutterRows: React.ReactNode[] = []
   const contentRows: React.ReactNode[] = []
@@ -1005,15 +1308,33 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
     const item = displayLines[i]
 
     if (isCollapsed(item)) {
+      const directions = getSeparatorDirections(item)
       gutterRows.push(
         <div
           key={i}
-          className="box-border bg-bg-200/40 border-y border-border-100/30"
+          data-separator="line-info"
+          data-expand-index=""
+          className="diff-separator-surface relative overflow-visible"
           style={{ height: lineHeight }}
-        />,
+        >
+          <CollapsedExpandButton
+            directions={directions}
+            onExpand={direction => handleExpand(item.id, direction)}
+            width={lineNumberWidth * 2}
+          />
+          <CollapsedLabelOverlay
+            count={item.count}
+            t={t}
+            onExpand={direction => handleExpand(item.id, direction)}
+            height={lineHeight}
+            left={lineNumberWidth * 2}
+          />
+        </div>,
       )
       contentRows.push(
-        <CollapsedBar key={i} count={item.count} t={t} onExpand={() => handleExpand(item.id)} height={lineHeight} />,
+        <div key={i} data-separator="line-info" data-expand-index="" className="diff-separator-surface" style={{ height: lineHeight }}>
+          <CollapsedContinuation height={lineHeight} />
+        </div>,
       )
       continue
     }
@@ -1033,26 +1354,15 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
     gutterRows.push(
       useChangeBars ? (
         <div key={i} className={`flex items-stretch ${getGutterBgClass(line.type)}`} style={{ height: lineHeight }}>
-          <div {...getChangeBarProps(line.type)} />
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {line.oldLineNo}
-          </div>
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {line.newLineNo}
-          </div>
+          <div {...getChangeBarProps(line.type, i * lineHeight)} />
+          <LineNumberCell lineNo={line.oldLineNo} width={lineNumberWidth} type={line.type} />
+          <LineNumberCell lineNo={line.newLineNo} width={lineNumberWidth} type={line.type} />
         </div>
       ) : (
         <div key={i} className={`flex ${getGutterBgClass(line.type)}`} style={{ height: lineHeight }}>
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {line.oldLineNo}
-          </div>
-          <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-            {line.newLineNo}
-          </div>
-          <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-            {line.type === 'add' && <span className="text-success-100">+</span>}
-            {line.type === 'delete' && <span className="text-danger-100">−</span>}
-          </div>
+          <LineNumberCell lineNo={line.oldLineNo} width={lineNumberWidth} type={line.type} />
+          <LineNumberCell lineNo={line.newLineNo} width={lineNumberWidth} type={line.type} />
+          <DiffMarkerCell type={line.type} />
         </div>
       ),
     )
@@ -1080,7 +1390,7 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
       <div style={{ height: totalHeight, position: 'relative' }}>
         <div className="absolute top-0 left-0 right-0 flex" style={{ transform: `translateY(${offsetY}px)` }}>
           {/* Gutter: 固定宽度，不水平滚动 */}
-          <div className="shrink-0 overflow-hidden" style={{ width: GUTTER_WIDTH }}>
+          <div className="shrink-0 overflow-visible" style={{ width: GUTTER_WIDTH }}>
             {gutterRows}
           </div>
 
@@ -1109,49 +1419,61 @@ const UnifiedDiffView = memo(function UnifiedDiffView({
 })
 
 const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
-  before,
-  after,
-  language,
+  beforeTokens,
+  afterTokens,
+  lines,
+  lineNumberWidth,
   isResizing,
   maxHeight,
   diffStyle,
   lineHeight,
 }: {
-  before: string
-  after: string
-  language: string
+  beforeTokens: HighlightTokens | null
+  afterTokens: HighlightTokens | null
+  lines: UnifiedLine[]
+  lineNumberWidth: number
   isResizing: boolean
   maxHeight?: number
   diffStyle: DiffStyle
   lineHeight: number
 }) {
   const { t } = useTranslation(['components', 'common'])
-
-  const shouldHighlight = !isResizing && language !== 'text'
-  const { output: beforeTokens } = useSyntaxHighlight(before, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-  const { output: afterTokens } = useSyntaxHighlight(after, {
-    lang: language,
-    mode: 'tokens',
-    enabled: shouldHighlight,
-  })
-
-  const lines = useMemo(() => computeUnifiedLines(before, after), [before, after])
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set())
-  const displayLines = useMemo(() => collapseContextUnified(lines, expandedIds), [lines, expandedIds])
-  const handleExpand = useCallback((id: number) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
+  const [expandedRegions, setExpandedRegions] = useState<Map<number, ExpansionRegion>>(() => new Map())
+  const displayLines = useMemo(() => collapseContextUnified(lines, expandedRegions), [lines, expandedRegions])
+  const handleExpand = useCallback((id: number, direction: ExpandDirection) => {
+    setExpandedRegions(prev => expandRegion(prev, id, direction))
   }, [])
 
+  const useChangeBars = diffStyle === 'changeBars'
+  const gutterWidth = useChangeBars ? lineNumberWidth * 2 + 4 : lineNumberWidth * 2 + 20
+  const estimateRowHeight = useCallback(
+    (index: number, containerWidth: number) => {
+      const item = displayLines[index]
+      if (!item || isCollapsed(item)) return lineHeight
+
+      const availableWidth = Math.max(0, containerWidth - gutterWidth - 16)
+      return estimateWrappedVisualLineCount((item as UnifiedLine).content, availableWidth) * lineHeight
+    },
+    [displayLines, gutterWidth, lineHeight],
+  )
+
   const { containerRef, totalHeight, startIndex, endIndex, offsetY, handleScroll, measureRef } =
-    useDynamicVirtualScroll({ lineCount: displayLines.length, isResizing, estimateLineHeight: lineHeight })
+    useDynamicVirtualScroll({
+      lineCount: displayLines.length,
+      isResizing,
+      estimateLineHeight: lineHeight,
+      estimateHeight: estimateRowHeight,
+    })
+
+  const measureWrappedUnifiedRowRef = useCallback(
+    (index: number, el: HTMLDivElement | null) => {
+      measureRef(index, el)
+      if (!el) return
+
+      alignDeleteChangeBars(el, offsetY + el.offsetTop)
+    },
+    [measureRef, offsetY],
+  )
 
   if (lines.length === 0) {
     return (
@@ -1161,17 +1483,23 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
     )
   }
 
-  const useChangeBars = diffStyle === 'changeBars'
-  const gutterWidth = useChangeBars ? 67 : 84
-
   const visibleRows: React.ReactNode[] = []
   for (let i = startIndex; i < endIndex; i++) {
     const item = displayLines[i]
 
     if (isCollapsed(item)) {
       visibleRows.push(
-        <div key={`c-${i}`} ref={el => measureRef(i, el)}>
-          <CollapsedBar count={item.count} t={t} onExpand={() => handleExpand(item.id)} />
+        <div key={`c-${i}`} ref={el => measureWrappedUnifiedRowRef(i, el)}>
+          <CollapsedBar
+            count={item.count}
+            t={t}
+            isFirst={item.isFirst}
+            isLast={item.isLast}
+            chunked={item.chunked}
+            onExpand={direction => handleExpand(item.id, direction)}
+            lineNumberAreaWidth={lineNumberWidth * 2}
+            height={lineHeight}
+          />
         </div>,
       )
       continue
@@ -1190,32 +1518,21 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
     }
 
     visibleRows.push(
-      <div key={i} ref={el => measureRef(i, el)} className={`flex items-stretch ${getLineBgClass(line.type)}`}>
+      <div key={i} ref={el => measureWrappedUnifiedRowRef(i, el)} className={`flex items-stretch ${getLineBgClass(line.type)}`}>
         <div className="shrink-0" style={{ width: gutterWidth }}>
-          {useChangeBars ? (
-            <div className="flex items-stretch h-full">
-              <div {...getChangeBarProps(line.type)} />
-              <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                {line.oldLineNo}
+            {useChangeBars ? (
+              <div className="flex items-stretch h-full">
+                <div {...getChangeBarProps(line.type)} />
+                <LineNumberCell lineNo={line.oldLineNo} width={lineNumberWidth} type={line.type} />
+                <LineNumberCell lineNo={line.newLineNo} width={lineNumberWidth} type={line.type} />
               </div>
-              <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                {line.newLineNo}
+            ) : (
+              <div className="flex h-full">
+                <LineNumberCell lineNo={line.oldLineNo} width={lineNumberWidth} type={line.type} />
+                <LineNumberCell lineNo={line.newLineNo} width={lineNumberWidth} type={line.type} />
+                <DiffMarkerCell type={line.type} />
               </div>
-            </div>
-          ) : (
-            <div className="flex h-full">
-              <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                {line.oldLineNo}
-              </div>
-              <div className="w-8 shrink-0 px-1 text-right text-text-500 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none opacity-60">
-                {line.newLineNo}
-              </div>
-              <div className="w-5 shrink-0 text-center text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)] select-none">
-                {line.type === 'add' && <span className="text-success-100">+</span>}
-                {line.type === 'delete' && <span className="text-danger-100">−</span>}
-              </div>
-            </div>
-          )}
+            )}
         </div>
 
         <div

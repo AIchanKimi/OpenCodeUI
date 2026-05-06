@@ -17,9 +17,13 @@ import { useTheme } from '../hooks/useTheme'
 import { getDesktopPlatform, isTauri, usesCustomDesktopTitlebar } from '../utils/tauri'
 import { useUpdateStore, hasUpdateAvailable } from '../store/updateStore'
 
-/* 标题栏图标按钮通用样式 — w-8 (32px) × h-full，和控制按钮等高对齐 */
+/* 标题栏图标按钮通用样式 — Windows 和 macOS 视觉节奏不同，按钮尺寸分开控制 */
 const TB_BTN =
   'inline-flex h-full w-8 items-center justify-center text-text-300 transition-colors hover:bg-bg-200/70 hover:text-text-100'
+const TB_BTN_MAC =
+  'inline-flex h-7 w-7 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200/70 hover:text-text-100'
+const TB_BTN_MAC_UPDATE =
+  'inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
 
 const WindowsControlsHost = memo(function WindowsControlsHost() {
   return (
@@ -38,6 +42,7 @@ export function DesktopTitlebar() {
   const hasUpdate = hasUpdateAvailable(updateState)
   const platform = useMemo(() => getDesktopPlatform(), [])
   const isDesktopChrome = useMemo(() => usesCustomDesktopTitlebar(), [])
+  const titlebarButtonClass = platform === 'macos' ? TB_BTN_MAC : TB_BTN
 
   /* ---- 原生主题同步 ---- */
   useEffect(() => {
@@ -104,7 +109,7 @@ export function DesktopTitlebar() {
       style={{ height: DESKTOP_TITLEBAR_HEIGHT, zIndex: DESKTOP_TITLEBAR_Z_INDEX }}
     >
       {/* ---- 左侧：平台占位 + 导航 + 分隔 + 功能按钮 ---- */}
-      <div className="flex h-full shrink-0 items-stretch">
+      <div className={`flex h-full shrink-0 ${platform === 'macos' ? 'items-center gap-1' : 'items-stretch'}`}>
         {platform === 'macos' ? (
           <div className="h-full shrink-0" style={{ width: DESKTOP_MACOS_TRAFFIC_LIGHTS_WIDTH }} />
         ) : (
@@ -115,7 +120,7 @@ export function DesktopTitlebar() {
         <button
           type="button"
           onClick={handleBack}
-          className={TB_BTN}
+          className={titlebarButtonClass}
           title={t('desktopTitlebar.goBack')}
           aria-label={t('desktopTitlebar.goBack')}
         >
@@ -124,7 +129,7 @@ export function DesktopTitlebar() {
         <button
           type="button"
           onClick={handleForward}
-          className={TB_BTN}
+          className={titlebarButtonClass}
           title={t('desktopTitlebar.goForward')}
           aria-label={t('desktopTitlebar.goForward')}
         >
@@ -135,7 +140,7 @@ export function DesktopTitlebar() {
         <button
           type="button"
           onClick={handleOpenProject}
-          className={TB_BTN}
+          className={titlebarButtonClass}
           title={t('desktopTitlebar.openProject')}
           aria-label={t('desktopTitlebar.openProject')}
         >
@@ -148,8 +153,10 @@ export function DesktopTitlebar() {
           onClick={handleOpenSettings}
           className={
             hasUpdate
-              ? 'inline-flex h-full w-8 items-center justify-center text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
-              : TB_BTN
+              ? platform === 'macos'
+                ? TB_BTN_MAC_UPDATE
+                : 'inline-flex h-full w-8 items-center justify-center text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
+              : titlebarButtonClass
           }
           title={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}
           aria-label={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}
@@ -161,7 +168,7 @@ export function DesktopTitlebar() {
         <button
           type="button"
           onClick={handleNewWindow}
-          className={TB_BTN}
+          className={titlebarButtonClass}
           title={t('desktopTitlebar.newWindow')}
           aria-label={t('desktopTitlebar.newWindow')}
         >

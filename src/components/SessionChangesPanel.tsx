@@ -8,7 +8,7 @@ import { memo, useState, useEffect, useCallback, useRef, useMemo, useId } from '
 import { useTranslation } from 'react-i18next'
 import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
-import { DiffViewer, type ViewMode } from './DiffViewer'
+import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { FullscreenViewer, ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
 import { getLastTurnDiff, getSessionDiff } from '../api/session'
@@ -96,6 +96,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   // 选中的文件（显示在预览区）
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [openDiffFiles, setOpenDiffFiles] = useState<string[]>([])
+  const [mountedPreviewFiles, setMountedPreviewFiles] = useState<Set<string>>(new Set())
 
   // 展开的目录
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
@@ -197,6 +198,16 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   useEffect(() => {
     openDiffFilesRef.current = openDiffFiles
   }, [openDiffFiles])
+
+  useEffect(() => {
+    setMountedPreviewFiles(prev => {
+      const openFiles = new Set(openDiffFiles)
+      const next = new Set([...prev].filter(file => openFiles.has(file)))
+      if (selectedFile) next.add(selectedFile)
+      if (next.size === prev.size && [...next].every(file => prev.has(file))) return prev
+      return next
+    })
+  }, [openDiffFiles, selectedFile])
 
   useEffect(() => {
     selectedFileRef.current = selectedFile
@@ -393,6 +404,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     setError(null)
     setOpenDiffFiles([])
     setSelectedFile(null)
+    setMountedPreviewFiles(new Set())
     setExpandedDirs(new Set())
     setChangeMenuOpen(false)
     resetSplitHeight()
@@ -526,6 +538,10 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         .filter((diff): diff is FileDiff => Boolean(diff)),
     [diffs, openDiffFiles],
   )
+  const mountedPreviewDiffs = useMemo(
+    () => previewDiffs.filter(diff => diff.file === selectedFile || mountedPreviewFiles.has(diff.file)),
+    [mountedPreviewFiles, previewDiffs, selectedFile],
+  )
   const showPreview = !loading && selectedDiff !== null && !(error && diffs.length === 0)
 
   if (projectLoading && !project) {
@@ -598,13 +614,13 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         }
       >
         {/* Header */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border-100 bg-bg-100/30 shrink-0 overflow-hidden">
+        <div className="relative flex h-10 items-center gap-2 px-3 shrink-0 overflow-hidden">
           <div
             className="min-w-0 flex flex-1 overflow-hidden"
             title={`+${totalStats.additions} -${totalStats.deletions} ${fullFileCountLabel}`}
             style={statFadeMaskStyle}
           >
-            <div className="inline-flex min-w-max items-center gap-1.5 whitespace-nowrap text-[length:var(--fs-xxs)] font-mono tabular-nums">
+            <div className="inline-flex h-6 min-w-max items-center gap-1.5 whitespace-nowrap text-[length:var(--fs-xxs)] font-mono tabular-nums">
               <span className="text-success-100">+{totalStats.additions}</span>
               <span className="text-danger-100">-{totalStats.deletions}</span>
               <span className="text-text-400">{compactFileCountLabel}</span>
@@ -632,8 +648,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               aria-controls={changeMenuOpen ? changeMenuId : undefined}
               title={activeChangeModeMeta.label}
               className={`
-                flex items-center rounded p-1 transition-colors
-                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200'}
+                inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors
+                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'}
               `}
             >
               <span className="shrink-0">{activeChangeModeMeta.icon}</span>
@@ -703,7 +719,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </DropdownMenu>
 
             {/* List Mode Toggle */}
-            <div className="flex shrink-0 items-center bg-bg-200/50 rounded overflow-hidden border border-border-200/50">
+            <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
               <button
                 type="button"
                 onClick={() => setListMode('flat')}
@@ -729,7 +745,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </div>
 
             {/* View Mode Toggle */}
-            <div className="flex shrink-0 items-center bg-bg-200/50 rounded overflow-hidden border border-border-200/50">
+            <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
               <button
                 type="button"
                 onClick={() => setViewMode('unified')}
@@ -758,12 +774,13 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               onClick={handleRefresh}
               disabled={loading}
               aria-label={t('common:refresh')}
-              className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200 rounded transition-colors disabled:opacity-50"
+              className="inline-flex h-6 w-6 items-center justify-center text-text-400 hover:text-text-100 hover:bg-bg-200/50 rounded-md transition-colors disabled:opacity-50"
               title={t('common:refresh')}
             >
               <RetryIcon size={12} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
+          <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
         </div>
 
         {/* File List */}
@@ -845,16 +862,20 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
       {/* Diff 预览区 */}
       {showPreview && selectedDiff && (
         <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: MIN_PREVIEW_HEIGHT }}>
-          <DiffPreviewPanel
-            diff={selectedDiff}
-            previewDiffs={previewDiffs}
-            viewMode={viewMode}
-            isResizing={isAnyResizing}
-            onActivatePreview={handleActivatePreview}
-            onClosePreview={handleClosePreviewTab}
-            onReorderPreview={handleReorderPreviewTabs}
-            onClose={handleClosePreview}
-          />
+          {mountedPreviewDiffs.map(previewDiff => (
+            <div key={previewDiff.file} className={previewDiff.file === selectedFile ? 'h-full min-h-0' : 'hidden'}>
+              <DiffPreviewPanel
+                diff={previewDiff}
+                previewDiffs={previewDiffs}
+                viewMode={viewMode}
+                isResizing={isAnyResizing}
+                onActivatePreview={handleActivatePreview}
+                onClosePreview={handleClosePreviewTab}
+                onReorderPreview={handleReorderPreviewTabs}
+                onClose={handleClosePreview}
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -893,6 +914,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
     if (diff.before !== undefined && diff.after !== undefined) return { before: diff.before, after: diff.after }
     return { before: '', after: '' }
   }, [diff.patch, diff.before, diff.after])
+  const diffViewerData = useDiffViewerData(before, after, language, isResizing)
   const { t } = useTranslation(['components', 'common'])
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const [fullscreenViewMode, setFullscreenViewMode] = useState<ViewMode>(viewMode)
@@ -909,7 +931,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
           iconPath: previewDiff.file,
           label: (
             <>
-              <span className="block min-w-0 flex-1 truncate text-[length:var(--fs-xs)] font-mono">{currentFileName}</span>
+              <span className="block whitespace-nowrap text-[length:var(--fs-xs)] font-mono">{currentFileName}</span>
               <span className="shrink-0 text-[length:var(--fs-xxs)] font-mono text-success-100/90">
                 {previewDiff.additions > 0 ? `+${previewDiff.additions}` : ''}
               </span>
@@ -933,7 +955,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
         onClose={onClosePreview}
         onCloseAll={onClose}
         onReorder={onReorderPreview}
-        tabWidthClassName="w-44 max-w-44"
+        tabWidthClassName="w-auto max-w-none min-w-max"
         rightActions={
           <button
             onClick={() => {
@@ -950,7 +972,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
 
       {/* Diff Content - DiffViewer 自带滚动 */}
       <div className="flex-1 min-h-0">
-        <DiffViewer before={before} after={after} language={language} viewMode={viewMode} isResizing={isResizing} />
+        <DiffViewer before={before} after={after} language={language} viewMode={viewMode} isResizing={isResizing} data={diffViewerData} />
       </div>
 
       <FullscreenViewer
@@ -964,8 +986,9 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
           </div>
         }
         headerRight={<ViewModeSwitch viewMode={fullscreenViewMode} onChange={setFullscreenViewMode} />}
+        deferContent
       >
-        <DiffViewer before={before} after={after} language={language} viewMode={fullscreenViewMode} />
+        <DiffViewer before={before} after={after} language={language} viewMode={fullscreenViewMode} data={diffViewerData} />
       </FullscreenViewer>
     </div>
   )

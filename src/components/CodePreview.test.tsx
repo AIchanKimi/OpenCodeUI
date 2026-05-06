@@ -1,6 +1,13 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { CodePreview } from './CodePreview'
+
+vi.mock('../store/themeStore', () => ({
+  themeStore: {
+    subscribe: () => () => {},
+    getSnapshot: () => mockThemeSnapshot,
+  },
+}))
 
 vi.mock('../hooks/useSyntaxHighlight', () => ({
   useSyntaxHighlightRef: () => ({
@@ -9,27 +16,40 @@ vi.mock('../hooks/useSyntaxHighlight', () => ({
   }),
 }))
 
+const mockThemeSnapshot = {
+  codeWordWrap: false,
+  codeFontScale: 0,
+}
+
 describe('CodePreview', () => {
-  it('renders plain text lines when syntax highlight is unavailable', () => {
-    render(<CodePreview code={'first line\nsecond line'} language="text" />)
+  it('renders code through CodeMirror with line numbers', () => {
+    const { container } = render(<CodePreview code={'first line\nsecond line'} language="text" />)
 
     expect(screen.getByText('first line')).toBeInTheDocument()
-    // "second line" 同时出现在可见行和隐藏的宽度探测元素中
-    expect(screen.getAllByText('second line').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('second line')).toBeInTheDocument()
     expect(screen.getByText('1')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
+    expect(container.querySelector('.cm-editor')).toBeInTheDocument()
   })
 
-  it('uses wrapped rendering without proxy horizontal scrollbar when word wrap is enabled', () => {
+  it('keeps the editor focusable while read-only', () => {
     const { container } = render(
-      <CodePreview
-        code={'const someRidiculouslyLongIdentifierName = "value"\nsecond line'}
-        language="text"
-        wordWrap={true}
-      />,
+      <CodePreview code={'const someRidiculouslyLongIdentifierName = "value"\nsecond line'} language="text" />,
     )
 
-    expect(screen.getByText('const someRidiculouslyLongIdentifierName = "value"')).toBeInTheDocument()
-    expect(container.querySelector('.sticky')).toBeNull()
+    expect(container.querySelector('.cm-content')).toHaveAttribute('contenteditable', 'true')
+  })
+
+  it('opens CodeMirror search from the preview Ctrl+F fallback', () => {
+    const { container } = render(<CodePreview code={'first line\nsecond line'} language="text" />)
+
+    fireEvent.keyDown(container.firstElementChild as Element, { key: 'f', ctrlKey: true })
+
+    expect(screen.getByPlaceholderText('Find')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Match case' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Use regular expression' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Match whole word' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear search' })).toBeInTheDocument()
+    expect(screen.getByText('No results')).toBeInTheDocument()
   })
 })

@@ -7,13 +7,25 @@
 
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
+import onigWasmUrl from 'shiki/onig.wasm?url'
 import { bundledLanguagesBase, bundledLanguagesAlias } from 'shiki/langs'
 import type { BundledTheme } from 'shiki/themes'
+
+export type ShikiThemeInput = BundledTheme
 
 // ── singleton ──────────────────────────────────────────────
 
 let highlighter: HighlighterCore | null = null
 let initPromise: Promise<HighlighterCore> | null = null
+let onigWasmPromise: Promise<ArrayBuffer> | null = null
+
+function loadOnigWasm(): Promise<ArrayBuffer> {
+  onigWasmPromise ??= fetch(onigWasmUrl).then(response => {
+    if (!response.ok) throw new Error(`Failed to load Shiki WASM: ${response.status}`)
+    return response.arrayBuffer()
+  })
+  return onigWasmPromise
+}
 
 /**
  * 获取 / 初始化 highlighter 单例。
@@ -24,8 +36,8 @@ export function getHighlighter(): Promise<HighlighterCore> {
   if (initPromise) return initPromise
 
   initPromise = createHighlighterCore({
-    engine: createOnigurumaEngine(() => import('shiki/wasm')),
-    themes: [import('shiki/themes/github-dark.mjs'), import('shiki/themes/github-light.mjs')],
+    engine: createOnigurumaEngine(loadOnigWasm),
+    themes: [import('shiki/themes/github-dark-default.mjs'), import('shiki/themes/github-light-default.mjs')],
     langs: [], // 不预加载任何语言
   }).then(h => {
     highlighter = h
@@ -84,7 +96,7 @@ export async function ensureLang(lang: string): Promise<boolean> {
 
 // ── 高亮 API（对外封装）────────────────────────────────────
 
-export async function codeToHtml(code: string, opts: { lang: string; theme: BundledTheme }): Promise<string> {
+export async function codeToHtml(code: string, opts: { lang: string; theme: ShikiThemeInput }): Promise<string> {
   const h = await getHighlighter()
   await ensureLang(opts.lang)
 
@@ -95,7 +107,7 @@ export async function codeToHtml(code: string, opts: { lang: string; theme: Bund
   return h.codeToHtml(code, { lang: safeLang, theme: opts.theme })
 }
 
-export async function codeToTokens(code: string, opts: { lang: string; theme: BundledTheme }) {
+export async function codeToTokens(code: string, opts: { lang: string; theme: ShikiThemeInput }) {
   const h = await getHighlighter()
   await ensureLang(opts.lang)
 

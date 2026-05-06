@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { codeToHtml, codeToTokens } from '../lib/shiki'
-import type { BundledTheme } from 'shiki/themes'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { codeToHtml, codeToTokens, type ShikiThemeInput } from '../lib/shiki'
 import { normalizeLanguage } from '../utils/languageUtils'
 import { THEME_SWITCH_DISABLE_MS } from '../constants'
 
@@ -10,6 +9,8 @@ type IdleWindowApi = {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
   cancelIdleCallback?: (id: number) => void
 }
+
+type HighlightTask = () => Promise<void>
 
 // ============================================
 // LRU 缓存层 - 避免重复高亮相同代码
@@ -76,6 +77,42 @@ class LRUCache<T> {
 const htmlCache = new LRUCache<string>(120)
 const tokensCache = new LRUCache<HighlightTokens>(80)
 
+const highlightQueue: HighlightTask[] = []
+let highlightQueueRunning = false
+
+function scheduleQueuedHighlight(task: HighlightTask): () => void {
+  let cancelled = false
+  highlightQueue.push(async () => {
+    if (!cancelled) await task()
+  })
+  void runHighlightQueue()
+
+  return () => {
+    cancelled = true
+  }
+}
+
+async function runHighlightQueue() {
+  if (highlightQueueRunning) return
+  highlightQueueRunning = true
+
+  try {
+    while (highlightQueue.length > 0) {
+      const task = highlightQueue.shift()
+      if (task) await task()
+      await yieldToMainThread()
+    }
+  } finally {
+    highlightQueueRunning = false
+  }
+}
+
+function yieldToMainThread(): Promise<void> {
+  return new Promise(resolve => {
+    window.setTimeout(resolve, 0)
+  })
+}
+
 // 生成缓存 key
 function getCacheKey(code: string, lang: string, theme: string): string {
   // 使用简单 hash 减少 key 长度
@@ -98,18 +135,11 @@ function simpleHash(str: string): number {
 async function highlightWithCache(
   code: string,
   lang: string,
-  theme: BundledTheme,
+  theme: ShikiThemeInput,
+  themeKey: string,
   mode: 'html' | 'tokens',
 ): Promise<string | HighlightTokens | null> {
-  // 主题切换期间短暂跳过高亮，避免大批量重算
-  if (typeof document !== 'undefined') {
-    const transitioning = document.documentElement.getAttribute('data-theme-transition') === 'off'
-    if (transitioning) {
-      return null
-    }
-  }
-
-  const cacheKey = getCacheKey(code, lang, theme)
+  const cacheKey = getCacheKey(code, lang, themeKey)
 
   if (mode === 'html') {
     const cached = htmlCache.get(cacheKey)
@@ -157,9 +187,13 @@ export function clearHighlightCache() {
 
 // ============================================
 
-// 根据主题模式选择 shiki 主题
-export function getShikiTheme(isDark: boolean): BundledTheme {
-  return isDark ? 'github-dark' : 'github-light'
+// 根据明暗模式选择 Shiki 官方完整主题。官方主题不依赖项目 preset/customCSS，缓存 key 不应跟这些变化。
+export function getShikiTheme(isDark: boolean): { theme: ShikiThemeInput; key: string } {
+  const theme = isDark ? 'github-dark-default' : 'github-light-default'
+  return {
+    theme,
+    key: theme,
+  }
 }
 
 // ============================================
@@ -255,7 +289,7 @@ function useIsDarkMode(): boolean {
 
 export interface HighlightOptions {
   lang?: string
-  theme?: BundledTheme
+  theme?: ShikiThemeInput
   enabled?: boolean
 }
 
@@ -278,11 +312,16 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
   const isDark = useIsDarkMode()
 
   // 如果没有指定主题，则根据 isDark 自动选择
-  const selectedTheme = theme || getShikiTheme(isDark)
+  const resolvedTheme = useMemo(() => {
+    if (theme) {
+      return { theme, key: theme }
+    }
+    return getShikiTheme(isDark)
+  }, [theme, isDark])
 
   const [output, setOutput] = useState<string | HighlightTokens | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const prevKeyRef = useRef<{ code: string; lang: string; theme: BundledTheme } | null>(null)
+  const prevKeyRef = useRef<{ code: string; lang: string; themeKey: string } | null>(null)
 
   useEffect(() => {
     if (!enabled) {
@@ -296,13 +335,13 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
     let cancelled = false
     const prevKey = prevKeyRef.current
     const isThemeOnlyChange =
-      !!prevKey && prevKey.code === code && prevKey.lang === normalizedLang && prevKey.theme !== selectedTheme
-    prevKeyRef.current = { code, lang: normalizedLang, theme: selectedTheme }
+      !!prevKey && prevKey.code === code && prevKey.lang === normalizedLang && prevKey.themeKey !== resolvedTheme.key
+    prevKeyRef.current = { code, lang: normalizedLang, themeKey: resolvedTheme.key }
 
     const shouldDefer = isThemeOnlyChange
 
     // 先检查缓存 - 同步返回避免闪烁
-    const cacheKey = getCacheKey(code, normalizedLang, selectedTheme)
+    const cacheKey = getCacheKey(code, normalizedLang, resolvedTheme.key)
     const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
 
     if (cachedResult !== undefined) {
@@ -321,7 +360,7 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
 
     async function highlight() {
       try {
-        const result = await highlightWithCache(code, normalizedLang, selectedTheme, mode)
+        const result = await highlightWithCache(code, normalizedLang, resolvedTheme.theme, resolvedTheme.key, mode)
         if (!cancelled) setOutput(result)
       } catch (err) {
         // Syntax highlighting error - silently fallback
@@ -351,8 +390,7 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
         const timeoutId = window.setTimeout(() => highlight(), THEME_SWITCH_DISABLE_MS)
         return () => clearTimeout(timeoutId)
       }
-      highlight()
-      return () => {}
+      return scheduleQueuedHighlight(highlight)
     }
 
     const cancelSchedule = schedule()
@@ -361,7 +399,7 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
       cancelled = true
       cancelSchedule()
     }
-  }, [code, normalizedLang, selectedTheme, mode, enabled])
+  }, [code, normalizedLang, resolvedTheme, mode, enabled])
 
   return { output, isLoading }
 }
@@ -384,11 +422,16 @@ export function useSyntaxHighlightRef(
   const normalizedLang = normalizeLanguage(lang)
 
   const isDark = useIsDarkMode()
-  const selectedTheme = theme || getShikiTheme(isDark)
+  const resolvedTheme = useMemo(() => {
+    if (theme) {
+      return { theme, key: theme }
+    }
+    return getShikiTheme(isDark)
+  }, [theme, isDark])
 
   const tokensRef = useRef<HighlightTokens | null>(null)
   const [version, setVersion] = useState(0)
-  const prevKeyRef = useRef<{ code: string; lang: string; theme: BundledTheme } | null>(null)
+  const prevKeyRef = useRef<{ code: string; lang: string; themeKey: string } | null>(null)
 
   useEffect(() => {
     if (!enabled) {
@@ -398,13 +441,13 @@ export function useSyntaxHighlightRef(
     let cancelled = false
     const prevKey = prevKeyRef.current
     const isThemeOnlyChange =
-      !!prevKey && prevKey.code === code && prevKey.lang === normalizedLang && prevKey.theme !== selectedTheme
-    prevKeyRef.current = { code, lang: normalizedLang, theme: selectedTheme }
+      !!prevKey && prevKey.code === code && prevKey.lang === normalizedLang && prevKey.themeKey !== resolvedTheme.key
+    prevKeyRef.current = { code, lang: normalizedLang, themeKey: resolvedTheme.key }
 
     const shouldDefer = isThemeOnlyChange
 
     // 先检查缓存
-    const cacheKey = getCacheKey(code, normalizedLang, selectedTheme)
+    const cacheKey = getCacheKey(code, normalizedLang, resolvedTheme.key)
     const cachedResult = tokensCache.get(cacheKey)
 
     if (cachedResult !== undefined) {
@@ -420,7 +463,7 @@ export function useSyntaxHighlightRef(
 
     async function highlight() {
       try {
-        const result = await highlightWithCache(code, normalizedLang, selectedTheme, 'tokens')
+        const result = await highlightWithCache(code, normalizedLang, resolvedTheme.theme, resolvedTheme.key, 'tokens')
         if (!cancelled) {
           tokensRef.current = result as HighlightTokens | null
           setVersion(v => v + 1)
@@ -451,8 +494,7 @@ export function useSyntaxHighlightRef(
         const timeoutId = window.setTimeout(() => highlight(), THEME_SWITCH_DISABLE_MS)
         return () => clearTimeout(timeoutId)
       }
-      highlight()
-      return () => {}
+      return scheduleQueuedHighlight(highlight)
     }
 
     const cancelSchedule = schedule()
@@ -461,7 +503,7 @@ export function useSyntaxHighlightRef(
       cancelled = true
       cancelSchedule()
     }
-  }, [code, normalizedLang, selectedTheme, enabled])
+  }, [code, normalizedLang, resolvedTheme, enabled])
 
   return { tokensRef, version }
 }

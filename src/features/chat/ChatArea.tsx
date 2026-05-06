@@ -33,9 +33,29 @@ import { useChatViewport } from './chatViewport'
 
 const MESSAGE_RENDER_ROOT_MARGIN = '150% 0px'
 const STICKY_RENDER_MESSAGE_COUNT = 8
+const ESTIMATED_USER_MESSAGE_HEIGHT = 72
+const ESTIMATED_ASSISTANT_MESSAGE_HEIGHT = 160
+const MAX_MEASURED_MESSAGE_HEIGHT_CACHE = 2000
+const measuredMessageHeightCache = new Map<string, number>()
 
 /** Stable no-op to avoid creating a new closure on every render. */
 const NOOP = () => {}
+
+function estimateMessageHeight(message: Message): number {
+  if (message.info.role === 'user') {
+    return Math.max(ESTIMATED_USER_MESSAGE_HEIGHT, message.parts.length * 40)
+  }
+
+  return Math.max(ESTIMATED_ASSISTANT_MESSAGE_HEIGHT, message.parts.length * 80)
+}
+
+function rememberMeasuredMessageHeight(cacheKey: string, height: number) {
+  measuredMessageHeightCache.set(cacheKey, height)
+  if (measuredMessageHeightCache.size <= MAX_MEASURED_MESSAGE_HEIGHT_CACHE) return
+
+  const oldestKey = measuredMessageHeightCache.keys().next().value
+  if (oldestKey) measuredMessageHeightCache.delete(oldestKey)
+}
 
 export function buildTurnDurationMap(messages: Message[], visibleMessages: Message[]): Map<string, number> {
   const map = new Map<string, number>()
@@ -158,6 +178,7 @@ export const ChatArea = memo(
       const turnDurationMap = useMemo(() => buildTurnDurationMap(messages, visibleMessages), [messages, visibleMessages])
 
       const messageMaxWidthClass = isWideMode ? 'max-w-[95%] xl:max-w-6xl' : 'max-w-2xl'
+      const heightCacheScope = `${presentation.surfaceVariant}:${isWideMode ? 'wide' : 'normal'}`
       const stickyRenderIds = useMemo(
         () => new Set(visibleMessages.slice(-STICKY_RENDER_MESSAGE_COUNT).map(message => message.info.id)),
         [visibleMessages],
@@ -389,6 +410,8 @@ export const ChatArea = memo(
                       scrollRoot={scrollRoot}
                       registerMessage={registerMessage}
                       forceRender={msg.isStreaming || stickyRenderIds.has(msg.info.id)}
+                      estimatedHeight={estimateMessageHeight(msg)}
+                      heightCacheKey={`${heightCacheScope}:${msg.info.id}`}
                     >
                       <MessageRenderer
                         message={msg}
@@ -409,6 +432,7 @@ export const ChatArea = memo(
         },
         [
           scrollRoot,
+          heightCacheScope,
           stickyRenderIds,
           registerMessage,
           onUndo,
@@ -446,7 +470,10 @@ export const ChatArea = memo(
             {/* Shim: flex-1 占满剩余空间，消息不满一屏时推到视觉顶部 */}
             <div className="flex-1" />
 
-            {/* Bottom spacing (视觉底部) */}
+            {/* Bottom spacing (视觉底部)：
+             * 预留一块高 = inputBoxHeight + GAP 的空区，让最后一条消息不被贴底的 InputBox 遮住。
+             * GAP 控制消息底部 (fork/copy 按钮一行) 到输入胶囊顶部的空白，
+             * 保持偏宽松的留白，避免最后一条消息贴近输入区。 */}
             <div
               className="shrink-0"
               style={{
@@ -501,6 +528,8 @@ interface ViewportMessageItemProps {
   messageId: string
   scrollRoot: HTMLDivElement | null
   forceRender?: boolean
+  estimatedHeight: number
+  heightCacheKey: string
   registerMessage?: (id: string, element: HTMLElement | null) => void
   children: ReactNode
 }
@@ -509,13 +538,20 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
   messageId,
   scrollRoot,
   forceRender = false,
+  estimatedHeight,
+  heightCacheKey,
   registerMessage,
   children,
 }: ViewportMessageItemProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
-  const [isNearViewport, setIsNearViewport] = useState(true)
-  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
+  const [isNearViewport, setIsNearViewport] = useState(() => forceRender || typeof IntersectionObserver === 'undefined')
+  const [measuredHeightState, setMeasuredHeightState] = useState(() => ({
+    cacheKey: heightCacheKey,
+    height: measuredMessageHeightCache.get(heightCacheKey) ?? null,
+  }))
+  const measuredHeight =
+    measuredHeightState.cacheKey === heightCacheKey ? measuredHeightState.height : measuredMessageHeightCache.get(heightCacheKey) ?? null
 
   const setWrapperElement = useCallback(
     (node: HTMLDivElement | null) => {
@@ -528,10 +564,11 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
   useEffect(() => {
     const wrapper = wrapperRef.current
     if (!wrapper || !scrollRoot) return
+    if (typeof IntersectionObserver === 'undefined') return
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsNearViewport(entry.isIntersecting)
+        setIsNearViewport(prev => (prev === entry.isIntersecting ? prev : entry.isIntersecting))
       },
       {
         root: scrollRoot,
@@ -543,7 +580,7 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
     return () => observer.disconnect()
   }, [scrollRoot])
 
-  const shouldRender = forceRender || measuredHeight === null || isNearViewport
+  const shouldRender = forceRender || isNearViewport
 
   useEffect(() => {
     const content = contentRef.current
@@ -552,7 +589,11 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
     const updateHeight = () => {
       const nextHeight = content.offsetHeight
       if (nextHeight <= 0) return
-      setMeasuredHeight(prev => (prev !== null && Math.abs(prev - nextHeight) < 1 ? prev : nextHeight))
+      setMeasuredHeightState(prev => {
+        if (prev.cacheKey === heightCacheKey && prev.height !== null && Math.abs(prev.height - nextHeight) < 1) return prev
+        rememberMeasuredMessageHeight(heightCacheKey, nextHeight)
+        return { cacheKey: heightCacheKey, height: nextHeight }
+      })
     }
 
     updateHeight()
@@ -560,14 +601,14 @@ const ViewportMessageItem = memo(function ViewportMessageItem({
     const observer = new ResizeObserver(updateHeight)
     observer.observe(content)
     return () => observer.disconnect()
-  }, [shouldRender])
+  }, [heightCacheKey, shouldRender])
 
   return (
     <div ref={setWrapperElement} data-message-id={messageId}>
       {shouldRender ? (
         <div ref={contentRef}>{children}</div>
       ) : (
-        <div aria-hidden="true" style={measuredHeight ? { height: `${measuredHeight}px` } : undefined} />
+        <div aria-hidden="true" style={{ height: `${measuredHeight ?? estimatedHeight}px` }} />
       )}
     </div>
   )

@@ -1,5 +1,79 @@
 # Changelog
 
+## [v0.6.4] - 2026-05-04
+
+- fix: keep delete change bars continuous (843d861)
+
+## [v0.6.3] - 2026-05-04
+
+- ui: simplify tool diff result headers (a5889a5)
+- build: reduce bundled asset size (3e4aaa2)
+- fix: align wrapped diff empty textures (d4b187b)
+- fix: smooth split session loading (c4f3bb7)
+
+## [v0.6.2] - 2026-05-04
+
+- fix: smooth wrapped diff scrolling (e46d0e5)
+- fix: center collapsed diff buttons on mobile (9c1c6ef)
+- fix: keep empty diff buffer textures aligned (3b70696)
+
+## [v0.6.1] - 2026-05-03
+
+- fix: align readonly code gutters with diffs (b9a15d3)
+- fix: polish diff gutter and separators (2568070)
+- fix: keep chat bottom spacing comfortable (bc42873)
+- fix: tighten chat surface bottom spacing (f47dedb)
+- fix: PWA safe-area double padding on iOS (0b4fa33)
+
+## [v0.6.0] - 2026-05-03
+
+- test: update diff viewer mock for shared data (13d7c04)
+- fix: stabilize preview tab hover width (f2d0564)
+- feat: improve file and change previews (7ae977d)
+- fix: restore scrolling for inline code previews (09d3e96)
+- perf: share diff data with fullscreen viewer (e3ceef8)
+- perf: hoist diff viewer data across view modes (4467730)
+- fix: improve readonly code selection contrast (4955f56)
+- fix: strengthen empty diff buffer texture (849445f)
+- fix: add Pierre-style empty diff buffers (16eec59)
+- fix: adapt line number gutter width (d37f112)
+- fix: center diff separator icons (db857dc)
+- fix: port Pierre diff separator styling (789dcf2)
+- fix: add Pierre-style diff separator expansion (1ce0d3a)
+- fix: refine handwritten diff collapsed separators (ab9c8a6)
+- fix: mask readonly code gutters (0a41e2a)
+- refactor: extract readonly codemirror view (0b81235)
+- fix: refine code search responsive layout (fc12a33)
+- fix: anchor code preview search panel (00244e3)
+- fix: polish code preview search panel (cd4e8d1)
+- fix: smooth syntax theme switching (1f079e1)
+- fix: use complete github shiki themes (2fc89fb)
+- fix: align shiki theme with github syntax colors (e4c171a)
+- feat: add adaptive shiki theme (6cb720e)
+- feat: use codemirror for code previews (487cea3)
+- fix: optimize sidebar transition rendering (06fe9a2)
+- fix: limit message offscreen unmounting to resize (3986e5f)
+
+## [v0.5.20] - 2026-05-01
+
+- fix: preserve git subdirectory projects (e9646b9)
+
+## [v0.5.19] - 2026-04-29
+
+- fix: tighten sidebar search spacing (8b76cb2)
+- fix: align desktop titlebar and dialog layout (f5800ba)
+- fix: align dialog overlay styling (fe3a3cf)
+- fix: unify right panel tab styling (ca6d697)
+- fix: align command palette styling (dc67f38)
+- fix: polish sidebar popover styling (da633ea)
+- fix: preserve route session during refresh (9d3f0a0)
+- fix: prevent terminal reconnect loops on global switch (5d0aca2)
+
+## [v0.5.18] - 2026-04-29
+
+- fix: tighten pane focus and interaction regressions (c800e44)
+- fix: prevent route sync from overwriting focused panes (fa44f13)
+
 ## [v0.5.17] - 2026-04-28
 
 - fix: keep session actions tied to visible focus (0e16597)

@@ -69,6 +69,7 @@ function App() {
   const focusedController = usePaneController(paneLayout.focusedPaneId)
   const paneControllers = usePaneControllers()
   const syncingFromRouteRef = useRef(false)
+  const lastRouteSessionIdRef = useRef<string | null | undefined>(undefined)
   // 当 currentDirectory 为 undefined 时表示全局模式，
   // 不应 fallback 到 session 自身的 directory，否则 replaceSession 会把 dir 参数写回 URL
   const focusedRouteDirectory =
@@ -117,10 +118,12 @@ function App() {
 
   // URL -> focused pane session
   useEffect(() => {
-    if (paneLayout.focusedSessionId === routeSessionId) return
+    if (lastRouteSessionIdRef.current === routeSessionId) return
+    lastRouteSessionIdRef.current = routeSessionId
+    if (paneLayoutStore.getFocusedSessionId() === routeSessionId) return
     syncingFromRouteRef.current = true
     paneLayoutStore.setFocusedSession(routeSessionId)
-  }, [paneLayout.focusedSessionId, routeSessionId])
+  }, [routeSessionId])
 
   // focused pane session -> URL（路由只反映当前 focused pane）
   useEffect(() => {
@@ -128,6 +131,7 @@ function App() {
       syncingFromRouteRef.current = false
       return
     }
+    if (paneLayoutStore.getFocusedSessionId() !== paneLayout.focusedSessionId) return
     if (paneLayout.focusedSessionId === routeSessionId && isSameDirectory(routeDirectory, focusedRouteDirectory)) return
     replaceSession(paneLayout.focusedSessionId, focusedRouteDirectory)
   }, [
@@ -559,10 +563,7 @@ function App() {
   const { showCloseDialog, handleCloseDialogConfirm, handleCloseDialogCancel } = useCloseServiceDialog()
 
   return (
-    <div
-      className="relative flex h-[var(--app-height)] flex-col bg-bg-100 overflow-hidden"
-      style={{ paddingTop: 'var(--safe-area-inset-top)' }}
-    >
+    <div className="relative flex h-full flex-col bg-bg-100 overflow-hidden">
       <DesktopTitlebar />
       <ChatViewportProvider value={chatViewport}>
         <div className="relative flex min-h-0 flex-1 overflow-hidden">

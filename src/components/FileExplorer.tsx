@@ -33,6 +33,7 @@ import { notificationStore } from '../store/notificationStore'
 import { CodePreview } from './CodePreview'
 import { FullscreenViewer } from './FullscreenViewer'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
+import { MarkdownRenderer } from './MarkdownRenderer'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { detectLanguage } from '../utils/languageUtils'
 import {
@@ -68,6 +69,14 @@ function isEditableTextContent(content: FileContent | null): content is FileCont
   if (!content) return false
   if (isBinaryContent(content.encoding)) return false
   return !isTextualMedia(content.mimeType)
+}
+
+const MARKDOWN_MIME_TYPES = new Set(['text/markdown', 'text/x-markdown', 'text/md', 'application/markdown'])
+
+function isMarkdownPreview(language: string, mimeType?: string): boolean {
+  if (language === 'markdown' || language === 'mdx') return true
+  if (!mimeType) return false
+  return MARKDOWN_MIME_TYPES.has(mimeType.split(';', 1)[0].toLowerCase())
 }
 
 interface FileExplorerProps {
@@ -264,6 +273,13 @@ export const FileExplorer = memo(function FileExplorer({
     })
   }, [editorDrafts, panelTabId, previewFiles])
 
+  const handleRefresh = useCallback(async () => {
+    await refresh()
+    if (previewFile) {
+      await loadPreview(previewFile.path)
+    }
+  }, [loadPreview, previewFile, refresh])
+
   // 处理文件点击
   const handleFileClick = useCallback(
     (node: FileTreeNode) => {
@@ -457,20 +473,21 @@ export const FileExplorer = memo(function FileExplorer({
         }
       >
         {/* Tree Header */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-100/50 shrink-0">
-          <span className="text-[length:var(--fs-xxs)] font-bold text-text-400 uppercase tracking-wider">
+        <div className="relative flex h-10 items-center justify-between px-3 shrink-0">
+          <span className="inline-flex h-6 items-center text-[length:var(--fs-xs)] font-medium text-text-100">
             {t('fileExplorer.explorer')}
           </span>
           <button
             type="button"
-            onClick={refresh}
+            onClick={handleRefresh}
             disabled={isLoading}
             aria-label={t('common:refresh')}
-            className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-200 rounded transition-colors disabled:opacity-50"
+            className="inline-flex h-6 w-6 items-center justify-center text-text-400 hover:text-text-100 hover:bg-bg-200/50 rounded-md transition-colors disabled:opacity-50"
             title={t('common:refresh')}
           >
             <RetryIcon size={12} className={isLoading ? 'animate-spin' : ''} />
           </button>
+          <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
         </div>
 
         {/* Tree Content */}
@@ -818,8 +835,8 @@ function FilePreview({
 
   // 处理内容类型分发
   const displayContent = useMemo(() => {
-    return buildDisplayContent(content)
-  }, [content])
+    return buildDisplayContent(content, language)
+  }, [content, language])
 
   const canSave = path !== null && editableText !== null && isDirty && !isSaving
 
@@ -890,12 +907,12 @@ function FilePreview({
         )
       }
 
-      if (displayContent?.type === 'text' && showEditableText) {
+      if (showEditableText && (displayContent?.type === 'text' || displayContent?.type === 'markdown')) {
         return (
           <FileTextEditor
             fileName={fileName}
             value={editableText}
-            language={language || 'text'}
+            language={displayContent.type === 'markdown' ? 'markdown' : (language || 'text')}
             isDirty={isDirty}
             isSaving={isSaving}
             saveError={saveError}
@@ -930,6 +947,10 @@ function FilePreview({
             isResizing={!isFullscreen && isResizing}
           />
         )
+      }
+
+      if (displayContent?.type === 'markdown') {
+        return <MarkdownFilePreview text={displayContent.text} isResizing={!isFullscreen && isResizing} />
       }
 
       if (displayContent?.type === 'text') {
@@ -978,7 +999,7 @@ function FilePreview({
         onClose={onClosePreview}
         onCloseAll={onClose}
         onReorder={onReorderPreview}
-        tabWidthClassName="w-40 max-w-40"
+        tabWidthClassName="w-auto max-w-none min-w-max"
         rightActions={
           content ? (
             <>
@@ -1038,10 +1059,18 @@ function displayContentType(content: FileContent | null) {
   return 'text' as const
 }
 
-function buildDisplayContent(content: FileContent | null) {
+function buildDisplayContent(content: FileContent | null, language: string) {
   if (!content) return null
 
   const category = getPreviewCategory(content.mimeType)
+
+  if (isMarkdownPreview(language, content.mimeType)) {
+    const text = isBinaryContent(content.encoding) ? decodeBase64Text(content.content) : content.content
+    return {
+      type: 'markdown' as const,
+      text,
+    }
+  }
 
   if (isTextualMedia(content.mimeType)) {
     const isBase64 = isBinaryContent(content.encoding)
@@ -1370,6 +1399,45 @@ function TextMediaPreview({ dataUrl, text, language, fileName, isResizing = fals
       ) : (
         <div className="flex-1 min-h-0">
           <CodePreview code={text} language={language} isResizing={isResizing} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface MarkdownFilePreviewProps {
+  text: string
+  isResizing?: boolean
+}
+
+function MarkdownFilePreview({ text, isResizing = false }: MarkdownFilePreviewProps) {
+  const { t } = useTranslation(['components', 'common'])
+  const [mode, setMode] = useState<'preview' | 'code'>('preview')
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 border-b border-border-100/30 bg-bg-100/50 text-[length:var(--fs-xxs)]">
+        <button
+          onClick={() => setMode('preview')}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+        >
+          {t('common:preview')}
+        </button>
+        <button
+          onClick={() => setMode('code')}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+        >
+          {t('common:code')}
+        </button>
+      </div>
+
+      {mode === 'preview' ? (
+        <div className="flex-1 min-h-0 overflow-auto panel-scrollbar px-5 py-4">
+          <MarkdownRenderer content={text} />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0">
+          <CodePreview code={text} language="markdown" isResizing={isResizing} />
         </div>
       )}
     </div>
