@@ -123,7 +123,7 @@ describe('SessionChangesPanel', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads session diffs and shows the first file preview by default', async () => {
+  it('loads last turn diffs and shows the first file preview by default', async () => {
     render(<SessionChangesPanel sessionId="session-1" directory="/repo" />)
 
     await act(async () => {
@@ -132,16 +132,16 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
-    expect(screen.getByText('2f')).toBeInTheDocument()
+    expect(getLastTurnDiff).toHaveBeenCalledWith('session-1', '/repo')
+    expect(screen.getByText('1f')).toBeInTheDocument()
     expect(screen.getAllByText('+1').length).toBeGreaterThan(0)
     expect(screen.getAllByText('-1').length).toBeGreaterThan(0)
     expect(screen.getByTestId('diff-viewer')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Change mode: Session changes/ })).toBeInTheDocument()
-    expect(screen.getAllByText('app.ts').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /Change mode: Last turn changes/ })).toBeInTheDocument()
+    expect(screen.getAllByText('turn.ts').length).toBeGreaterThan(0)
   })
 
-  it('switches to current turn changes on demand', async () => {
+  it('switches to session changes on demand', async () => {
     render(<SessionChangesPanel sessionId="session-1" directory="/repo" />)
 
     await act(async () => {
@@ -157,7 +157,7 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    fireEvent.click(screen.getByText('Last turn changes'))
+    fireEvent.click(screen.getByText('Session changes'))
 
     await act(async () => {
       vi.advanceTimersByTime(240)
@@ -165,10 +165,10 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    expect(getLastTurnDiff).toHaveBeenCalledWith('session-1', '/repo')
-    expect(changeScopeStore.getMode('session-1')).toBe('turn')
-    expect(screen.getByText('1f')).toBeInTheDocument()
-    expect(screen.getAllByText('turn.ts').length).toBeGreaterThan(0)
+    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
+    expect(changeScopeStore.getMode('session-1')).toBe('session')
+    expect(screen.getByText('2f')).toBeInTheDocument()
+    expect(screen.getAllByText('app.ts').length).toBeGreaterThan(0)
   })
 
   it('switches to branch changes when available', async () => {
@@ -218,12 +218,12 @@ describe('SessionChangesPanel', () => {
     })
 
     const menu = screen.getByRole('menu', { name: 'Change mode' })
-    const sessionChangesOption = screen.getByRole('menuitemradio', { name: 'Session changes' })
     const lastTurnOption = screen.getByRole('menuitemradio', { name: 'Last turn changes' })
+    const gitChangesOption = screen.getByRole('menuitemradio', { name: 'Git changes' })
 
-    expect(sessionChangesOption).toHaveFocus()
-    fireEvent.keyDown(menu, { key: 'ArrowDown' })
     expect(lastTurnOption).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(gitChangesOption).toHaveFocus()
 
     const treeButton = screen.getByRole('button', { name: 'Tree' })
     const listButton = screen.getByRole('button', { name: 'List' })
@@ -259,7 +259,7 @@ describe('SessionChangesPanel', () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole('menuitemradio', { name: 'Branch changes' })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: 'Session changes' })).toHaveFocus()
   })
 
   it('offers git initialization when the project is not a git repository', async () => {
@@ -285,6 +285,6 @@ describe('SessionChangesPanel', () => {
     })
 
     expect(initGitProject).toHaveBeenCalledWith('/repo')
-    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo')
+    expect(getLastTurnDiff).toHaveBeenCalledWith('session-1', '/repo')
   })
 })

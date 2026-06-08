@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore, memo } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { DragDropEvent } from '@tauri-apps/api/webview'
 import { AttachmentPreview, type Attachment } from '../attachment'
 import {
   MentionMenu,
   detectMentionTrigger,
+  getFileName,
   normalizePath,
   toFileUrl,
   type MentionMenuHandle,
@@ -17,12 +19,28 @@ import { FloatingActions, CollapsedCapsule } from './input/InputActions'
 import { useMobileCollapse } from './input/useMobileCollapse'
 import { useAttachmentRail } from './input/useAttachmentRail'
 import { useInputHistory } from './input/useInputHistory'
-import { TEXT_STYLE, detectSlashTrigger, isFileSupported, ensureFileMime, readFileAsDataUrl } from './input/inputUtils'
+import {
+  TEXT_STYLE,
+  bytesToDataUrl,
+  detectSlashTrigger,
+  ensureFileMime,
+  getMimeFromPath,
+  isFileSupported,
+  readFileAsDataUrl,
+} from './input/inputUtils'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
+import { themeStore } from '../../store/themeStore'
 import { useChatViewport } from './chatViewport'
 import type { ApiAgent } from '../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../api'
 import type { Command } from '../../api/command'
+import { isTauri } from '../../utils/tauri'
+import {
+  getInternalDragSnapshot,
+  isPointInsideElement as isInternalPointInsideElement,
+  subscribeInternalDrag,
+  subscribeInternalDrop,
+} from '../../lib/internalDragCore'
 
 // ============================================
 // Types
@@ -31,6 +49,56 @@ import type { Command } from '../../api/command'
 interface HistoryEntry {
   text: string
   attachments: Attachment[]
+}
+
+interface DraggedFileInfo {
+  type: 'file' | 'folder'
+  path: string
+  absolute: string
+  name: string
+}
+
+interface DroppedPathInfo {
+  type: 'file' | 'folder'
+  path: string
+  name: string
+}
+
+type TauriDropPosition = Extract<DragDropEvent, { type: 'drop' }>['position']
+
+function getDropClientPoint(position: TauriDropPosition): { x: number; y: number } {
+  const scale = window.devicePixelRatio || 1
+  return {
+    x: position.x / scale,
+    y: position.y / scale,
+  }
+}
+
+function isPointInsideElement(position: TauriDropPosition, element: HTMLElement | null): boolean {
+  if (!element) return false
+  const { x, y } = getDropClientPoint(position)
+  const rect = element.getBoundingClientRect()
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+}
+
+function getMentionPathForDroppedPath(absolutePath: string, rootPath: string): string {
+  const normalizedPath = normalizePath(absolutePath)
+  const normalizedRoot = normalizePath(rootPath).replace(/\/+$/, '')
+  if (!normalizedRoot) return normalizedPath
+
+  const caseInsensitive = /^[a-zA-Z]:/.test(normalizedPath) || /^[a-zA-Z]:/.test(normalizedRoot)
+  const comparablePath = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath
+  const comparableRoot = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot
+
+  if (comparablePath === comparableRoot) {
+    return getFileName(normalizedPath)
+  }
+
+  if (comparablePath.startsWith(`${comparableRoot}/`)) {
+    return normalizedPath.slice(normalizedRoot.length + 1)
+  }
+
+  return normalizedPath
 }
 
 export interface CollapsedDialogInfo {
@@ -138,6 +206,7 @@ function InputBoxComponent({
       },
     [fileCapabilitiesProp, supportsImages],
   )
+  const { externalFileDropMode } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
 
   // 是否有任何文件附件能力
   const supportsAnyFile = fileCaps.image || fileCaps.pdf || fileCaps.audio || fileCaps.video
@@ -160,7 +229,9 @@ function InputBoxComponent({
 
   // 拖拽状态
   const [isDragging, setIsDragging] = useState(false)
+  const [isInternalFileDragging, setIsInternalFileDragging] = useState(false)
   const dragCounterRef = useRef(0)
+  const lastTauriDropAtRef = useRef(0)
 
   const { presentation, interaction } = useChatViewport()
   const isCompact = presentation.isCompact
@@ -175,6 +246,8 @@ function InputBoxComponent({
   const latestDraftRef = useRef<HistoryEntry>({ text: '', attachments: [] })
   const contentWrapRef = useRef<HTMLDivElement>(null)
   const footerRef = useRef<HTMLDivElement>(null)
+  const isComposingRef = useRef(false)
+  const compositionEndTimerRef = useRef<number | null>(null)
 
   // 附件横向轨道
   const {
@@ -241,6 +314,15 @@ function InputBoxComponent({
       }
     }
   }, [revertedText, revertedAttachments, isSubmitting])
+
+  useEffect(
+    () => () => {
+      if (compositionEndTimerRef.current !== null) {
+        clearTimeout(compositionEndTimerRef.current)
+      }
+    },
+    [],
+  )
 
   // 自动调整 textarea 高度
   useEffect(() => {
@@ -424,6 +506,11 @@ function InputBoxComponent({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const nativeEvent = e.nativeEvent
+      const isImeComposing = isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229
+
+      if (isImeComposing && (e.key === 'Enter' || e.key === 'Tab')) return
+
       // Slash Command 菜单打开时，拦截导航键
       if (slashOpen && slashMenuRef.current) {
         switch (e.key) {
@@ -519,7 +606,7 @@ function InputBoxComponent({
 
       // 发送消息（读取 keybinding 配置）
       const sendKey = keybindingStore.getKey('sendMessage')
-      if (sendKey && matchesKeybinding(e.nativeEvent, sendKey)) {
+      if (sendKey && !isImeComposing && matchesKeybinding(nativeEvent, sendKey)) {
         e.preventDefault()
         handleSend()
       }
@@ -573,6 +660,25 @@ function InputBoxComponent({
     },
     [handleHistoryChange],
   )
+
+  const handleCompositionStart = useCallback(() => {
+    if (compositionEndTimerRef.current !== null) {
+      clearTimeout(compositionEndTimerRef.current)
+      compositionEndTimerRef.current = null
+    }
+    isComposingRef.current = true
+  }, [])
+
+  const handleCompositionEnd = useCallback(() => {
+    if (compositionEndTimerRef.current !== null) {
+      clearTimeout(compositionEndTimerRef.current)
+    }
+
+    compositionEndTimerRef.current = window.setTimeout(() => {
+      isComposingRef.current = false
+      compositionEndTimerRef.current = null
+    }, 0)
+  }, [])
 
   // @ Mention 选择处理
   const handleMentionSelect = useCallback(
@@ -776,11 +882,7 @@ function InputBoxComponent({
       e.preventDefault()
       e.stopPropagation()
       dragCounterRef.current++
-      // 内部拖拽（FileExplorer）或原生文件拖拽都高亮
-      if (
-        e.dataTransfer.types.includes('application/opencode-file') ||
-        (supportsAnyFile && e.dataTransfer.types.includes('Files'))
-      ) {
+      if (supportsAnyFile && e.dataTransfer.types.includes('Files')) {
         setIsDragging(true)
       }
     },
@@ -802,49 +904,207 @@ function InputBoxComponent({
   }, [])
 
   // 将拖入的文件信息插入为 @mention 附件
-  const insertDraggedFile = useCallback(
-    (fileInfo: { type: 'file' | 'folder'; path: string; absolute: string; name: string }) => {
-      const relativePath = normalizePath(fileInfo.path)
-      const mentionText = `@${relativePath}`
-      const cursorPos = textareaRef.current?.selectionStart ?? text.length
+  const insertDraggedFiles = useCallback(
+    (fileInfos: DraggedFileInfo[]) => {
+      if (fileInfos.length === 0) return
 
-      // 在光标位置插入 @mention 文本
-      const beforeCursor = text.slice(0, cursorPos)
-      const afterCursor = text.slice(cursorPos)
-      // 如果光标前不是空格或空文本，插入空格分隔
+      const currentText = textareaRef.current?.value ?? text
+      const cursorPos = textareaRef.current?.selectionStart ?? currentText.length
+      const beforeCursor = currentText.slice(0, cursorPos)
+      const afterCursor = currentText.slice(cursorPos)
       const needSpaceBefore = beforeCursor.length > 0 && !beforeCursor.endsWith(' ') && !beforeCursor.endsWith('\n')
       const prefix = needSpaceBefore ? ' ' : ''
-      const newText = beforeCursor + prefix + mentionText + ' ' + afterCursor
-      const mentionStart = cursorPos + prefix.length
+      const mentions = fileInfos.map(fileInfo => {
+        const relativePath = normalizePath(fileInfo.path)
+        return {
+          fileInfo,
+          relativePath,
+          mentionText: `@${relativePath}`,
+        }
+      })
+      const insertedText = `${prefix}${mentions.map(item => item.mentionText).join(' ')} `
+      const newText = beforeCursor + insertedText + afterCursor
+      let mentionStart = cursorPos + prefix.length
 
-      // 创建附件
-      const attachment: Attachment = {
-        id: crypto.randomUUID(),
-        type: fileInfo.type,
-        displayName: fileInfo.name,
-        relativePath,
-        url: toFileUrl(fileInfo.absolute),
-        mime: fileInfo.type === 'file' ? 'text/plain' : undefined,
-        textRange: {
-          value: mentionText,
-          start: mentionStart,
-          end: mentionStart + mentionText.length,
-        },
-      }
+      const nextAttachments: Attachment[] = mentions.map(({ fileInfo, relativePath, mentionText }) => {
+        const start = mentionStart
+        mentionStart += mentionText.length + 1
+
+        return {
+          id: crypto.randomUUID(),
+          type: fileInfo.type,
+          displayName: fileInfo.name,
+          relativePath,
+          url: toFileUrl(fileInfo.absolute),
+          mime: fileInfo.type === 'file' ? 'text/plain' : undefined,
+          textRange: {
+            value: mentionText,
+            start,
+            end: start + mentionText.length,
+          },
+        }
+      })
 
       setText(newText)
-      setAttachments(prev => [...prev, attachment])
+      setAttachments(prev => [...prev, ...nextAttachments])
 
-      // 聚焦并移动光标到 @mention 之后
       requestAnimationFrame(() => {
         if (!textareaRef.current) return
-        const newCursorPos = mentionStart + mentionText.length + 1
+        const newCursorPos = cursorPos + insertedText.length
         textareaRef.current.setSelectionRange(newCursorPos, newCursorPos)
         textareaRef.current.focus()
       })
     },
     [text],
   )
+
+  const insertDraggedFile = useCallback((fileInfo: DraggedFileInfo) => insertDraggedFiles([fileInfo]), [insertDraggedFiles])
+
+  useEffect(() => {
+    const updateInternalFileDragState = () => {
+      const active = getInternalDragSnapshot().active
+      if (!active || active.payload.kind !== 'file-mention') {
+        setIsInternalFileDragging(false)
+        return
+      }
+      setIsInternalFileDragging(isInternalPointInsideElement(active.current, inputContainerRef.current))
+    }
+
+    updateInternalFileDragState()
+    return subscribeInternalDrag(updateInternalFileDragState)
+  }, [])
+
+  useEffect(() => {
+    return subscribeInternalDrop(event => {
+      if (event.payload.kind !== 'file-mention') return
+      if (!isInternalPointInsideElement(event.point, inputContainerRef.current)) return
+      insertDraggedFile(event.payload.file)
+    })
+  }, [insertDraggedFile])
+
+  const buildDraggedFileInfo = useCallback(
+    (fileInfo: DroppedPathInfo): DraggedFileInfo => ({
+      type: fileInfo.type,
+      path: getMentionPathForDroppedPath(fileInfo.path, rootPath),
+      absolute: fileInfo.path,
+      name: fileInfo.name || getFileName(fileInfo.path),
+    }),
+    [rootPath],
+  )
+
+  const createUploadAttachmentFromDroppedPath = useCallback(
+    async (fileInfo: DroppedPathInfo): Promise<Attachment | null> => {
+      if (fileInfo.type !== 'file') return null
+
+      const mime = getMimeFromPath(fileInfo.path)
+      if (!isFileSupported(mime, fileCaps)) return null
+
+      try {
+        const { readFile } = await import('@tauri-apps/plugin-fs')
+        const bytes = await readFile(fileInfo.path)
+        return {
+          id: crypto.randomUUID(),
+          type: 'file',
+          displayName: fileInfo.name || getFileName(fileInfo.path),
+          url: bytesToDataUrl(bytes, mime),
+          mime,
+        }
+      } catch (err) {
+        console.warn('[InputBox] Failed to read dropped file for upload:', err)
+        return null
+      }
+    },
+    [fileCaps],
+  )
+
+  const handleTauriExternalDrop = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0 || isSubmitting) return
+
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const droppedPaths = await invoke<DroppedPathInfo[]>('get_dropped_paths_info', { paths })
+        const uploadAttachments: Attachment[] = []
+        const mentionFiles: DraggedFileInfo[] = []
+
+        for (const droppedPath of droppedPaths) {
+          if (externalFileDropMode === 'mention') {
+            mentionFiles.push(buildDraggedFileInfo(droppedPath))
+            continue
+          }
+
+          const uploadAttachment = await createUploadAttachmentFromDroppedPath(droppedPath)
+          if (uploadAttachment) {
+            uploadAttachments.push(uploadAttachment)
+          } else {
+            mentionFiles.push(buildDraggedFileInfo(droppedPath))
+          }
+        }
+
+        if (uploadAttachments.length > 0) {
+          setAttachments(prev => [...prev, ...uploadAttachments])
+        }
+
+        insertDraggedFiles(mentionFiles)
+      } catch (err) {
+        console.warn('[InputBox] Failed to process Tauri dropped paths:', err)
+      }
+    },
+    [buildDraggedFileInfo, createUploadAttachmentFromDroppedPath, externalFileDropMode, insertDraggedFiles, isSubmitting],
+  )
+
+  const handleTauriDragDropEvent = useCallback(
+    (event: DragDropEvent) => {
+      if (event.type === 'leave') {
+        dragCounterRef.current = 0
+        setIsDragging(false)
+        return
+      }
+
+      const insideInput = isPointInsideElement(event.position, inputContainerRef.current)
+
+      if (event.type === 'enter' || event.type === 'over') {
+        setIsDragging(insideInput)
+        return
+      }
+
+      dragCounterRef.current = 0
+      setIsDragging(false)
+      if (insideInput) {
+        lastTauriDropAtRef.current = Date.now()
+        void handleTauriExternalDrop(event.paths)
+      }
+    },
+    [handleTauriExternalDrop],
+  )
+
+  useEffect(() => {
+    if (!isTauri()) return
+
+    let disposed = false
+    let unlisten: (() => void) | null = null
+
+    void import('@tauri-apps/api/webview')
+      .then(async ({ getCurrentWebview }) => {
+        const cleanup = await getCurrentWebview().onDragDropEvent(event => {
+          handleTauriDragDropEvent(event.payload)
+        })
+
+        if (disposed) {
+          cleanup()
+        } else {
+          unlisten = cleanup
+        }
+      })
+      .catch(err => {
+        console.warn('[InputBox] Failed to listen for Tauri drag-drop events:', err)
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [handleTauriDragDropEvent])
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -853,23 +1113,13 @@ function InputBoxComponent({
       dragCounterRef.current = 0
       setIsDragging(false)
 
-      // 来自 FileExplorer 的内部拖拽（自定义 data type）
-      const opencodeData = e.dataTransfer.getData('application/opencode-file')
-      if (opencodeData) {
-        try {
-          insertDraggedFile(JSON.parse(opencodeData))
-        } catch (err) {
-          console.warn('[InputBox] Failed to parse opencode-file drag data:', err)
-        }
-        return
-      }
-
       // 原生文件拖拽（从操作系统拖入）
-      if (supportsAnyFile && e.dataTransfer.files.length > 0) {
+      if (e.dataTransfer.files.length > 0) {
+        if (Date.now() - lastTauriDropAtRef.current < 750) return
         void handleFilesSelected(Array.from(e.dataTransfer.files))
       }
     },
-    [supportsAnyFile, handleFilesSelected, insertDraggedFile],
+    [handleFilesSelected],
   )
 
   // 滚动同步（备用，overlay 内部也监听了 scroll）
@@ -986,7 +1236,7 @@ function InputBoxComponent({
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   className={`glass rounded-2xl relative transition-all focus-within:outline-none shadow-lg ${
-                    isDragging
+                    isDragging || isInternalFileDragging
                       ? 'border border-accent-main-100 ring-2 ring-accent-main-100/30'
                       : isStreaming
                         ? 'border border-accent-main-100/50 animate-border-pulse'
@@ -994,7 +1244,7 @@ function InputBoxComponent({
                   }`}
                 >
                   {/* Drop overlay */}
-                  {isDragging && (
+                  {(isDragging || isInternalFileDragging) && (
                     <div className="absolute inset-0 z-50 rounded-2xl bg-accent-main-100/5 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
                       <span className="text-[length:var(--fs-base)] text-accent-main-100 font-medium">{t('inputBox.dropFilesHere')}</span>
                     </div>
@@ -1045,6 +1295,8 @@ function InputBoxComponent({
                           value={text}
                           onChange={handleChange}
                           onKeyDown={handleKeyDown}
+                          onCompositionStart={handleCompositionStart}
+                          onCompositionEnd={handleCompositionEnd}
                           onPaste={handlePaste}
                           onScroll={handleScroll}
                           onFocus={handleFocus}

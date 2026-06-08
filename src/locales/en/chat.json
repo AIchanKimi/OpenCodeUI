@@ -76,10 +76,10 @@
     "allowOnce": "Allow once",
     "alwaysAllow": "Always allow",
     "subtaskFallback": "Subtask",
-    "browserSession": "Browser session",
-    "thisSession": "This session",
-    "autoApproveEnabled": "Auto-approve enabled. Refresh browser to reset permissions.",
-    "changePermissionSettings": "You can change permission settings at any time."
+    "browserSession": "Frontend temporary",
+    "thisSession": "Backend always",
+    "autoApproveEnabled": "The frontend temporarily remembers Always allow rules. Refresh to clear them.",
+    "changePermissionSettings": "Always allow is handled by the backend. You can change this in settings."
   },
   "projectDialog": {
     "typePath": "Type path...",

@@ -1,5 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { codeToHtml, codeToTokens, type ShikiThemeInput } from '../lib/shiki'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import {
+  codeToHtml,
+  codeToHtmlSyncIfLoaded,
+  codeToTokens,
+  codeToTokensSyncIfLoaded,
+  type ShikiThemeInput,
+} from '../lib/shiki'
 import { normalizeLanguage } from '../utils/languageUtils'
 import { THEME_SWITCH_DISABLE_MS } from '../constants'
 
@@ -291,6 +297,7 @@ export interface HighlightOptions {
   lang?: string
   theme?: ShikiThemeInput
   enabled?: boolean
+  delayMs?: number
 }
 
 // Overload for HTML mode (default)
@@ -305,7 +312,7 @@ export function useSyntaxHighlight(
 ): { output: HighlightTokens | null; isLoading: boolean }
 
 export function useSyntaxHighlight(code: string, options: HighlightOptions & { mode?: 'html' | 'tokens' } = {}) {
-  const { lang = 'text', theme, mode = 'html', enabled = true } = options
+  const { lang = 'text', theme, mode = 'html', enabled = true, delayMs = 0 } = options
   const normalizedLang = normalizeLanguage(lang)
 
   // 自动检测当前主题模式
@@ -319,11 +326,44 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
     return getShikiTheme(isDark)
   }, [theme, isDark])
 
-  const [output, setOutput] = useState<string | HighlightTokens | null>(null)
+  const cacheKey = useMemo(() => getCacheKey(code, normalizedLang, resolvedTheme.key), [code, normalizedLang, resolvedTheme.key])
+  const outputKey = `${mode}:${cacheKey}`
+  const [outputState, setOutputState] = useState<{ key: string; value: string | HighlightTokens | null } | null>(() => {
+    const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
+    return cachedResult !== undefined ? { key: outputKey, value: cachedResult } : null
+  })
   const [isLoading, setIsLoading] = useState(false)
   const prevKeyRef = useRef<{ code: string; lang: string; themeKey: string } | null>(null)
 
+  useLayoutEffect(() => {
+    if (!enabled || delayMs > 0) return
+
+    const syncResult =
+      mode === 'html'
+        ? codeToHtmlSyncIfLoaded(code, { lang: normalizedLang, theme: resolvedTheme.theme })
+        : codeToTokensSyncIfLoaded(code, { lang: normalizedLang, theme: resolvedTheme.theme })?.tokens
+
+    if (syncResult) {
+      if (mode === 'html') {
+        htmlCache.set(cacheKey, syncResult as string)
+      } else {
+        tokensCache.set(cacheKey, syncResult as HighlightTokens)
+      }
+      setOutputState({ key: outputKey, value: syncResult })
+      setIsLoading(false)
+    }
+  }, [cacheKey, code, delayMs, enabled, mode, normalizedLang, outputKey, resolvedTheme.theme])
+
   useEffect(() => {
+    // Even when highlighting is temporarily disabled by viewport/lifecycle state,
+    // keep already-computed results available after layout changes or remounts.
+    const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
+    if (cachedResult !== undefined) {
+      setOutputState({ key: outputKey, value: cachedResult })
+      setIsLoading(false)
+      return
+    }
+
     if (!enabled) {
       // 禁用时保留上次结果（而非清空），避免 enabled 切换导致无意义的
       // null → value 重渲染循环。调用方 resize 结束后 enabled 恢复为 true，
@@ -340,34 +380,18 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
 
     const shouldDefer = isThemeOnlyChange
 
-    // 先检查缓存 - 同步返回避免闪烁
-    const cacheKey = getCacheKey(code, normalizedLang, resolvedTheme.key)
-    const cachedResult = mode === 'html' ? htmlCache.get(cacheKey) : tokensCache.get(cacheKey)
-
-    if (cachedResult !== undefined) {
-      setOutput(cachedResult)
-      setIsLoading(false)
-      return
-    }
-
-    // 没有缓存，异步高亮
-    // 流式场景下保留上一帧的高亮结果，避免 null → html 闪烁
-    // 只在首次（没有旧结果时）才清空
-    if (!isThemeOnlyChange && prevKey === null) {
-      setOutput(null)
-    }
     setIsLoading(true)
 
     async function highlight() {
       try {
         const result = await highlightWithCache(code, normalizedLang, resolvedTheme.theme, resolvedTheme.key, mode)
-        if (!cancelled) setOutput(result)
+        if (!cancelled) setOutputState({ key: outputKey, value: result })
       } catch (err) {
         // Syntax highlighting error - silently fallback
         if (import.meta.env.DEV) {
           console.warn('[Syntax] Shiki error:', err)
         }
-        if (!cancelled) setOutput(null)
+        if (!cancelled) setOutputState({ key: outputKey, value: null })
       } finally {
         if (!cancelled) setIsLoading(false)
       }
@@ -390,6 +414,16 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
         const timeoutId = window.setTimeout(() => highlight(), THEME_SWITCH_DISABLE_MS)
         return () => clearTimeout(timeoutId)
       }
+      if (delayMs > 0) {
+        let cancelQueuedHighlight: (() => void) | null = null
+        const timeoutId = window.setTimeout(() => {
+          cancelQueuedHighlight = scheduleQueuedHighlight(highlight)
+        }, delayMs)
+        return () => {
+          clearTimeout(timeoutId)
+          cancelQueuedHighlight?.()
+        }
+      }
       return scheduleQueuedHighlight(highlight)
     }
 
@@ -399,9 +433,9 @@ export function useSyntaxHighlight(code: string, options: HighlightOptions & { m
       cancelled = true
       cancelSchedule()
     }
-  }, [code, normalizedLang, resolvedTheme, mode, enabled])
+  }, [cacheKey, code, delayMs, enabled, mode, normalizedLang, outputKey, resolvedTheme])
 
-  return { output, isLoading }
+  return { output: outputState?.key === outputKey ? outputState.value : null, isLoading }
 }
 
 // ============================================

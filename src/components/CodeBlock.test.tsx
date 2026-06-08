@@ -2,19 +2,29 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodeBlock } from './CodeBlock'
 
-const useIsMobileMock = vi.fn(() => false)
+const useInputCapabilitiesMock = vi.fn(() => ({
+  canHover: true,
+  hasCoarsePointer: false,
+  hasTouch: false,
+  preferTouchUi: false,
+}))
+type HighlightMockOutput = { output: { content: string; color?: string }[][] | null }
+const useSyntaxHighlightMock = vi.fn((_code: string, _options: unknown): HighlightMockOutput => ({
+  output: [[{ content: 'highlighted', color: '#fff' }]],
+}))
+const useInViewMock = vi.fn(() => ({ ref: vi.fn(), inView: false }))
 const themeSnapshot = { codeWordWrap: false }
 
-vi.mock('../hooks/useIsMobile', () => ({
-  useIsMobile: () => useIsMobileMock(),
+vi.mock('../hooks/useInputCapabilities', () => ({
+  useInputCapabilities: () => useInputCapabilitiesMock(),
 }))
 
 vi.mock('../hooks/useSyntaxHighlight', () => ({
-  useSyntaxHighlight: () => ({ output: '' }),
+  useSyntaxHighlight: (code: string, options: unknown) => useSyntaxHighlightMock(code, options),
 }))
 
 vi.mock('../hooks/useInView', () => ({
-  useInView: () => ({ ref: vi.fn(), inView: false }),
+  useInView: () => useInViewMock(),
 }))
 
 vi.mock('../store/themeStore', () => ({
@@ -34,12 +44,26 @@ vi.mock('./ui', () => ({
 
 describe('CodeBlock', () => {
   beforeEach(() => {
-    useIsMobileMock.mockReset()
-    useIsMobileMock.mockReturnValue(false)
+    useInputCapabilitiesMock.mockReset()
+    useInputCapabilitiesMock.mockReturnValue({
+      canHover: true,
+      hasCoarsePointer: false,
+      hasTouch: false,
+      preferTouchUi: false,
+    })
+    useSyntaxHighlightMock.mockClear()
+    useSyntaxHighlightMock.mockReturnValue({ output: [[{ content: 'highlighted', color: '#fff' }]] })
+    useInViewMock.mockReset()
+    useInViewMock.mockReturnValue({ ref: vi.fn(), inView: false })
   })
 
-  it('requires tap-to-reveal copy button for unlabeled mobile code blocks', () => {
-    useIsMobileMock.mockReturnValue(true)
+  it('requires tap-to-reveal copy button for unlabeled touch-ui code blocks', () => {
+    useInputCapabilitiesMock.mockReturnValue({
+      canHover: false,
+      hasCoarsePointer: true,
+      hasTouch: true,
+      preferTouchUi: true,
+    })
 
     const { container } = render(<CodeBlock code="const value = 1" />)
 
@@ -49,12 +73,79 @@ describe('CodeBlock', () => {
     )
   })
 
-  it('keeps labeled mobile code blocks unchanged', () => {
-    useIsMobileMock.mockReturnValue(true)
+  it('keeps labeled touch-ui code blocks unchanged', () => {
+    useInputCapabilitiesMock.mockReturnValue({
+      canHover: false,
+      hasCoarsePointer: true,
+      hasTouch: true,
+      preferTouchUi: true,
+    })
 
     const { container } = render(<CodeBlock code="const value = 1" language="ts" />)
 
     expect(container.firstChild).not.toHaveAttribute('tabindex')
     expect(screen.getByText('ts')).toBeInTheDocument()
+  })
+
+  it('renders current plain code while highlight is deferred', () => {
+    render(<CodeBlock code="const value = 1" language="ts" deferHighlight />)
+
+    expect(screen.getByText('const value = 1')).toBeInTheDocument()
+    expect(screen.queryByText('highlighted')).not.toBeInTheDocument()
+    expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ enabled: false, lang: 'ts', mode: 'tokens' }),
+    )
+  })
+
+  it('renders highlighted tokens as selectable plain pre content', () => {
+    useInViewMock.mockReturnValue({ ref: vi.fn(), inView: true })
+
+    const { container } = render(<CodeBlock code="const value = 1" language="ts" />)
+
+    const pre = container.querySelector('pre')
+    expect(pre).toHaveTextContent('highlighted')
+    expect(pre).not.toHaveAttribute('tabindex')
+    expect(pre?.className).toContain('select-text')
+    expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ enabled: true, lang: 'ts', mode: 'tokens' }),
+    )
+  })
+
+  it('keeps highlighted prefix while streaming suffix waits for new tokens', () => {
+    useInViewMock.mockReturnValue({ ref: vi.fn(), inView: true })
+    useSyntaxHighlightMock.mockImplementation((highlightCode: string): HighlightMockOutput => {
+      if (highlightCode === 'const') return { output: [[{ content: 'const', color: '#fff' }]] }
+      return { output: null }
+    })
+
+    const { container, rerender } = render(<CodeBlock code="const" language="ts" />)
+
+    rerender(<CodeBlock code="const value" language="ts" />)
+
+    const pre = container.querySelector('pre')
+    expect(pre).toHaveTextContent('const value')
+    expect(pre?.className).toContain('shiki-wrapper')
+  })
+
+  it('enables highlighting when visible', () => {
+    useInViewMock.mockReturnValue({ ref: vi.fn(), inView: true })
+
+    render(<CodeBlock code="const value = 1" language="ts" />)
+
+    expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ delayMs: 0, enabled: true, lang: 'ts', mode: 'tokens' }),
+    )
+  })
+
+  it('can force streaming highlight before in-view observation fires', () => {
+    render(<CodeBlock code="const value = 1" language="ts" forceHighlight />)
+
+    expect(useSyntaxHighlightMock).toHaveBeenCalledWith(
+      'const value = 1',
+      expect.objectContaining({ delayMs: 0, enabled: true, lang: 'ts', mode: 'tokens' }),
+    )
   })
 })

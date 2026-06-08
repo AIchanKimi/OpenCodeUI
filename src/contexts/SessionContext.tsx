@@ -7,11 +7,11 @@ import {
   type ApiSession,
   type SessionListParams,
 } from '../api'
-import { childSessionStore } from '../store/childSessionStore'
-import { followupQueueStore } from '../store/followupQueueStore'
 import { todoStore } from '../store/todoStore'
+import { serverStore } from '../store/serverStore'
 import { useDirectory } from './useDirectory'
 import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle } from '../utils'
+import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -87,6 +87,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
         setHasMore(data.length >= currentLimitRef.current)
       } catch (e) {
+        if (requestId === requestIdRef.current && !append) {
+          setSessions([])
+          setHasMore(false)
+        }
         sessionErrorHandler('fetch sessions', e)
       } finally {
         if (requestId === requestIdRef.current) {
@@ -176,10 +180,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // 更新 todoStore
         todoStore.setTodos(data.sessionID, data.todos)
       },
-      onReconnected: () => {
-        // SSE 重连成功后，如果已经有请求在进行中，跳过重复拉取
-        if (isFetchingRef.current) return
-        // 清空旧 session 列表，重新从服务器拉取
+      onSessionDeleted: sessionId => {
+        clearSessionRuntimeState(sessionId)
+        setSessions(prev => prev.filter(s => s.id !== sessionId))
+      },
+      onReconnected: reason => {
+        if (reason === 'server-switch' || isFetchingRef.current) return
         setSessions([])
         fetchSessionsRef.current()
       },
@@ -187,6 +193,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     return unsubscribe
   }, [matchesCurrentDirectory])
+
+  useEffect(() => {
+    return serverStore.onServerChange(() => {
+      currentLimitRef.current = 30
+      setSessions([])
+      void fetchSessionsRef.current()
+    })
+  }, [])
 
   // Actions
   const refresh = useCallback(() => fetchSessions(), [fetchSessions])
@@ -225,10 +239,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
       await apiDeleteSession(id, targetDir)
-      // 清理该 session 的子 session 记录，防止内存泄漏
-      childSessionStore.clearChildren(id)
-      // 清理该 session 的排队消息
-      followupQueueStore.clearSession(id)
+      clearSessionRuntimeState(id)
       setSessions(prev => prev.filter(s => s.id !== id))
     },
     [currentDirectory],

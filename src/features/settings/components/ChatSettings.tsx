@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PathAutoIcon, PathUnixIcon, PathWindowsIcon } from '../../../components/Icons'
-import { usePathMode, useIsMobile } from '../../../hooks'
+import { usePathMode, useIsMobile, useTheme } from '../../../hooks'
 import { themeStore, type ReasoningDisplayMode, type CompletedAtFormat } from '../../../store/themeStore'
 import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'
 import type { PathMode } from '../../../utils/directoryUtils'
@@ -9,6 +9,7 @@ import type { PathMode } from '../../../utils/directoryUtils'
 export function ChatSettings() {
   const { t } = useTranslation(['settings'])
   const { pathMode, setPathMode, effectiveStyle, detectedStyle, isAutoMode } = usePathMode()
+  const { externalFileDropMode, setExternalFileDropMode } = useTheme()
   const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
   const [stepFinishDisplay, setStepFinishDisplay] = useState(themeStore.stepFinishDisplay)
   const [completedAtFormat, setCompletedAtFormat] = useState(themeStore.completedAtFormat)
@@ -25,6 +26,11 @@ export function ChatSettings() {
   const handleReasoningDisplayModeChange = (mode: ReasoningDisplayMode) => {
     setReasoningDisplayMode(mode)
     themeStore.setReasoningDisplayMode(mode)
+  }
+
+  const externalDropAlwaysMention = externalFileDropMode === 'mention'
+  const handleExternalDropModeToggle = () => {
+    setExternalFileDropMode(externalDropAlwaysMention ? 'upload-first' : 'mention')
   }
 
   return (
@@ -50,6 +56,14 @@ export function ChatSettings() {
               })}
           </p>
         )}
+
+        <SettingRow
+          label={t('chat.externalDropMentionMode')}
+          description={t('chat.externalDropMentionModeDesc')}
+          onClick={handleExternalDropModeToggle}
+        >
+          <Toggle enabled={externalDropAlwaysMention} onChange={handleExternalDropModeToggle} />
+        </SettingRow>
       </SettingsSection>
 
       <SettingsSection title={t('chat.conversationExperience')}>

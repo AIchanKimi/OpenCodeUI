@@ -102,6 +102,10 @@ interface LayoutState {
   bottomPanelOpen: boolean
   bottomPanelHeight: number
   wakeLock: boolean
+
+  // 终端交互
+  terminalCopyOnSelect: boolean
+  terminalRightClickPaste: boolean
 }
 
 type Subscriber = () => void
@@ -116,6 +120,8 @@ const STORAGE_KEY_TERMINAL_LAYOUT = 'opencode-terminal-layout'
 const STORAGE_KEY_RIGHT_PANEL_WIDTH = 'opencode-right-panel-width'
 const STORAGE_KEY_BOTTOM_PANEL_HEIGHT = 'opencode-bottom-panel-height'
 const STORAGE_KEY_VIEWPORT_SIDEBAR_WIDTH = 'sidebar-width'
+const STORAGE_KEY_TERMINAL_COPY_ON_SELECT = 'opencode-terminal-copy-on-select'
+const STORAGE_KEY_TERMINAL_RIGHT_CLICK_PASTE = 'opencode-terminal-right-click-paste'
 
 interface PersistedPanelTab {
   id: string
@@ -367,6 +373,8 @@ export class LayoutStore {
     bottomPanelOpen: false,
     bottomPanelHeight: 250,
     wakeLock: false,
+    terminalCopyOnSelect: false,
+    terminalRightClickPaste: false,
   }
   private subscribers = new Set<Subscriber>()
   private currentTerminalDirectory: string | null = null
@@ -398,6 +406,16 @@ export class LayoutStore {
       const savedWakeLock = localStorage.getItem(STORAGE_KEY_WAKE_LOCK)
       if (savedWakeLock !== null) {
         this.state.wakeLock = savedWakeLock === 'true'
+      }
+
+      const savedTerminalCopyOnSelect = localStorage.getItem(STORAGE_KEY_TERMINAL_COPY_ON_SELECT)
+      if (savedTerminalCopyOnSelect !== null) {
+        this.state.terminalCopyOnSelect = savedTerminalCopyOnSelect === 'true'
+      }
+
+      const savedTerminalRightClickPaste = localStorage.getItem(STORAGE_KEY_TERMINAL_RIGHT_CLICK_PASTE)
+      if (savedTerminalRightClickPaste !== null) {
+        this.state.terminalRightClickPaste = savedTerminalRightClickPaste === 'true'
       }
 
       // 右侧面板宽度
@@ -571,6 +589,28 @@ export class LayoutStore {
     this.state.wakeLock = enabled
     try {
       localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(enabled))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  setTerminalCopyOnSelect(enabled: boolean) {
+    if (this.state.terminalCopyOnSelect === enabled) return
+    this.state.terminalCopyOnSelect = enabled
+    try {
+      localStorage.setItem(STORAGE_KEY_TERMINAL_COPY_ON_SELECT, String(enabled))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  setTerminalRightClickPaste(enabled: boolean) {
+    if (this.state.terminalRightClickPaste === enabled) return
+    this.state.terminalRightClickPaste = enabled
+    try {
+      localStorage.setItem(STORAGE_KEY_TERMINAL_RIGHT_CLICK_PASTE, String(enabled))
     } catch {
       /* ignore */
     }

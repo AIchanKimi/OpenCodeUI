@@ -62,6 +62,8 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
   const { directory, autoLoad = true, sessionId } = options
   const { t } = useTranslation(['components'])
   const changeMode = useSessionChangeScope(sessionId ?? null)
+  const directoryRef = useRef(directory)
+  directoryRef.current = directory
 
   // 文件树状态
   const [tree, setTree] = useState<FileTreeNode[]>([])
@@ -70,6 +72,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 
   // 展开状态
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const expandedPathsByDirectoryRef = useRef<Map<string, Set<string>>>(new Map())
 
   // 预览状态
   const [previewContent, setPreviewContent] = useState<FileContent | null>(null)
@@ -84,6 +87,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 
   // 用于防止过时请求
   const loadIdRef = useRef(0)
+  const childLoadIdsRef = useRef<Map<string, number>>(new Map())
   const statusLoadIdRef = useRef(0)
 
   // 加载根目录
@@ -167,6 +171,12 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     async (parentPath: string) => {
       if (!directory) return
 
+      const loadKey = `${directory}\0${parentPath}`
+      const loadId = (childLoadIdsRef.current.get(loadKey) ?? 0) + 1
+      childLoadIdsRef.current.set(loadKey, loadId)
+
+      const isCurrentLoad = () => directoryRef.current === directory && childLoadIdsRef.current.get(loadKey) === loadId
+
       // 更新树，标记为加载中
       setTree(prev =>
         updateTreeNode(prev, parentPath, node => ({
@@ -177,6 +187,8 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 
       try {
         const nodes = await listDirectory(parentPath, directory)
+        if (!isCurrentLoad()) return
+
         const sorted = sortNodes(nodes)
 
         setTree(prev =>
@@ -188,6 +200,8 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
           })),
         )
       } catch {
+        if (!isCurrentLoad()) return
+
         setTree(prev =>
           updateTreeNode(prev, parentPath, node => ({
             ...node,
@@ -201,10 +215,23 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
     [directory],
   )
 
+  const updateExpandedPaths = useCallback(
+    (updater: (prev: Set<string>) => Set<string>) => {
+      setExpandedPaths(prev => {
+        const next = updater(prev)
+        if (directory) {
+          expandedPathsByDirectoryRef.current.set(directory, new Set(next))
+        }
+        return next
+      })
+    },
+    [directory],
+  )
+
   // 切换展开/折叠
   const toggleExpand = useCallback(
     (path: string) => {
-      setExpandedPaths(prev => {
+      updateExpandedPaths(prev => {
         const next = new Set(prev)
         if (next.has(path)) {
           next.delete(path)
@@ -219,12 +246,12 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         return next
       })
     },
-    [tree, loadChildren],
+    [tree, loadChildren, updateExpandedPaths],
   )
 
   const expandPath = useCallback(
     (path: string) => {
-      setExpandedPaths(prev => {
+      updateExpandedPaths(prev => {
         const next = new Set(prev)
         next.add(path)
         return next
@@ -234,16 +261,16 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         loadChildren(path)
       }
     },
-    [tree, loadChildren],
+    [tree, loadChildren, updateExpandedPaths],
   )
 
   const collapsePath = useCallback((path: string) => {
-    setExpandedPaths(prev => {
+    updateExpandedPaths(prev => {
       const next = new Set(prev)
       next.delete(path)
       return next
     })
-  }, [])
+  }, [updateExpandedPaths])
 
   // 加载文件预览
   const loadPreview = useCallback(
@@ -300,11 +327,14 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
 
   // 刷新
   const refresh = useCallback(async () => {
+    if (directory) {
+      expandedPathsByDirectoryRef.current.delete(directory)
+    }
     setExpandedPaths(new Set())
     previewCacheRef.current.clear()
     setPreviewContent(null)
     await Promise.all([loadRoot(), loadStatuses()])
-  }, [loadRoot, loadStatuses])
+  }, [directory, loadRoot, loadStatuses])
 
   // 初始加载
   useEffect(() => {
@@ -337,6 +367,27 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       loadStatuses()
     }
   }, [autoLoad, directory, loadStatuses])
+
+  useEffect(() => {
+    if (!directory) {
+      setExpandedPaths(new Set())
+      return
+    }
+
+    const storedPaths = expandedPathsByDirectoryRef.current.get(directory)
+    setExpandedPaths(storedPaths ? new Set(storedPaths) : new Set())
+  }, [directory])
+
+  useEffect(() => {
+    if (!directory || tree.length === 0 || expandedPaths.size === 0) return
+
+    const pendingPaths = collectPendingExpandedDirectoryPaths(tree, expandedPaths)
+    if (pendingPaths.length === 0) return
+
+    pendingPaths.forEach(path => {
+      void loadChildren(path)
+    })
+  }, [directory, expandedPaths, loadChildren, tree])
 
   useEffect(() => {
     previewCacheRef.current.clear()
@@ -410,6 +461,30 @@ function updateTreeNode(
     }
     return node
   })
+}
+
+function collectPendingExpandedDirectoryPaths(tree: FileTreeNode[], expandedPaths: Set<string>): string[] {
+  const pending: string[] = []
+
+  const visit = (nodes: FileTreeNode[]) => {
+    for (const node of nodes) {
+      if (node.type !== 'directory') continue
+
+      if (expandedPaths.has(node.path)) {
+        if (!node.isLoaded && !node.isLoading) {
+          pending.push(node.path)
+          continue
+        }
+      }
+
+      if (node.children) {
+        visit(node.children)
+      }
+    }
+  }
+
+  visit(tree)
+  return pending
 }
 
 // Helper: 规范化路径 — 统一分隔符为 /，去掉前导 ./

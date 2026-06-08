@@ -18,8 +18,8 @@
 
 import { memo, useMemo, useRef, useEffect, useCallback, useState } from 'react'
 import type { Message } from '../types/message'
-import { getMessageText, isUserMessage } from '../types/message'
 import { useChatViewport } from '../features/chat/chatViewport'
+import { buildOutlineSourceEntries, truncateOutlineLabel, type OutlineSourceEntry } from './outlineIndexModel'
 
 // ─── Types ──────────────────────────────────
 
@@ -32,6 +32,7 @@ interface OutlineEntry {
 
 interface OutlineIndexProps {
   messages: Message[]
+  sourceEntries?: OutlineSourceEntry[]
   visibleMessageIds?: string[]
   onScrollToMessageId: (messageId: string) => void
 }
@@ -204,63 +205,13 @@ function applyFisheye(
   return { alive, focusIndex, maxStrength }
 }
 
-// ─── Data Extraction ────────────────────────
-
-const FULL_TITLE_MAX = 80
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max) + '\u2026'
-}
-
-function normalizeWhitespace(s: string): string {
-  return s.replace(/\s+/g, ' ').trim()
-}
-
-function messageHasContent(msg: Message): boolean {
-  if (msg.parts.length === 0) {
-    if (msg.info.role === 'assistant' && 'error' in msg.info && msg.info.error) {
-      return msg.info.error.name !== 'MessageAbortedError'
-    }
-    return true
-  }
-  return msg.parts.some(part => {
-    switch (part.type) {
-      case 'text':
-      case 'reasoning':
-        return part.text?.trim().length > 0
-      case 'tool':
-      case 'file':
-      case 'agent':
-      case 'step-finish':
-      case 'subtask':
-        return true
-      default:
-        return false
-    }
-  })
-}
-
-function extractEntries(messages: Message[], visual: VisualConfig): OutlineEntry[] {
-  const entries: OutlineEntry[] = []
-  for (const msg of messages.filter(messageHasContent)) {
-    if (!isUserMessage(msg.info)) continue
-    const raw =
-      msg.info.summary?.title?.trim() ||
-      getMessageText(msg)
-        .trim()
-        .split(/\r?\n/)
-        .map(l => l.trim())
-        .find(Boolean)
-    if (!raw) continue
-    const n = normalizeWhitespace(raw)
-    entries.push({
-      messageId: msg.info.id,
-      fullTitle: truncate(n, FULL_TITLE_MAX),
-      railLabel: truncate(n, visual.railLabelMax),
-      overlayLabel: truncate(n, visual.overlayLabelMax),
-    })
-  }
-  return entries
+function formatEntries(entries: OutlineSourceEntry[], visual: VisualConfig): OutlineEntry[] {
+  return entries.map(entry => ({
+    messageId: entry.messageId,
+    fullTitle: entry.title,
+    railLabel: truncateOutlineLabel(entry.title, visual.railLabelMax),
+    overlayLabel: truncateOutlineLabel(entry.title, visual.overlayLabelMax),
+  }))
 }
 
 /** 条目超过上限时，取可见区域附近的 N 条 */
@@ -336,12 +287,14 @@ function TickRail({ entries, visual }: TickRailProps) {
 
 export const OutlineIndex = memo(function OutlineIndex({
   messages,
+  sourceEntries,
   visibleMessageIds,
   onScrollToMessageId,
 }: OutlineIndexProps) {
   const { interaction, presentation } = useChatViewport()
   const visual = presentation.isCompact ? COMPACT_VISUAL : DESKTOP_VISUAL
-  const allEntries = useMemo(() => extractEntries(messages, visual), [messages, visual])
+  const outlineSourceEntries = useMemo(() => sourceEntries ?? buildOutlineSourceEntries(messages), [messages, sourceEntries])
+  const allEntries = useMemo(() => formatEntries(outlineSourceEntries, visual), [outlineSourceEntries, visual])
   const entries = useMemo(
     () => sliceAroundVisible(allEntries, visibleMessageIds ?? [], visual.maxEntries),
     [allEntries, visibleMessageIds, visual.maxEntries],

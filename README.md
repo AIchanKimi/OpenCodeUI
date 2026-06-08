@@ -104,11 +104,16 @@ BACKEND_URL=your-server.com:4096 PORT=8080 docker compose -f docker-compose.stan
 
 端口 `6659` 用于访问容器内开发服务，Router 自动扫描 `3000-9999` 端口，通过 `/p/{token}/` 路径生成预览链接。
 
-### 部署步骤
+### 部署步骤（无需 clone 项目）
+
+默认部署使用 GitHub Container Registry 上的预构建镜像，只需要下载 Docker 配置文件，不需要 clone 整个项目源码。
 
 ```bash
-git clone https://github.com/lehhair/OpenCodeUI.git
-cd OpenCodeUI
+mkdir OpenCodeUI && cd OpenCodeUI
+
+# 下载默认运行配置
+curl -fsSLO https://raw.githubusercontent.com/lehhair/OpenCodeUI/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/lehhair/OpenCodeUI/main/.env.example
 
 # 复制并编辑环境变量，至少填写一个 LLM API Key
 cp .env.example .env
@@ -118,6 +123,48 @@ docker compose up -d
 ```
 
 访问 `http://localhost:6658`。
+
+如果你的环境没有 `curl`，也可以直接从 GitHub 下载 `docker-compose.yml` 和 `.env.example` 放到同一个目录。
+
+### 开启宿主机 Docker 能力（可选）
+
+默认部署不会给后端容器开放宿主机 Docker daemon，也不会挂载宿主机根目录。这样更接近旧版本行为，老用户升级不会突然获得额外权限。
+
+如果你需要在 OpenCode 后端容器里构建 Docker 镜像、执行 `docker compose`，或访问宿主机路径，再额外下载并启用 `docker-compose.host.yml`：
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/lehhair/OpenCodeUI/main/docker-compose.host.yml
+docker compose -f docker-compose.yml -f docker-compose.host.yml up -d
+```
+
+该 override 会给 `backend` 增加：
+
+- `privileged: true`
+- `/var/run/docker.sock:/var/run/docker.sock`
+- `/:/host`
+
+只在明确需要这些能力时开启。公网部署时务必设置 `OPENCODE_SERVER_PASSWORD`。
+
+### 从源码本地构建（可选）
+
+只有需要修改镜像内容、调试 Dockerfile，或不想使用预构建镜像时，才需要 clone 完整项目。
+
+```bash
+git clone https://github.com/lehhair/OpenCodeUI.git
+cd OpenCodeUI
+
+# 复制并编辑环境变量，至少填写一个 LLM API Key
+cp .env.example .env
+
+# 构建并启动全部服务
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+如果本地构建后端并且需要宿主机 Docker 能力：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.host.yml up -d --build
+```
 
 ### 环境持久化
 
@@ -155,6 +202,8 @@ mkdir -p ./data/opencode-user/workspace
 
 `gateway` 仍保留单独卷 `opencode-router-data`，用于存放动态路由状态。
 
+宿主机 Docker 能力由 `docker-compose.host.yml` 单独开启。不开启时，后端容器内虽然带 Docker CLI，但无法访问宿主机 Docker daemon。
+
 ### 环境变量
 
 编辑 `.env` 文件，关键配置：
@@ -185,6 +234,10 @@ OPENCODE_SERVER_PASSWORD=your-strong-password
 ROUTER_SCAN_INTERVAL=5
 ROUTER_PORT_RANGE=3000-9999
 ROUTER_EXCLUDE_PORTS=4096
+
+# Backend 工具链镜像/运行时源（可选）
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ### 反向代理

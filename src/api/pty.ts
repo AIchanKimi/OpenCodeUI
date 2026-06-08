@@ -9,6 +9,12 @@ import { serverStore } from '../store/serverStore'
 import type { Pty, PtyCreateParams, PtyUpdateParams } from '../types/api/pty'
 
 type LegacyPty = Pty & { running?: boolean; status?: Pty['status'] }
+export interface ShellInfo {
+  path: string
+  name: string
+  acceptable: boolean
+}
+
 interface PtyConnectUrlOptions {
   /**
    * false = 不在 URL 里放认证（Tauri bridge 通过 header 传）
@@ -34,6 +40,14 @@ export async function listPtySessions(directory?: string): Promise<Pty[]> {
   return unwrap(await sdk.pty.list({ directory: formatPathForApi(directory) })).map(pty =>
     normalizePty(pty as LegacyPty),
   )
+}
+
+/**
+ * 获取当前机器可用 shell 列表，用于 opencode config.shell 的候选项。
+ */
+export async function listAvailableShells(directory?: string): Promise<ShellInfo[]> {
+  const sdk = getSDKClient()
+  return unwrap(await sdk.pty.shells({ directory: formatPathForApi(directory) }))
 }
 
 /**

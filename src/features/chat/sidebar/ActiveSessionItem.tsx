@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import type { ActiveSessionEntry } from '../../../store/activeSessionStore'
 import type { ApiSession } from '../../../api'
+import { startInternalDrag } from '../../../lib/internalDragCore'
 
 interface ActiveSessionItemProps {
   entry: ActiveSessionEntry
@@ -43,26 +44,24 @@ export function ActiveSessionItem({ entry, resolvedSession, isSelected, onSelect
   }
 
   // 拖拽到主信息流进行分屏 / 替换会话
-  // 和 SessionListItem 使用完全一致的 dataTransfer 格式，ChatPane 的 drop handler 能识别
   const isDraggable = !!resolvedSession
-  const handleDragStart = (e: React.DragEvent) => {
-    if (!isDraggable) {
-      e.preventDefault()
-      return
-    }
-    e.dataTransfer.setData('text/x-session-id', entry.sessionId)
-    if (directory) {
-      e.dataTransfer.setData('text/x-session-directory', directory)
-    }
-    e.dataTransfer.effectAllowed = 'move'
+  const handlePointerDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggable) return
+    startInternalDrag(
+      e,
+      {
+        kind: 'session',
+        sessionId: entry.sessionId,
+        directory,
+      },
+    )
   }
 
   return (
     <div
-      draggable={isDraggable}
-      onDragStart={handleDragStart}
+      onPointerDown={handlePointerDragStart}
       onClick={handleClick}
-      className={`group relative flex items-start pl-[6px] pr-3 py-2 rounded-lg cursor-default transition-all duration-200 border border-transparent ${
+      className={`group relative flex items-start pl-[6px] pr-3 py-2 rounded-lg cursor-default select-none transition-all duration-200 border border-transparent ${
         isSelected ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50' : 'hover:bg-bg-200/50'
       } ${!resolvedSession ? 'opacity-50 cursor-default' : ''}`}
     >

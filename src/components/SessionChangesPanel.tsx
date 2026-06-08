@@ -29,10 +29,10 @@ const MIN_PREVIEW_HEIGHT = 120
 type ChangeMode = ChangeScopeMode
 
 function getDefaultChangeMode(options: ChangeMode[]) {
-  if (options.includes('session')) return 'session'
   if (options.includes('turn')) return 'turn'
   if (options.includes('git')) return 'git'
   if (options.includes('branch')) return 'branch'
+  if (options.includes('session')) return 'session'
   return options[0] ?? 'session'
 }
 
@@ -120,10 +120,11 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   )
   const changeOptions = useMemo<ChangeMode[]>(() => {
     const options: ChangeMode[] = []
-    if (project?.vcs) options.push('session', 'turn', 'git')
+    if (project?.vcs) options.push('turn', 'git')
     if (project?.vcs && vcsInfo?.branch && vcsInfo?.default_branch && vcsInfo.branch !== vcsInfo.default_branch) {
       options.push('branch')
     }
+    if (project?.vcs) options.push('session')
     return options
   }, [project?.vcs, vcsInfo?.branch, vcsInfo?.default_branch])
   const preferredChangeMode = useMemo(() => getDefaultChangeMode(changeOptions), [changeOptions])

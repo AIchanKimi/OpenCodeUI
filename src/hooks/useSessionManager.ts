@@ -20,13 +20,28 @@ import {
   type ApiMessageWithParts,
 } from '../api'
 import { sessionErrorHandler } from '../utils'
+import { isSessionNotFoundError } from '../utils/sessionErrors'
 import { INITIAL_MESSAGE_LIMIT, HISTORY_LOAD_BATCH_SIZE } from '../constants'
+import type { MessageError } from '../types/message'
+
+function toLoadMessageError(error: unknown): MessageError {
+  const message = error instanceof Error ? error.message : String(error || 'Failed to load session')
+  return {
+    name: 'APIError',
+    data: {
+      message,
+      isRetryable: true,
+      responseBody: error instanceof Error ? error.stack : undefined,
+    },
+  }
+}
 
 interface UseSessionManagerOptions {
   sessionId: string | null
   directory?: string // 当前项目目录
   onLoadComplete?: () => void
   onError?: (error: Error) => void
+  onSessionMissing?: (sessionId: string) => void
 }
 
 function mergeWithLocalStreamingMessages(
@@ -47,7 +62,7 @@ function mergeWithLocalStreamingMessages(
   })
 }
 
-export function useSessionManager({ sessionId, directory, onLoadComplete, onError }: UseSessionManagerOptions) {
+export function useSessionManager({ sessionId, directory, onLoadComplete, onError, onSessionMissing }: UseSessionManagerOptions) {
   const loadSequenceRef = useRef<Map<string, number>>(new Map())
   /** 每个 session 当前已请求的消息 limit（cursor），loadMore 时递增 */
   const cursorRef = useRef<Map<string, number>>(new Map())
@@ -171,11 +186,14 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
       } catch (error) {
         if (isStale()) return
         sessionErrorHandler('load session', error)
-        messageStore.setLoadState(sid, 'error')
+        messageStore.setLoadError(sid, toLoadMessageError(error))
+        if (isSessionNotFoundError(error)) {
+          onSessionMissing?.(sid)
+        }
         onError?.(error instanceof Error ? error : new Error(String(error)))
       }
     },
-    [onLoadComplete, onError],
+    [onLoadComplete, onError, onSessionMissing],
   )
 
   // 保持 ref 同步，避免 effect 依赖 loadSession 导致重复触发

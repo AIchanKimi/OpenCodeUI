@@ -7,11 +7,13 @@ import { serverStorage } from '../utils/perServerStorage'
 
 // Full Auto 模式：off / session / global
 export type FullAutoMode = 'off' | 'session' | 'global'
+export type AlwaysAllowMode = 'backend' | 'frontend'
 
 // Full Auto 状态变更回调
 // sourcePaneId 可选：表示这次切换是从哪个 pane 触发的。
 // 即使是 global 变更，也可以携带触发源 pane，供 UI hint 精准展示。
 type FullAutoListener = (mode: FullAutoMode, sourcePaneId?: string) => void
+type StoreListener = () => void
 
 /**
  * 自动批准规则
@@ -48,23 +50,36 @@ class AutoApproveStore {
   private _enabled: boolean = false
   private readonly STORAGE_KEY = 'opencode-auto-approve-enabled'
 
+  // Full Auto 开启时是否追补已经等待中的权限（危险操作，默认关闭）
+  private _approvePendingOnFullAuto: boolean = false
+  private readonly STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO = 'opencode-approve-pending-on-full-auto'
+
   // Full Auto 模式（纯内存，不持久化，刷新即关）
   // off: 不自动放行
   // session: 自动放行当前所在页面的会话（由 handler 层级天然保证）
   // global: 所有会话的权限请求无差别自动放行
   private _fullAutoMode: FullAutoMode = 'off'
   private _fullAutoListeners = new Set<FullAutoListener>()
+  private _listeners = new Set<StoreListener>()
   /** per-pane Full Auto 模式（分屏模式下各 pane 独立控制） */
   private _paneFullAutoModes = new Map<string, FullAutoMode>()
+  private _autoReplyRequestIds = new Set<string>()
 
   constructor() {
     // 从 localStorage 读取开关状态
     try {
       const stored = serverStorage.get(this.STORAGE_KEY)
       this._enabled = stored === 'true'
+      const approvePendingStored = serverStorage.get(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO)
+      this._approvePendingOnFullAuto = approvePendingStored === 'true'
     } catch {
       this._enabled = false
+      this._approvePendingOnFullAuto = false
     }
+  }
+
+  private notify(): void {
+    this._listeners.forEach(fn => fn())
   }
 
   /**
@@ -74,16 +89,21 @@ class AutoApproveStore {
     try {
       const stored = serverStorage.get(this.STORAGE_KEY)
       this._enabled = stored === 'true'
+      const approvePendingStored = serverStorage.get(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO)
+      this._approvePendingOnFullAuto = approvePendingStored === 'true'
     } catch {
       this._enabled = false
+      this._approvePendingOnFullAuto = false
     }
     // 切换服务器时清空规则并关闭 Full Auto
     this.rulesMap.clear()
     this._paneFullAutoModes.clear()
+    this._autoReplyRequestIds.clear()
     if (this._fullAutoMode !== 'off') {
       this._fullAutoMode = 'off'
       this._fullAutoListeners.forEach(fn => fn('off'))
     }
+    this.notify()
   }
 
   /**
@@ -102,6 +122,36 @@ class AutoApproveStore {
       serverStorage.set(this.STORAGE_KEY, String(value))
     } catch {
       // ignore
+    }
+    this.notify()
+  }
+
+  get alwaysAllowMode(): AlwaysAllowMode {
+    return this._enabled ? 'frontend' : 'backend'
+  }
+
+  setAlwaysAllowMode(mode: AlwaysAllowMode): void {
+    this.setEnabled(mode === 'frontend')
+  }
+
+  get approvePendingOnFullAuto(): boolean {
+    return this._approvePendingOnFullAuto
+  }
+
+  setApprovePendingOnFullAuto(value: boolean): void {
+    this._approvePendingOnFullAuto = value
+    try {
+      serverStorage.set(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO, String(value))
+    } catch {
+      // ignore
+    }
+    this.notify()
+  }
+
+  subscribe = (listener: StoreListener): (() => void) => {
+    this._listeners.add(listener)
+    return () => {
+      this._listeners.delete(listener)
     }
   }
 
@@ -127,6 +177,7 @@ class AutoApproveStore {
   setFullAutoMode(mode: FullAutoMode, sourcePaneId?: string): void {
     this._fullAutoMode = mode
     this._fullAutoListeners.forEach(fn => fn(mode, sourcePaneId))
+    this.notify()
   }
 
   // ---- Per-pane Full Auto 模式 ----
@@ -146,11 +197,13 @@ class AutoApproveStore {
     }
     this._paneFullAutoModes.set(paneId, mode)
     this._fullAutoListeners.forEach(fn => fn(mode, paneId))
+    this.notify()
   }
 
   /** 清除指定 pane 的 Full Auto 模式（恢复跟随全局） */
   clearPaneFullAutoMode(paneId: string): void {
     this._paneFullAutoModes.delete(paneId)
+    this.notify()
   }
 
   /** 按当前 pane 的生效状态循环：off -> session -> global -> off */
@@ -188,6 +241,16 @@ class AutoApproveStore {
     return () => {
       this._fullAutoListeners.delete(listener)
     }
+  }
+
+  claimAutoReply(requestId: string): boolean {
+    if (this._autoReplyRequestIds.has(requestId)) return false
+    this._autoReplyRequestIds.add(requestId)
+    return true
+  }
+
+  releaseAutoReply(requestId: string): void {
+    this._autoReplyRequestIds.delete(requestId)
   }
 
   /**

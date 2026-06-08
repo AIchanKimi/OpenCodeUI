@@ -13,6 +13,7 @@ import {
   MessageSquareIcon,
   LayersIcon,
   QuestionIcon,
+  CogIcon,
 } from '../../components/Icons'
 import { useIsMobile } from '../../hooks'
 import { isTauri } from '../../utils/tauri'
@@ -26,6 +27,7 @@ import { NotificationSettings } from './components/NotificationSettings'
 import { ServiceSettings } from './components/ServiceSettings'
 import { ServersSettings } from './components/ServersSettings'
 import { WorkspaceSettings } from './components/WorkspaceSettings'
+import { ConfigSettings } from './components/ConfigSettings'
 
 // ============================================
 // Types
@@ -38,6 +40,7 @@ export type SettingsTab =
   | 'models'
   | 'notifications'
   | 'service'
+  | 'config'
   | 'servers'
   | 'keybindings'
   | 'workspace'
@@ -62,6 +65,7 @@ const TAB_ICONS: Record<SettingsTab, React.ReactNode> = {
   workspace: <LayersIcon size={15} />,
   notifications: <BellIcon size={15} />,
   service: <PlugIcon size={15} />,
+  config: <CogIcon size={15} />,
   keybindings: <KeyboardIcon size={15} />,
   about: <QuestionIcon size={15} />,
 }
@@ -75,6 +79,7 @@ const TAB_IDS: SettingsTab[] = [
   'appearance',
   'notifications',
   'service',
+  'config',
   'keybindings',
   'about',
 ]
@@ -88,6 +93,7 @@ const TAB_LABEL_KEYS: Record<SettingsTab, string> = {
   workspace: 'tabs.workspace',
   notifications: 'tabs.notifications',
   service: 'tabs.service',
+  config: 'tabs.config',
   keybindings: 'tabs.shortcuts',
   about: 'tabs.about',
 }
@@ -101,13 +107,14 @@ const TAB_DESC_KEYS: Record<SettingsTab, string> = {
   workspace: 'tabs.workspaceDesc',
   notifications: 'tabs.notificationsDesc',
   service: 'tabs.serviceDesc',
+  config: 'tabs.configDesc',
   keybindings: 'tabs.shortcutsDesc',
   about: 'tabs.aboutDesc',
 }
 
 const GROUP_DEFS: { labelKey: string; tabs: SettingsTab[] }[] = [
   { labelKey: 'groups.core', tabs: ['servers', 'models', 'agent', 'chat', 'workspace', 'appearance', 'notifications'] },
-  { labelKey: 'groups.advanced', tabs: ['service', 'keybindings', 'about'] },
+  { labelKey: 'groups.advanced', tabs: ['service', 'config', 'keybindings', 'about'] },
 ]
 
 // ============================================
@@ -128,6 +135,8 @@ function TabContent({ tab }: { tab: SettingsTab }) {
       return <NotificationSettings />
     case 'service':
       return <ServiceSettings />
+    case 'config':
+      return <ConfigSettings />
     case 'servers':
       return <ServersSettings />
     case 'keybindings':
@@ -253,7 +262,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
         showCloseButton={false}
         rawContent
       >
-        <div className="flex flex-col" style={{ height: '92vh' }}>
+        <div className="flex flex-col" style={{ height: 'calc(var(--app-height) * 0.92)' }}>
           {/* Sticky Header + Tabs */}
           <div className="shrink-0">
             {/* Title bar */}

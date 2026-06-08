@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatSession } from './useChatSession'
 
@@ -12,6 +12,16 @@ const {
   sendNotificationMock,
   isSystemEnabledMock,
   errorHandlerMock,
+  getPaneFullAutoModeMock,
+  onFullAutoChangeMock,
+  autoApproveSubscribeMock,
+  shouldAutoApproveMock,
+  claimAutoReplyMock,
+  releaseAutoReplyMock,
+  useSessionFamilyMock,
+  pendingPermissionRequestsMock,
+  handlePermissionReplyMock,
+  refreshPendingRequestsMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   summarizeSessionMock: vi.fn(),
@@ -22,6 +32,22 @@ const {
   sendNotificationMock: vi.fn(),
   isSystemEnabledMock: vi.fn((type: string) => type !== 'permission'),
   errorHandlerMock: vi.fn(),
+  getPaneFullAutoModeMock: vi.fn((_paneId: string) => 'off'),
+  onFullAutoChangeMock: vi.fn((_listener: unknown) => vi.fn()),
+  autoApproveSubscribeMock: vi.fn((_listener: unknown) => vi.fn()),
+  shouldAutoApproveMock: vi.fn((_sessionId: string, _permission: string, _patterns: string[]) => false),
+  claimAutoReplyMock: vi.fn((_requestId: string) => true),
+  releaseAutoReplyMock: vi.fn((_requestId: string) => undefined),
+  useSessionFamilyMock: vi.fn((_sessionId: string | null) => [] as string[]),
+  pendingPermissionRequestsMock: [] as Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>,
+  handlePermissionReplyMock: vi.fn(
+    (_requestId: string, _reply: string, _directory?: string, _sessionId?: string) => Promise.resolve(true),
+  ),
+  refreshPendingRequestsMock: vi.fn((_sessionIds?: string | string[], _directory?: string) => Promise.resolve()),
+}))
+
+const autoApproveState = vi.hoisted(() => ({
+  approvePendingOnFullAuto: false,
 }))
 
 vi.mock('../store', () => ({
@@ -35,12 +61,20 @@ vi.mock('../store', () => ({
     handleMessageUpdated: vi.fn(),
     handlePartUpdated: vi.fn(),
   },
-  useSessionFamily: () => [],
+  useSessionFamily: (sessionId: string | null) => useSessionFamilyMock(sessionId),
   useSessionState: () => null,
   autoApproveStore: {
-    getPaneFullAutoMode: vi.fn(() => 'off'),
+    getPaneFullAutoMode: (paneId: string) => getPaneFullAutoModeMock(paneId),
+    onFullAutoChange: (listener: unknown) => onFullAutoChangeMock(listener),
+    subscribe: (listener: unknown) => autoApproveSubscribeMock(listener),
+    get approvePendingOnFullAuto() {
+      return autoApproveState.approvePendingOnFullAuto
+    },
     enabled: false,
-    shouldAutoApprove: vi.fn(() => false),
+    shouldAutoApprove: (sessionId: string, permission: string, patterns: string[]) =>
+      shouldAutoApproveMock(sessionId, permission, patterns),
+    claimAutoReply: (requestId: string) => claimAutoReplyMock(requestId),
+    releaseAutoReply: (requestId: string) => releaseAutoReplyMock(requestId),
   },
   childSessionStore: {
     getChildSessionIds: vi.fn(() => []),
@@ -64,14 +98,14 @@ vi.mock('../hooks', () => ({
   hasOtherConsumerForSession: vi.fn(() => false),
   usePermissions: () => ({ resetPermissions: vi.fn() }),
   usePermissionHandler: () => ({
-    pendingPermissionRequests: [],
+    pendingPermissionRequests: pendingPermissionRequestsMock,
     pendingQuestionRequests: [],
     setPendingPermissionRequests: vi.fn(),
     setPendingQuestionRequests: vi.fn(),
-    handlePermissionReply: vi.fn(),
+    handlePermissionReply: handlePermissionReplyMock,
     handleQuestionReply: vi.fn(),
     handleQuestionReject: vi.fn(),
-    refreshPendingRequests: vi.fn(),
+    refreshPendingRequests: refreshPendingRequestsMock,
     resetPendingRequests: vi.fn(),
     isReplying: false,
   }),
@@ -139,8 +173,27 @@ describe('useChatSession handleCommand', () => {
     sendNotificationMock.mockReset()
     isSystemEnabledMock.mockReset()
     errorHandlerMock.mockReset()
+    getPaneFullAutoModeMock.mockReset()
+    onFullAutoChangeMock.mockReset()
+    autoApproveSubscribeMock.mockReset()
+    shouldAutoApproveMock.mockReset()
+    claimAutoReplyMock.mockReset()
+    releaseAutoReplyMock.mockReset()
+    useSessionFamilyMock.mockReset()
+    handlePermissionReplyMock.mockReset()
+    refreshPendingRequestsMock.mockReset()
+    pendingPermissionRequestsMock.length = 0
 
     registerSessionConsumerMock.mockReturnValue(vi.fn())
+    getPaneFullAutoModeMock.mockReturnValue('off')
+    onFullAutoChangeMock.mockReturnValue(vi.fn())
+    autoApproveSubscribeMock.mockReturnValue(vi.fn())
+    shouldAutoApproveMock.mockReturnValue(false)
+    claimAutoReplyMock.mockReturnValue(true)
+    useSessionFamilyMock.mockReturnValue([])
+    handlePermissionReplyMock.mockResolvedValue(true)
+    refreshPendingRequestsMock.mockResolvedValue(undefined)
+    autoApproveState.approvePendingOnFullAuto = false
     getSelectableAgentsMock.mockResolvedValue([{ name: 'build', mode: 'primary', hidden: false }])
     isSystemEnabledMock.mockImplementation((type: string) => type !== 'permission')
 
@@ -220,6 +273,56 @@ describe('useChatSession handleCommand', () => {
     expect(executeCommandMock).toHaveBeenCalledWith('session-1', 'review', 'src/App.tsx', '/workspace/demo')
     expect(settled).toBe(true)
     expect(commandResult).toBe(true)
+  })
+
+  it('refreshes pending permissions when session full auto pending sweep is enabled', async () => {
+    getPaneFullAutoModeMock.mockReturnValue('session')
+    autoApproveState.approvePendingOnFullAuto = true
+    useSessionFamilyMock.mockReturnValue(['session-1', 'child-session'])
+
+    renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => {
+      expect(refreshPendingRequestsMock).toHaveBeenCalledWith(['session-1', 'child-session'], '/workspace/demo')
+    })
+  })
+
+  it('approves already pending permissions when session full auto pending sweep is enabled', async () => {
+    getPaneFullAutoModeMock.mockReturnValue('session')
+    autoApproveState.approvePendingOnFullAuto = true
+    pendingPermissionRequestsMock.push({
+      id: 'perm-1',
+      sessionID: 'session-1',
+      permission: 'bash',
+      patterns: ['npm test'],
+    })
+
+    renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    await waitFor(() => {
+      expect(claimAutoReplyMock).toHaveBeenCalledWith('perm-1')
+      expect(handlePermissionReplyMock).toHaveBeenCalledWith('perm-1', 'once', '/workspace/demo', 'session-1')
+    })
   })
 
   it.each([

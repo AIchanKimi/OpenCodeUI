@@ -26,6 +26,13 @@ import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import { useChatViewport, canUseSplitPane } from './chatViewport'
+import {
+  getInternalDragSnapshot,
+  isPointInsideElement,
+  startInternalDrag,
+  subscribeInternalDrag,
+  subscribeInternalDrop,
+} from '../../lib/internalDragCore'
 
 interface PaneHeaderProps {
   paneId: string
@@ -60,6 +67,7 @@ export function PaneHeader({
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
 
   // Drag state for swap
   const [isDragOver, setIsDragOver] = useState(false)
@@ -116,48 +124,49 @@ export function PaneHeader({
   }, [paneId])
 
   // ---- Drag & Drop (swap panes) ----
-  const handleDragStart = useCallback(
-    (e: React.DragEvent) => {
-      e.dataTransfer.setData('text/x-pane-id', paneId)
-      e.dataTransfer.effectAllowed = 'move'
+  const handlePointerDragStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement
+      if (target.closest('button, input')) return
+      startInternalDrag(
+        e,
+        { kind: 'pane', paneId },
+      )
     },
     [paneId],
   )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('text/x-pane-id')) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setIsDragOver(true)
-    }
-  }, [])
+  useEffect(() => {
+    return subscribeInternalDrag(() => {
+      const active = getInternalDragSnapshot().active
+      setIsDragOver(
+        Boolean(
+          active?.payload.kind === 'pane' &&
+            active.payload.paneId !== paneId &&
+            isPointInsideElement(active.current, headerRef.current),
+        ),
+      )
+    })
+  }, [paneId])
 
-  const handleDragLeave = useCallback(() => {
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+  useEffect(() => {
+    return subscribeInternalDrop(event => {
+      if (event.payload.kind !== 'pane') return
       setIsDragOver(false)
-      const sourcePaneId = e.dataTransfer.getData('text/x-pane-id')
-      if (sourcePaneId && sourcePaneId !== paneId) {
-        paneLayoutStore.swapPanes(sourcePaneId, paneId)
+      if (event.payload.paneId !== paneId && isPointInsideElement(event.point, headerRef.current)) {
+        paneLayoutStore.swapPanes(event.payload.paneId, paneId)
       }
-    },
-    [paneId],
-  )
+    })
+  }, [paneId])
 
   return (
     <div
-      className={`relative h-10 flex items-center justify-between px-2 transition-colors duration-200 shrink-0 z-20 ${
+      ref={headerRef}
+      className={`relative h-10 flex items-center justify-between px-2 select-none transition-colors duration-200 shrink-0 z-20 ${
         isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-100'
       }`}
       onClick={onFocus}
-      draggable
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onPointerDown={handlePointerDragStart}
     >
       {/* Left: Title */}
       <div className="flex items-center min-w-0 flex-1">

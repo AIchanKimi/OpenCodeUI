@@ -11,7 +11,7 @@ import {
   useEffect,
   useRef,
   useState,
-  type DragEvent,
+  type PointerEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
@@ -50,6 +50,7 @@ import { downloadBlob, downloadFileContent } from '../utils/downloadUtils'
 import { downloadDirectoryArchive, downloadFileAsset, isFileServicePathSupported, saveFileContent } from '../api/file'
 import type { FileContent } from '../api/types'
 import { FileTextEditor } from './file-text-editor'
+import { startInternalDrag } from '../lib/internalDragCore'
 
 // 常量
 const MIN_TREE_HEIGHT = 100
@@ -623,17 +624,16 @@ const FileTreeItem = memo(function FileTreeItem({
     }
   }, [status])
 
-  // 拖拽到输入框实现 @mention
-  const handleDragStart = useCallback(
-    (e: DragEvent<HTMLButtonElement>) => {
+  // 拖拽到输入框实现 @mention。使用 pointer 拖拽，避免 Tauri 原生文件 drop 接管 HTML5 DnD。
+  const handlePointerDragStart = useCallback(
+    (e: PointerEvent<HTMLButtonElement>) => {
       const fileData = {
         type: (isDirectory ? 'folder' : 'file') as 'file' | 'folder',
         path: node.path, // 相对路径
         absolute: node.absolute, // 绝对路径
         name: node.name,
       }
-      e.dataTransfer.setData('application/opencode-file', JSON.stringify(fileData))
-      e.dataTransfer.effectAllowed = 'copy'
+      startInternalDrag(e, { kind: 'file-mention', file: fileData })
     },
     [node.path, node.absolute, node.name, isDirectory],
   )
@@ -650,13 +650,12 @@ const FileTreeItem = memo(function FileTreeItem({
     <div>
       <div className={`group flex items-center gap-1 pr-2 ${node.ignored ? 'opacity-50' : ''}`}>
         <button
-          draggable
-          onDragStart={handleDragStart}
+          onPointerDown={handlePointerDragStart}
           onClick={() => onClick(node)}
           className={`
             flex-1 flex items-center gap-1 px-2 py-0.5 text-left cursor-default
-            hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
-            text-text-300 min-w-0
+            select-none hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
+            text-text-300 min-w-0 w-full
           `}
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
         >
@@ -675,6 +674,7 @@ const FileTreeItem = memo(function FileTreeItem({
             alt=""
             width={16}
             height={16}
+            draggable={false}
             className="shrink-0"
             loading="lazy"
             decoding="async"

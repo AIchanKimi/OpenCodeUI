@@ -76,10 +76,10 @@
     "allowOnce": "允许一次",
     "alwaysAllow": "始终允许",
     "subtaskFallback": "Subtask",
-    "browserSession": "浏览器会话",
-    "thisSession": "本次会话",
-    "autoApproveEnabled": "自动放行已启用。刷新浏览器以重置权限。",
-    "changePermissionSettings": "你可以随时更改权限设置。"
+    "browserSession": "前端临时",
+    "thisSession": "后端始终",
+    "autoApproveEnabled": "前端会临时记住始终允许规则，刷新后清空。",
+    "changePermissionSettings": "始终允许将交给后端处理，可在设置中更改。"
   },
   "projectDialog": {
     "typePath": "输入路径...",

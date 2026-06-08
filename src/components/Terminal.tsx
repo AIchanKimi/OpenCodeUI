@@ -16,6 +16,11 @@ import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { logger } from '../utils/logger'
 import { parsePtyFrame } from '../utils/ptyProtocol'
 import { isTauri } from '../utils/tauri'
+import { copyTextToClipboard, readTextFromClipboard } from '../utils/clipboard'
+import { keybindingStore } from '../store/keybindingStore'
+
+const TERMINAL_FONT_FALLBACK =
+  "'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Ubuntu Mono', 'Noto Sans Mono CJK SC', 'WenQuanYi Micro Hei Mono', 'Noto Sans CJK SC', ui-monospace, monospace"
 
 // ============================================
 // 终端主题 - 与应用主题配合
@@ -48,12 +53,15 @@ function getHSLColor(varName: string): string {
 
 function getTerminalTheme(isDark: boolean) {
   const fgColor = getHSLColor('--text-100') || (isDark ? '#e8e0d5' : '#2d2a26')
+  // 背景色需要设为实际颜色（而非透明），因为 xterm 在处理反转视频（\e[7m）时
+  // 会用 theme.background 作为反转后的前景色。如果设为 #00000000，
+  // 反转视频的文字会变成黑色，且反转背景也会出现黑框。
+  // 实际的透明效果由 CSS `.xterm-viewport { background-color: transparent !important }` 实现。
+  const bgColor = getHSLColor('--bg-100') || (isDark ? '#1a1a1a' : '#f5f3ef')
 
-  // 背景色设置为透明，实际上由 CSS 强制覆盖，
-  // 但这里设置 transparent 可以让 xterm 内部逻辑知道它是透明的
   if (isDark) {
     return {
-      background: '#00000000', // 完全透明
+      background: bgColor,
       foreground: fgColor,
       cursor: '#e8e0d5',
       cursorAccent: '#1a1a1a',
@@ -80,7 +88,7 @@ function getTerminalTheme(isDark: boolean) {
     }
   } else {
     return {
-      background: '#00000000', // 完全透明
+      background: bgColor,
       foreground: fgColor,
       cursor: '#2d2a26',
       cursorAccent: '#f5f3ef',
@@ -88,14 +96,16 @@ function getTerminalTheme(isDark: boolean) {
       selectionForeground: '#2d2a26',
       selectionInactiveBackground: '#e5e0d8',
       // ANSI colors - 浅色模式
-      black: '#2d2a26',
+      // 注意：在浅色背景下，white/brightWhite 需要是深色，
+      // 因为 PowerShell 等 shell 会用这些 ANSI 颜色渲染用户输入文本
+      black: '#f5f3ef',
       red: '#c9514a',
       green: '#4a9f4a',
       yellow: '#b58900',
       blue: '#3a7fc9',
       magenta: '#a04a9f',
       cyan: '#3a9f9f',
-      white: '#f5f3ef',
+      white: '#655f58',
       brightBlack: '#6b6560',
       brightRed: '#e55561',
       brightGreen: '#6ab56a',
@@ -103,7 +113,7 @@ function getTerminalTheme(isDark: boolean) {
       brightBlue: '#5a9fe0',
       brightMagenta: '#c06abf',
       brightCyan: '#5abfbf',
-      brightWhite: '#ffffff',
+      brightWhite: '#2d2a26',
     }
   }
 }
@@ -189,6 +199,16 @@ function toCtrlSequence(data: string): string {
 
 function hasStickyModifier(sticky: StickyModifiers): boolean {
   return sticky.ctrl || sticky.alt
+}
+
+function isNativePasteShortcut(event: KeyboardEvent) {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'v'
+}
+
+function canReadClipboardText() {
+  // Ctrl/Cmd+V uses ClipboardEvent.clipboardData, but smart right-click paste must actively call
+  // navigator.clipboard.readText(), which browsers only expose in secure contexts.
+  return typeof window !== 'undefined' && window.isSecureContext && typeof navigator !== 'undefined' && !!navigator.clipboard?.readText
 }
 
 function applyStickyModifiers(data: string, sticky: StickyModifiers): string {
@@ -296,9 +316,11 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
   const [hasBeenActive, setHasBeenActive] = useState(isActive)
   const { preferTouchUi, hasTouch, hasCoarsePointer } = useInputCapabilities()
   const { manualTerminalTitles } = useTheme()
-  const { panelTabs } = useLayoutStore()
+  const { panelTabs, terminalCopyOnSelect, terminalRightClickPaste } = useLayoutStore()
   const touchCapable = hasTouch || hasCoarsePointer
   const manualTerminalTitlesRef = useRef(manualTerminalTitles)
+  const terminalCopyOnSelectRef = useRef(terminalCopyOnSelect)
+  const terminalRightClickPasteRef = useRef(terminalRightClickPaste)
   const terminalTab = panelTabs.find(tab => tab.id === ptyId && tab.type === 'terminal')
   const restoreBuffer = typeof terminalTab?.buffer === 'string' ? terminalTab.buffer : ''
   const restoreScrollY = typeof terminalTab?.scrollY === 'number' ? terminalTab.scrollY : undefined
@@ -351,6 +373,14 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
     manualTerminalTitlesRef.current = manualTerminalTitles
   }, [manualTerminalTitles])
 
+  useEffect(() => {
+    terminalCopyOnSelectRef.current = terminalCopyOnSelect
+  }, [terminalCopyOnSelect])
+
+  useEffect(() => {
+    terminalRightClickPasteRef.current = terminalRightClickPaste
+  }, [terminalRightClickPaste])
+
   // 当 tab 第一次变为活动状态时，标记它
   useEffect(() => {
     if (isActive && !hasBeenActive) {
@@ -383,9 +413,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
 
     const terminal = new XTerm({
       theme,
-      fontFamily:
-        rootStyle.getPropertyValue('--font-mono').trim() ||
-        "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace",
+      fontFamily: rootStyle.getPropertyValue('--font-mono').trim() || TERMINAL_FONT_FALLBACK,
       fontSize: touchUi ? Math.max(termFontSize, 14) : termFontSize,
       lineHeight: touchUi ? Math.max(termLineHeight, 1.3) : termLineHeight,
       cols: restoreSize?.cols,
@@ -424,6 +452,80 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
 
     const textarea = terminal.textarea
     const handleTextareaBlur = () => clearStickyModifiers()
+
+    terminal.attachCustomKeyEventHandler(event => {
+      if (event.type !== 'keydown') return true
+
+      const action = keybindingStore.findMatchingAction(event, 'terminal')
+      if (action === 'terminal.paste') {
+        if (isNativePasteShortcut(event)) {
+          return false
+        }
+
+        event.preventDefault()
+        void readTextFromClipboard()
+          .then(text => {
+            if (!text || !mountedRef.current) return
+            sendTerminalData(text)
+          })
+          .catch(() => {})
+        return false
+      }
+
+      if (action !== 'terminal.copySelection' || !terminal.hasSelection()) return true
+
+      const selected = terminal.getSelection()
+      if (!selected) return true
+
+      event.preventDefault()
+      void copyTextToClipboard(selected).catch(() => {})
+      terminal.clearSelection()
+      return false
+    })
+
+    const terminalElement = terminal.element
+    const handleSelectionCopy = (event: MouseEvent) => {
+      if (event.button !== 0) return
+      if (!terminalCopyOnSelectRef.current || !terminal.hasSelection()) return
+
+      const selected = terminal.getSelection()
+      if (!selected) return
+
+      void copyTextToClipboard(selected)
+        .then(() => terminal.clearSelection())
+        .catch(() => {})
+    }
+
+    const handleContextMenuPaste = (event: MouseEvent) => {
+      if (!terminalRightClickPasteRef.current) return
+
+      if (terminal.hasSelection()) {
+        event.preventDefault()
+        const selected = terminal.getSelection()
+        if (selected) {
+          void copyTextToClipboard(selected).catch(() => {})
+          terminal.clearSelection()
+        }
+        return
+      }
+
+      if (!canReadClipboardText()) {
+        terminal.focus()
+        return
+      }
+
+      event.preventDefault()
+      void readTextFromClipboard()
+        .then(text => {
+          if (!text || !mountedRef.current) return
+          sendTerminalData(text)
+          terminal.focus()
+        })
+        .catch(() => {})
+    }
+
+    terminalElement?.addEventListener('mouseup', handleSelectionCopy)
+    terminalElement?.addEventListener('contextmenu', handleContextMenuPaste)
     if (touchUi && textarea) {
       textarea.setAttribute('autocapitalize', 'none')
       textarea.setAttribute('autocomplete', 'off')
@@ -631,6 +733,8 @@ export const Terminal = memo(function Terminal({ ptyId, directory, isActive }: T
       disposeData?.dispose()
       disposeTitle?.dispose()
       textarea?.removeEventListener('blur', handleTextareaBlur)
+      terminalElement?.removeEventListener('mouseup', handleSelectionCopy)
+      terminalElement?.removeEventListener('contextmenu', handleContextMenuPaste)
       resetTransport()
       // 显式 dispose addons
       fitAddon.dispose()

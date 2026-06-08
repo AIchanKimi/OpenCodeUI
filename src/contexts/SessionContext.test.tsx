@@ -21,8 +21,10 @@ const {
   clearChildrenMock,
   clearFollowupQueueMock,
   setTodosMock,
+  clearSessionRuntimeStateMock,
   sessionErrorHandlerMock,
   autoDetectPathStyleMock,
+  onServerChangeMock,
 } = vi.hoisted(() => ({
   getSessionsMock: vi.fn(),
   createSessionMock: vi.fn(),
@@ -31,11 +33,14 @@ const {
   clearChildrenMock: vi.fn(),
   clearFollowupQueueMock: vi.fn(),
   setTodosMock: vi.fn(),
+  clearSessionRuntimeStateMock: vi.fn(),
   sessionErrorHandlerMock: vi.fn(),
   autoDetectPathStyleMock: vi.fn(),
+  onServerChangeMock: vi.fn(),
 }))
 let latestEventCallbacks: Partial<EventCallbacks> = {}
 let latestContext: ContextType<typeof SessionContext> = null
+let latestServerChange: (() => void) | undefined
 
 vi.mock('../api', () => ({
   getSessions: (...args: unknown[]) => getSessionsMock(...args),
@@ -66,11 +71,21 @@ vi.mock('../store/todoStore', () => ({
   },
 }))
 
+vi.mock('../store/serverStore', () => ({
+  serverStore: {
+    onServerChange: (...args: unknown[]) => onServerChangeMock(...args),
+  },
+}))
+
 vi.mock('../utils', () => ({
   sessionErrorHandler: (...args: unknown[]) => sessionErrorHandlerMock(...args),
   normalizeToForwardSlash: (value?: string) => value,
   isSameDirectory: (left?: string, right?: string) => left === right,
   autoDetectPathStyle: (...args: unknown[]) => autoDetectPathStyleMock(...args),
+}))
+
+vi.mock('../utils/sessionLifecycle', () => ({
+  clearSessionRuntimeState: (...args: unknown[]) => clearSessionRuntimeStateMock(...args),
 }))
 
 function SessionContextProbe() {
@@ -95,10 +110,17 @@ describe('SessionProvider', () => {
     clearChildrenMock.mockReset()
     clearFollowupQueueMock.mockReset()
     setTodosMock.mockReset()
+    clearSessionRuntimeStateMock.mockReset()
     sessionErrorHandlerMock.mockReset()
     autoDetectPathStyleMock.mockReset()
+    onServerChangeMock.mockReset()
+    latestServerChange = undefined
     subscribeToEventsMock.mockImplementation((callbacks: EventCallbacks) => {
       latestEventCallbacks = callbacks
+      return vi.fn()
+    })
+    onServerChangeMock.mockImplementation(listener => {
+      latestServerChange = listener as () => void
       return vi.fn()
     })
   })
@@ -153,5 +175,76 @@ describe('SessionProvider', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+  })
+
+  it('removes deleted sessions from context and clears runtime state', async () => {
+    getSessionsMock.mockResolvedValue([
+      { id: 'session-1', directory: '/workspace/demo' },
+      { id: 'session-2', directory: '/workspace/demo' },
+    ])
+
+    render(
+      <SessionProvider>
+        <SessionContextProbe />
+      </SessionProvider>,
+    )
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
+
+    act(() => {
+      latestEventCallbacks.onSessionDeleted?.('session-1')
+    })
+
+    expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('session-1')
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-2'])
+  })
+
+  it('refetches on server endpoint changes even while the old request is in flight', async () => {
+    const staleRequest = createDeferred<Array<{ id: string; directory: string }>>()
+    const freshRequest = createDeferred<Array<{ id: string; directory: string }>>()
+
+    getSessionsMock.mockImplementationOnce(() => staleRequest.promise).mockImplementationOnce(() => freshRequest.promise)
+
+    render(
+      <SessionProvider>
+        <SessionContextProbe />
+      </SessionProvider>,
+    )
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      latestServerChange?.()
+      await Promise.resolve()
+    })
+
+    expect(getSessionsMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      freshRequest.resolve([{ id: 'fresh', directory: '/workspace/demo' }])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['fresh'])
+
+    await act(async () => {
+      staleRequest.resolve([{ id: 'stale', directory: '/workspace/demo' }])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['fresh'])
   })
 })

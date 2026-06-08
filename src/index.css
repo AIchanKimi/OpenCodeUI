@@ -19,6 +19,7 @@
 /* 动态视口高度变量 - 适配移动端虚拟键盘和地址栏 */
 :root {
   --app-height: 100vh;
+  color-scheme: light;
   /* Safe area insets：
    * - Android: 由 MainActivity.kt 通过 evaluateJavascript 注入真实值
    *   (Android WebView 的 env(safe-area-inset-*) 返回 0px)
@@ -277,6 +278,20 @@ body,
     ui-monospace, 'FiraCode Nerd Font Mono', 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
+:root[data-mode='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-mode='light'] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode]) {
+    color-scheme: dark;
+  }
+}
+
 /* ============================================
  * CSS Variables - Default Fallback (Eucalyptus Light)
  * ============================================
@@ -528,6 +543,11 @@ body {
 .os-thumb.os-thumb-x.os-dragging::after {
   width: auto;
   height: 6px;
+}
+
+.internal-drag-active,
+.internal-drag-active * {
+  cursor: default !important;
 }
 
 /* ============================================

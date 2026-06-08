@@ -11,7 +11,7 @@
 
 import { memo, useMemo, useRef, useState, useEffect, useCallback, useSyncExternalStore, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { diffLines, diffWords } from 'diff'
+import { diffLines, diffWordsWithSpace } from 'diff'
 import { useSyntaxHighlight, type HighlightTokens } from '../hooks/useSyntaxHighlight'
 import { useDynamicVirtualScroll } from '../hooks/useDynamicVirtualScroll'
 import { themeStore } from '../store/themeStore'
@@ -726,7 +726,7 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
           </div>
 
           <div
-            className="min-w-0 flex-1 px-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+            className="min-w-0 flex-1 px-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] text-text-100 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
             style={{ minHeight: lineHeight }}
           >
             {pair.left.type !== 'empty' && <LineContent line={pair.left} tokens={beforeTokens} />}
@@ -750,7 +750,7 @@ const WrappedSplitDiffView = memo(function WrappedSplitDiffView({
           </div>
 
           <div
-            className="min-w-0 flex-1 px-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+            className="min-w-0 flex-1 px-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] text-text-100 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
             style={{ minHeight: lineHeight }}
           >
             {pair.right.type !== 'empty' && <LineContent line={pair.right} tokens={afterTokens} />}
@@ -1052,7 +1052,7 @@ const SplitDiffView = memo(function SplitDiffView({
     leftContentRows.push(
       <div
         key={i}
-        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre ${pair.left.type === 'empty' ? '' : getContentBgClass(pair.left.type)}`}
+        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] text-text-100 whitespace-pre ${pair.left.type === 'empty' ? '' : getContentBgClass(pair.left.type)}`}
         style={{ height: lineHeight }}
       >
         {pair.left.type === 'empty' ? <EmptyContentBuffer height={lineHeight} yOffset={rowTop} xOffset={leftScrollLeft - gutterWidth} /> : <LineContent line={pair.left} tokens={beforeTokens} />}
@@ -1082,7 +1082,7 @@ const SplitDiffView = memo(function SplitDiffView({
     rightContentRows.push(
       <div
         key={i}
-        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] whitespace-pre ${pair.right.type === 'empty' ? '' : getContentBgClass(pair.right.type)}`}
+        className={`pr-2 leading-[var(--fs-code-line-height)] text-[length:var(--fs-code)] text-text-100 whitespace-pre ${pair.right.type === 'empty' ? '' : getContentBgClass(pair.right.type)}`}
         style={{ height: lineHeight }}
       >
         {pair.right.type === 'empty' ? <EmptyContentBuffer height={lineHeight} yOffset={rowTop} xOffset={rightScrollLeft - gutterWidth} /> : <LineContent line={pair.right} tokens={afterTokens} />}
@@ -1566,7 +1566,7 @@ const WrappedUnifiedDiffView = memo(function WrappedUnifiedDiffView({
 // ============================================
 
 type HighlightToken = HighlightTokens[number][number]
-type WordDiffChange = ReturnType<typeof diffWords>[number]
+type WordDiffChange = ReturnType<typeof diffWordsWithSpace>[number]
 
 const LineContent = memo(function LineContent({ line, tokens }: { line: DiffLine; tokens: HighlightTokens | null }) {
   const lineTokens = tokens && line.lineNo ? tokens[line.lineNo - 1] : null
@@ -1810,7 +1810,7 @@ function computeWordDiff(
   oldLine: string,
   newLine: string,
 ): { left: WordDiffSegment[]; right: WordDiffSegment[]; changes: WordDiffChange[] } {
-  const changes = diffWords(oldLine, newLine)
+  const changes = diffWordsWithSpace(oldLine, newLine)
 
   const mergedChanges: WordDiffChange[] = []
   for (let i = 0; i < changes.length; i++) {

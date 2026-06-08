@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { THEME_SWITCH_DISABLE_MS } from '../constants'
 import { themeStore, type ColorMode } from '../store/themeStore'
 import type { StepFinishDisplay, CustomCSSSnippet } from '../store/themeStore'
-import type { ReasoningDisplayMode, DiffStyle, ToolCardStyle, CompletedAtFormat } from '../store/themeStore'
+import type { ReasoningDisplayMode, DiffStyle, ToolCardStyle, CompletedAtFormat, ExternalFileDropMode } from '../store/themeStore'
 
 // 保持向后兼容的类型别名
 export type ThemeMode = ColorMode
@@ -214,6 +214,10 @@ export function useTheme() {
     themeStore.setManualTerminalTitles(enabled)
   }, [])
 
+  const setExternalFileDropMode = useCallback((mode: ExternalFileDropMode) => {
+    themeStore.setExternalFileDropMode(mode)
+  }, [])
+
   return {
     // 日夜模式（向后兼容）
     mode: state.colorMode,
@@ -306,5 +310,9 @@ export function useTheme() {
     // 终端标签标题模式
     manualTerminalTitles: state.manualTerminalTitles,
     setManualTerminalTitles,
+
+    // 外部文件拖拽模式
+    externalFileDropMode: state.externalFileDropMode,
+    setExternalFileDropMode,
   }
 }

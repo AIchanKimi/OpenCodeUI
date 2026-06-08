@@ -1,9 +1,24 @@
-import { Children, cloneElement, isValidElement, memo, useMemo } from 'react'
-import { Streamdown, type Components } from 'streamdown'
-import { math } from '@streamdown/math'
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { Streamdown, defaultRehypePlugins, type Components, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import { createMathPlugin } from '@streamdown/math'
 import { CodeBlock } from './CodeBlock'
+import { HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
 import { CopyButton } from './ui'
+import { useTheme } from '../hooks/useTheme'
+import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { detectLanguage } from '../utils/languageUtils'
+import { isTauri } from '../utils/tauri'
 
 interface MarkdownRendererProps {
   content: string
@@ -12,6 +27,57 @@ interface MarkdownRendererProps {
   isStreaming?: boolean
   /** Display variant: 'default' for normal content, 'reasoning' for subdued thinking blocks */
   variant?: 'default' | 'reasoning'
+}
+
+const markdownMath = createMathPlugin({ singleDollarTextMath: true })
+const MERMAID_MIN_SCALE = 0.5
+const MERMAID_MAX_SCALE = 3
+const MERMAID_SCALE_STEP = 0.15
+const MERMAID_CONTROL_BUTTON_BASE_CLASS =
+  'inline-flex h-8 w-8 items-center justify-center rounded-md bg-bg-300/70 backdrop-blur-md transition-colors duration-150 hover:bg-bg-300/85 disabled:opacity-40 disabled:cursor-not-allowed'
+const MERMAID_CONTROL_BUTTON_CLASS = `${MERMAID_CONTROL_BUTTON_BASE_CLASS} text-text-400 hover:text-text-200`
+const LOCAL_FILE_LINK_PREFIX = '#opencode-local-file:'
+
+type DiagramPointer = { x: number; y: number }
+
+type PinchGesture = {
+  startDistance: number
+  startScale: number
+  startOffset: { x: number; y: number }
+  startCenter: { x: number; y: number }
+}
+
+let mermaidRenderCounter = 0
+
+function createMermaidRenderId(prefix: string) {
+  mermaidRenderCounter += 1
+  const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '') || 'diagram'
+  return `mermaid-${safePrefix}-${mermaidRenderCounter}`
+}
+
+function clampMermaidScale(scale: number) {
+  return Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, Number(scale.toFixed(2))))
+}
+
+function getPointerDistance(first: DiagramPointer, second: DiagramPointer) {
+  return Math.hypot(first.x - second.x, first.y - second.y)
+}
+
+function getPointerCenter(first: DiagramPointer, second: DiagramPointer) {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+  }
+}
+
+function getRelativeCenter(target: HTMLDivElement, first: DiagramPointer, second: DiagramPointer) {
+  const center = getPointerCenter(first, second)
+  const rect = target.parentElement?.getBoundingClientRect()
+  if (!rect) return center
+  return {
+    x: center.x - rect.left,
+    y: center.y - rect.top,
+  }
 }
 
 // ─── Inline Code ───────────────────────────────────────────────
@@ -80,6 +146,58 @@ function extractBlockCode(children: React.ReactNode): { code: string; language?:
   }
 }
 
+type HastNode = {
+  type?: string
+  tagName?: string
+  properties?: Record<string, unknown>
+  children?: HastNode[]
+}
+
+function decodeHref(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function getWindowsAbsolutePath(value: string): string | null {
+  const decoded = decodeHref(value)
+  return /^[A-Za-z]:[\\/]/.test(decoded) ? decoded : null
+}
+
+function encodeLocalFileHref(filePath: string): string {
+  return `${LOCAL_FILE_LINK_PREFIX}${encodeURIComponent(filePath)}`
+}
+
+function decodeLocalFileHref(href?: string): string | null {
+  if (!href?.startsWith(LOCAL_FILE_LINK_PREFIX)) return null
+
+  try {
+    return decodeURIComponent(href.slice(LOCAL_FILE_LINK_PREFIX.length))
+  } catch {
+    return null
+  }
+}
+
+function rewriteWindowsPathLinkHrefs() {
+  return (tree: HastNode) => {
+    const visit = (node: HastNode) => {
+      if (node.type === 'element' && node.tagName === 'a') {
+        const href = node.properties?.href
+        const filePath = typeof href === 'string' ? getWindowsAbsolutePath(href) : null
+        if (filePath) {
+          node.properties = { ...node.properties, href: encodeLocalFileHref(filePath) }
+        }
+      }
+
+      node.children?.forEach(visit)
+    }
+
+    visit(tree)
+  }
+}
+
 // ─── Markdown Table ────────────────────────────────────────────
 
 /**
@@ -121,6 +239,17 @@ function tableToMarkdown(headers: string[], rows: string[][]): string {
   const sep = headers.map(() => '---')
   const lines = [`| ${headers.join(' | ')} |`, `| ${sep.join(' | ')} |`, ...rows.map(r => `| ${r.join(' | ')} |`)]
   return lines.join('\n')
+}
+
+function getOrderedListStyle(start: unknown, children: React.ReactNode): React.CSSProperties {
+  const startNumber = typeof start === 'number' && Number.isFinite(start) ? start : 1
+  const itemCount = Math.max(Children.count(children), 1)
+  const endNumber = Math.max(startNumber + itemCount - 1, startNumber)
+  const markerChars = String(Math.abs(endNumber)).length + (endNumber < 0 ? 1 : 0)
+
+  return {
+    paddingInlineStart: `${Math.max(3, markerChars + 2)}ch`,
+  }
 }
 
 function injectTableCopyButton(
@@ -224,6 +353,303 @@ const MarkdownTable = memo(function MarkdownTable({
   )
 })
 
+const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: CustomRendererProps) {
+  const { resolvedTheme } = useTheme()
+  const { hasCoarsePointer, hasTouch, preferTouchUi } = useInputCapabilities()
+  const supportsTouchGestures = hasCoarsePointer || hasTouch
+  const renderPrefix = useId()
+  const dragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  } | null>(null)
+  const touchPointersRef = useRef<Map<number, DiagramPointer>>(new Map())
+  const pinchRef = useRef<PinchGesture | null>(null)
+  const [svg, setSvg] = useState('')
+  const [error, setError] = useState('')
+  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [isTouchPanEnabled, setIsTouchPanEnabled] = useState(false)
+
+  const resetView = useCallback(() => {
+    setScale(1)
+    setOffset({ x: 0, y: 0 })
+  }, [])
+
+  const zoomBy = useCallback((delta: number) => {
+    setScale(current => clampMermaidScale(current + delta))
+  }, [])
+
+  const clearTouchGesture = useCallback(() => {
+    touchPointersRef.current.clear()
+    pinchRef.current = null
+    dragRef.current = null
+  }, [])
+
+  const beginPinchGesture = useCallback(
+    (target: HTMLDivElement) => {
+      const pointers = Array.from(touchPointersRef.current.values())
+      if (pointers.length < 2) return
+      const [first, second] = pointers
+      pinchRef.current = {
+        startDistance: Math.max(1, getPointerDistance(first, second)),
+        startScale: scale,
+        startOffset: offset,
+        startCenter: getRelativeCenter(target, first, second),
+      }
+      dragRef.current = null
+    },
+    [offset, scale],
+  )
+
+  const handleContainerClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!preferTouchUi) return
+      if (event.target instanceof HTMLElement && event.target.closest('button')) return
+      event.currentTarget.focus({ preventScroll: true })
+    },
+    [preferTouchUi],
+  )
+
+  const handleContainerBlur = useCallback(
+    (event: React.FocusEvent<HTMLDivElement>) => {
+      if (!preferTouchUi) return
+      const nextTarget = event.relatedTarget
+      if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
+      setIsTouchPanEnabled(false)
+      clearTouchGesture()
+    },
+    [clearTouchGesture, preferTouchUi],
+  )
+
+  useEffect(() => {
+    if (isTouchPanEnabled) return
+    clearTouchGesture()
+  }, [clearTouchGesture, isTouchPanEnabled])
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return
+      if (supportsTouchGestures && event.pointerType !== 'mouse' && !isTouchPanEnabled) return
+      if (event.pointerType !== 'mouse') {
+        touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        if (touchPointersRef.current.size >= 2) {
+          beginPinchGesture(event.currentTarget)
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+          return
+        }
+      }
+      dragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: offset.x,
+        originY: offset.y,
+      }
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    },
+    [beginPinchGesture, supportsTouchGestures, isTouchPanEnabled, offset.x, offset.y],
+  )
+
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' && touchPointersRef.current.has(event.pointerId)) {
+      touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      const pointers = Array.from(touchPointersRef.current.values())
+      const pinch = pinchRef.current
+      if (pointers.length >= 2 && pinch) {
+        const [first, second] = pointers
+        const distance = Math.max(1, getPointerDistance(first, second))
+        const center = getRelativeCenter(event.currentTarget, first, second)
+        const nextScale = clampMermaidScale(pinch.startScale * (distance / pinch.startDistance))
+        const anchorX = (pinch.startCenter.x - pinch.startOffset.x) / pinch.startScale
+        const anchorY = (pinch.startCenter.y - pinch.startOffset.y) / pinch.startScale
+
+        event.preventDefault()
+        setScale(nextScale)
+        setOffset({
+          x: center.x - anchorX * nextScale,
+          y: center.y - anchorY * nextScale,
+        })
+        return
+      }
+    }
+
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.preventDefault()
+    setOffset({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    })
+  }, [])
+
+  const handlePointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse') {
+      touchPointersRef.current.delete(event.pointerId)
+      if (touchPointersRef.current.size < 2) pinchRef.current = null
+    }
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dragRef.current = null
+    }
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isIncomplete || !code.trim()) {
+      setSvg('')
+      setError('')
+      resetView()
+      return
+    }
+
+    let cancelled = false
+
+    async function renderDiagram() {
+      try {
+        setSvg('')
+        setError('')
+        resetView()
+        const { default: mermaid } = await import('mermaid')
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: resolvedTheme === 'dark' ? 'dark' : 'default',
+        })
+        const result = await mermaid.render(createMermaidRenderId(renderPrefix), code)
+        if (!cancelled) setSvg(result.svg)
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn('[Markdown] Mermaid render failed:', err)
+        }
+        if (!cancelled) {
+          setSvg('')
+          setError(err instanceof Error ? err.message : 'Failed to render Mermaid diagram')
+        }
+      }
+    }
+
+    void renderDiagram()
+
+    return () => {
+      cancelled = true
+    }
+  }, [code, isIncomplete, renderPrefix, resetView, resolvedTheme])
+
+  if (isIncomplete) {
+    return <CodeBlock code={code} language="mermaid" deferHighlight />
+  }
+
+  if (error) {
+    return (
+      <div className="my-4 first:mt-0 last:mb-0 rounded-md border border-danger-100/30 bg-danger-bg/40 p-3">
+        <p className="mb-2 text-[length:var(--fs-sm)] font-medium text-danger-100">Mermaid render failed</p>
+        <CodeBlock code={code} language="mermaid" />
+      </div>
+    )
+  }
+
+  if (!svg) {
+    return (
+      <div
+        className="my-4 first:mt-0 last:mb-0 flex min-h-40 items-center justify-center"
+        aria-label="Rendering diagram"
+      >
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-text-400/25 border-t-text-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`group/mermaid relative my-4 first:mt-0 last:mb-0 overflow-hidden ${preferTouchUi ? 'focus:outline-none' : ''}`}
+      tabIndex={preferTouchUi ? 0 : undefined}
+      onClick={preferTouchUi ? handleContainerClick : undefined}
+      onBlur={preferTouchUi ? handleContainerBlur : undefined}
+    >
+      <div
+        className={`absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/mermaid:opacity-100 group-focus-within/mermaid:opacity-100 ${preferTouchUi ? '[@media(hover:none)]:opacity-0' : '[@media(hover:none)]:opacity-100'}`}
+        onMouseDown={event => event.preventDefault()}
+      >
+        <CopyButton text={code} position="static" className={`!h-8 !w-8 !p-2 ${MERMAID_CONTROL_BUTTON_BASE_CLASS}`} />
+        {preferTouchUi && (
+          <button
+            type="button"
+            className={`${MERMAID_CONTROL_BUTTON_CLASS} ${isTouchPanEnabled ? 'ring-1 ring-accent-main-100/60 !text-accent-main-100' : ''}`}
+            onClick={() => setIsTouchPanEnabled(current => !current)}
+            title={isTouchPanEnabled ? 'Disable diagram pan' : 'Enable diagram pan'}
+            aria-label={isTouchPanEnabled ? 'Disable diagram pan' : 'Enable diagram pan'}
+            aria-pressed={isTouchPanEnabled}
+          >
+            <HandIcon />
+          </button>
+        )}
+        {!preferTouchUi && (
+          <>
+            <button
+              type="button"
+              className={MERMAID_CONTROL_BUTTON_CLASS}
+              onClick={() => zoomBy(-MERMAID_SCALE_STEP)}
+              disabled={scale <= MERMAID_MIN_SCALE}
+              title="Zoom out"
+              aria-label="Zoom out diagram"
+            >
+              <ZoomOutIcon />
+            </button>
+            <button
+              type="button"
+              className={MERMAID_CONTROL_BUTTON_CLASS}
+              onClick={() => zoomBy(MERMAID_SCALE_STEP)}
+              disabled={scale >= MERMAID_MAX_SCALE}
+              title="Zoom in"
+              aria-label="Zoom in diagram"
+            >
+              <ZoomInIcon />
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className={MERMAID_CONTROL_BUTTON_CLASS}
+          onClick={resetView}
+          title="Reset view"
+          aria-label="Reset diagram view"
+        >
+          <RetryIcon />
+        </button>
+      </div>
+      <div
+        className={`mermaid-diagram min-h-40 min-w-fit select-none overflow-hidden p-1 [&_svg]:max-w-full [&_svg]:h-auto ${supportsTouchGestures && !isTouchPanEnabled ? 'cursor-default touch-pan-y' : 'cursor-grab touch-none active:cursor-grabbing'}`}
+        role="img"
+        aria-label="Mermaid diagram"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+        style={{
+          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          transformOrigin: 'top left',
+        }}
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </div>
+  )
+})
+
+const markdownPlugins: PluginConfig = {
+  math: markdownMath,
+  renderers: [{ language: 'mermaid', component: MarkdownMermaid }],
+}
+const markdownRehypePlugins = [
+  defaultRehypePlugins.raw,
+  rewriteWindowsPathLinkHrefs,
+  defaultRehypePlugins.sanitize,
+  defaultRehypePlugins.harden,
+]
+
 // ─── Main Renderer ─────────────────────────────────────────────
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
@@ -246,6 +672,10 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         const blockCode = extractBlockCode(children)
         if (!blockCode) return <pre>{children}</pre>
 
+        if (blockCode.language?.toLowerCase() === 'mermaid') {
+          return <MarkdownMermaid code={blockCode.code} language="mermaid" isIncomplete={isStreaming} />
+        }
+
         return (
           <div className={isReasoning ? 'my-2 first:mt-0 last:mb-0 w-full' : 'my-4 first:mt-0 last:mb-0 w-full'}>
             <CodeBlock
@@ -253,6 +683,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               language={blockCode.language}
               variant={isReasoning ? 'reasoning' : 'default'}
               wordwrap={isReasoning}
+              forceHighlight={isStreaming}
             />
           </div>
         )
@@ -329,12 +760,13 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           {children}
         </ul>
       ),
-      ol: ({ children }) => (
+      ol: ({ children, start }) => (
         <ol
+          style={getOrderedListStyle(start, children)}
           className={
             isReasoning
-              ? 'text-[length:var(--fs-sm)] list-decimal list-outside ml-4 mb-2 last:mb-0 space-y-0.5 marker:text-text-500/60'
-              : 'list-decimal list-outside ml-5 mb-4 last:mb-0 space-y-1 marker:text-text-400/80'
+              ? 'text-[length:var(--fs-sm)] list-decimal list-outside mb-2 last:mb-0 space-y-0.5 marker:text-text-500/60'
+              : 'list-decimal list-outside mb-4 last:mb-0 space-y-1 marker:text-text-400/80'
           }
         >
           {children}
@@ -351,20 +783,35 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       ),
 
       // --- Links ---
-      a: ({ href, children }) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={
-            isReasoning
-              ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-              : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
-          }
-        >
-          {children}
-        </a>
-      ),
+      a: ({ href, children }) => {
+        const localFilePath = decodeLocalFileHref(href)
+        const className = isReasoning
+          ? 'text-[length:var(--fs-sm)] font-medium text-accent-main-200/80 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+          : 'font-medium text-accent-main-100 hover:text-accent-main-200 underline underline-offset-2 transition-colors'
+
+        if (localFilePath) {
+          return (
+            <a
+              href={href}
+              title={localFilePath}
+              className={className}
+              onClick={event => {
+                event.preventDefault()
+                if (!isTauri()) return
+                import('@tauri-apps/plugin-opener').then(mod => mod.openPath(localFilePath)).catch(() => {})
+              }}
+            >
+              {children}
+            </a>
+          )
+        }
+
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+            {children}
+          </a>
+        )
+      },
 
       // --- Images ---
       img: ({ src, alt, title }) => <MarkdownImage src={src} alt={alt} title={title} />,
@@ -449,14 +896,20 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
         </del>
       ),
     }),
-    [isReasoning],
+    [isReasoning, isStreaming],
   )
 
   return (
     <div
       className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-400' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
     >
-      <Streamdown components={components} isAnimating={isStreaming} controls={false} plugins={{ math }}>
+      <Streamdown
+        components={components}
+        isAnimating={isStreaming}
+        controls={false}
+        plugins={markdownPlugins}
+        rehypePlugins={markdownRehypePlugins}
+      >
         {content}
       </Streamdown>
     </div>

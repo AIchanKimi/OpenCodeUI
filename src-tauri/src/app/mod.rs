@@ -88,9 +88,6 @@ fn create_hidden_content_window(
     .title("OpenCode")
     .inner_size(800.0, 600.0);
 
-    #[cfg(windows)]
-    let builder = builder.disable_drag_drop_handler();
-
     builder.visible(false).build()
 }
 
@@ -248,9 +245,11 @@ pub fn run() {
             commands::bridge::bridge_send,
             commands::bridge::bridge_disconnect,
             commands::utils::get_cli_directory,
+            commands::utils::get_dropped_paths_info,
             commands::utils::open_new_window,
             commands::utils::desktop_window_ready,
             commands::opencode::check_opencode_service,
+            commands::opencode::detect_opencode_binary,
             commands::opencode::start_opencode_service,
             commands::opencode::stop_opencode_service,
             commands::opencode::get_service_started_by_us,

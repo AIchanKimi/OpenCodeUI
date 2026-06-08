@@ -24,6 +24,8 @@ import { useGatewayAvailability } from '../hooks/useGatewayAvailability'
 import { updatePtySession } from '../api/pty'
 import { useTheme } from '../hooks'
 import { uiErrorHandler } from '../utils'
+import { getInternalDragSnapshot, startInternalDrag, subscribeInternalDrag, subscribeInternalDrop } from '../lib/internalDragCore'
+import { useDragEdgeAutoScroll } from '../hooks/useDragEdgeAutoScroll'
 
 // ============================================
 // Types
@@ -122,6 +124,10 @@ export const PanelContainer = memo(function PanelContainer({
 
   // Tabs 容器 ref（用于水平滚动）
   const tabsContainerRef = useRef<HTMLDivElement>(null)
+
+  useDragEdgeAutoScroll(tabsContainerRef, {
+    payloadKind: 'panel-tab',
+  })
 
   // Add 菜单状态
   const [addMenuPos, setAddMenuPos] = useState<{ x: number; y: number; align: 'left' | 'right' } | null>(null)
@@ -277,26 +283,34 @@ export const PanelContainer = memo(function PanelContainer({
   const contextTab = contextMenu ? tabs.find(tab => tab.id === contextMenu.tabId) ?? null : null
 
   // 拖拽处理
-  const handleDragStart = useCallback((tabId: string) => {
-    setDraggedId(tabId)
-  }, [])
-
-  const handleDragOver = useCallback(
-    (tabId: string) => {
-      if (draggedId && draggedId !== tabId) {
-        setDragOverId(tabId)
+  useEffect(() => {
+    return subscribeInternalDrag(() => {
+      const active = getInternalDragSnapshot().active
+      if (!active || active.payload.kind !== 'panel-tab' || active.payload.position !== position) {
+        setDraggedId(null)
+        setDragOverId(null)
+        return
       }
-    },
-    [draggedId],
-  )
 
-  const handleDragEnd = useCallback(() => {
-    if (draggedId && dragOverId) {
-      layoutStore.reorderTabs(position, draggedId, dragOverId)
-    }
-    setDraggedId(null)
-    setDragOverId(null)
-  }, [draggedId, dragOverId, position])
+      setDraggedId(active.payload.tabId)
+      const target = document.elementFromPoint(active.current.x, active.current.y)?.closest<HTMLElement>('[data-panel-tab-id]')
+      const targetId = target?.dataset.panelTabId
+      setDragOverId(targetId && targetId !== active.payload.tabId ? targetId : null)
+    })
+  }, [position])
+
+  useEffect(() => {
+    return subscribeInternalDrop(event => {
+      if (event.payload.kind !== 'panel-tab' || event.payload.position !== position) return
+      const target = document.elementFromPoint(event.point.x, event.point.y)?.closest<HTMLElement>('[data-panel-tab-id]')
+      const targetId = target?.dataset.panelTabId
+      if (targetId && targetId !== event.payload.tabId) {
+        layoutStore.reorderTabs(position, event.payload.tabId, targetId)
+      }
+      setDraggedId(null)
+      setDragOverId(null)
+    })
+  }, [position])
 
   if (!isOpen) {
     return null
@@ -326,9 +340,7 @@ export const PanelContainer = memo(function PanelContainer({
               onClose={e => handleCloseTab(tab.id, tab, e)}
               onContextMenu={e => handleContextMenu(e, tab.id)}
               onDoubleClick={() => startRename(tab)}
-              onDragStart={() => handleDragStart(tab.id)}
-              onDragOver={() => handleDragOver(tab.id)}
-              onDragEnd={handleDragEnd}
+              position={position}
               canRename={manualTerminalTitles && tab.type === 'terminal'}
               isEditing={editingTabId === tab.id}
               editingValue={editingValue}
@@ -546,9 +558,7 @@ interface PanelTabButtonProps {
   onClose?: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
   onDoubleClick: () => void
-  onDragStart: () => void
-  onDragOver: () => void
-  onDragEnd: () => void
+  position: PanelPosition
   canRename: boolean
   isEditing: boolean
   editingValue: string
@@ -568,9 +578,7 @@ const PanelTabButton = memo(function PanelTabButton({
   onClose,
   onContextMenu,
   onDoubleClick,
-  onDragStart,
-  onDragOver,
-  onDragEnd,
+  position,
   canRename,
   isEditing,
   editingValue,
@@ -591,86 +599,26 @@ const PanelTabButton = memo(function PanelTabButton({
         }[tab.status]
       : null
 
-  const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', tab.id)
-    onDragStart()
-  }
-
-  // 触摸拖拽支持
-  const touchStartPos = useRef({ x: 0, y: 0 })
-  const touchMoved = useRef(false)
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-      touchMoved.current = false
-
-      // 长按 300ms 开始拖拽
-      longPressTimer.current = setTimeout(() => {
-        if (!touchMoved.current) {
-          onDragStart()
-        }
-      }, 300)
+  const handlePointerDragStart = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (isEditing) return
+      const target = event.target as HTMLElement
+      if (target.closest('button, input')) return
+      startInternalDrag(event, { kind: 'panel-tab', position, tabId: tab.id })
     },
-    [onDragStart],
+    [isEditing, position, tab.id],
   )
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x)
-      const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y)
-      if (dx > 5 || dy > 5) {
-        touchMoved.current = true
-        if (longPressTimer.current) {
-          clearTimeout(longPressTimer.current)
-          longPressTimer.current = null
-        }
-      }
-      // 如果正在拖拽，找到当前 touch 所在的 tab 触发 dragOver
-      if (isDragging) {
-        const target = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY)
-        const tabEl = target?.closest('[data-tab-id]')
-        if (tabEl) {
-          const tabId = tabEl.getAttribute('data-tab-id')
-          if (tabId && tabId !== tab.id) {
-            onDragOver()
-          }
-        }
-      }
-    },
-    [isDragging, tab.id, onDragOver],
-  )
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-    if (isDragging) {
-      onDragEnd()
-    }
-  }, [isDragging, onDragEnd])
 
   return (
     <div
       data-tab-id={tab.id}
+      data-panel-tab-id={tab.id}
       title={tab.type === 'terminal' ? label : undefined}
       aria-label={tab.type === 'terminal' ? label : undefined}
-      draggable={!isEditing}
-      onDragStart={handleDragStart}
-      onDragOver={e => {
-        e.preventDefault()
-        onDragOver()
-      }}
-      onDragEnd={onDragEnd}
+      onPointerDown={handlePointerDragStart}
       onClick={onClick}
       onContextMenu={onContextMenu}
       onDoubleClick={canRename ? onDoubleClick : undefined}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
       className={`
         group flex items-center gap-1.5 px-2 py-1 rounded-md text-[length:var(--fs-sm)] shrink-0
         border border-transparent cursor-pointer select-none
@@ -700,7 +648,6 @@ const PanelTabButton = memo(function PanelTabButton({
           onBlur={onEditSubmit}
           onClick={e => e.stopPropagation()}
           onMouseDown={e => e.stopPropagation()}
-          onDragStart={e => e.stopPropagation()}
           onKeyDown={e => {
             if (e.key === 'Enter') {
               e.preventDefault()
@@ -726,8 +673,6 @@ const PanelTabButton = memo(function PanelTabButton({
             onClose(e)
           }}
           onMouseDown={e => e.stopPropagation()}
-          onDragStart={e => e.stopPropagation()}
-          draggable={false}
           aria-label={t('common:close')}
           className={`
             touch-target-sm

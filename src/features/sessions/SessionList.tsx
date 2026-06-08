@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo, type PointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, CheckIcon } from '../../components/Icons'
 import { formatRelativeTime } from '../../utils/dateUtils'
@@ -8,6 +8,7 @@ import { useSessionActiveEntry } from '../../store/activeSessionStore'
 import { notificationStore, useHasUnreadCompletedNotification } from '../../store/notificationStore'
 import { SessionChildrenSlot } from '../chat/sidebar/SessionChildrenSlot'
 import type { ApiSession } from '../../api'
+import { startInternalDrag } from '../../lib/internalDragCore'
 
 interface SessionListProps {
   sessions: ApiSession[]
@@ -478,16 +479,18 @@ export function SessionListItem({
   }
 
   // 拖拽会话到主信息流进行分屏 / 替换会话
-  const handleDragStart = (e: React.DragEvent) => {
+  const handleSessionPointerDown = (e: PointerEvent<HTMLElement>) => {
     if (isEditMode || isEditing) {
-      e.preventDefault()
       return
     }
-    e.dataTransfer.setData('text/x-session-id', session.id)
-    if (session.directory) {
-      e.dataTransfer.setData('text/x-session-directory', session.directory)
-    }
-    e.dataTransfer.effectAllowed = 'move'
+    startInternalDrag(
+      e,
+      {
+        kind: 'session',
+        sessionId: session.id,
+        directory: session.directory,
+      },
+    )
   }
 
   const isDraggable = !isEditMode && !isEditing
@@ -608,13 +611,12 @@ export function SessionListItem({
         ) : (
           <button
             type="button"
-            draggable={isDraggable}
-            onDragStart={handleDragStart}
+            onPointerDown={isDraggable ? handleSessionPointerDown : undefined}
             onClick={e => {
               e.stopPropagation()
               handleClick()
             }}
-            className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left"
+            className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none"
           >
             <div
               className={`flex min-w-0 flex-1 items-center gap-1.5 transition-[padding] duration-200 ${
@@ -775,13 +777,12 @@ export function SessionListItem({
       ) : (
         <button
           type="button"
-          draggable={isDraggable}
-          onDragStart={handleDragStart}
+          onPointerDown={isDraggable ? handleSessionPointerDown : undefined}
           onClick={e => {
             e.stopPropagation()
             handleClick()
           }}
-          className="peer flex min-w-0 flex-1 items-start bg-transparent border-none p-0 text-left"
+          className="peer flex min-w-0 flex-1 items-start bg-transparent border-none p-0 text-left select-none"
         >
           <div
             className={`flex-1 min-w-0 transition-[padding] duration-200 ${showActions ? 'pr-[60px]' : 'pr-1 group-hover:pr-[60px]'}`}

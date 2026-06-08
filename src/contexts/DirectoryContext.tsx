@@ -24,6 +24,36 @@ const STORAGE_KEY_RECENT = 'opencode-recent-projects'
 // 最近使用记录: { [path]: lastUsedAt }
 type RecentProjects = Record<string, number>
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readSavedDirectories(): SavedDirectory[] {
+  const saved = serverStorage.getJSON<unknown>(STORAGE_KEY_SAVED)
+  if (!Array.isArray(saved)) return []
+
+  return saved.flatMap(item => {
+    if (!isRecord(item) || typeof item.path !== 'string') return []
+    const path = item.path
+    return [
+      {
+        path,
+        name: typeof item.name === 'string' && item.name.trim() ? item.name : getDirectoryName(path) || path,
+        addedAt: typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
+      },
+    ]
+  })
+}
+
+function readRecentProjects(): RecentProjects {
+  const recent = serverStorage.getJSON<unknown>(STORAGE_KEY_RECENT)
+  if (!isRecord(recent)) return {}
+
+  return Object.fromEntries(
+    Object.entries(recent).filter((entry): entry is [string, number] => typeof entry[1] === 'number'),
+  )
+}
+
 export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 从 URL 获取 directory（替代 localStorage）
   const { directory: urlDirectory, setDirectory: setUrlDirectory } = useRouter()
@@ -31,23 +61,22 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 从 layoutStore 获取 sidebarExpanded
   const { sidebarExpanded } = useLayoutStore()
 
-  const [savedDirectories, setSavedDirectories] = useState<SavedDirectory[]>(() => {
-    return serverStorage.getJSON<SavedDirectory[]>(STORAGE_KEY_SAVED) ?? []
-  })
+  const [savedDirectories, setSavedDirectories] = useState<SavedDirectory[]>(readSavedDirectories)
 
-  const [recentProjects, setRecentProjects] = useState<RecentProjects>(() => {
-    return serverStorage.getJSON<RecentProjects>(STORAGE_KEY_RECENT) ?? {}
-  })
+  const [recentProjects, setRecentProjects] = useState<RecentProjects>(readRecentProjects)
 
   const [pathInfo, setPathInfo] = useState<ApiPath | null>(null)
 
-  // 服务器切换时，重新从 serverStorage 读取（key 前缀已变）
+  // 服务器 ID 切换时切换 per-server 目录；local runtime URL 变化时只刷新 path info。
   useEffect(() => {
-    return serverStore.onServerChange(() => {
-      setSavedDirectories(serverStorage.getJSON<SavedDirectory[]>(STORAGE_KEY_SAVED) ?? [])
-      setRecentProjects(serverStorage.getJSON<RecentProjects>(STORAGE_KEY_RECENT) ?? {})
-      setPathInfo(null) // 重置，等待重新加载
-      setUrlDirectory(undefined) // 清除当前目录选择
+    return serverStore.onServerChange((_, reason) => {
+      if (reason === 'server-switch') {
+        setSavedDirectories(readSavedDirectories())
+        setRecentProjects(readRecentProjects())
+        setUrlDirectory(undefined)
+      }
+      setPathInfo(null)
+      getPath().then(setPathInfo).catch(handleError('get path info', 'api'))
     })
   }, [setUrlDirectory])
 

@@ -64,6 +64,13 @@
 			}
 		}
 
+		# SSE 长连接 — 不能缓冲，必须实时刷新
+		@sse path /api/global/event /api/global/event*
+		handle @sse {
+			uri strip_prefix /api
+			reverse_proxy opencode-backend:4096
+		}
+
 		# API（SSE + WebSocket 自动处理）
 		handle_path /api/* {
 			reverse_proxy opencode-backend:4096 {

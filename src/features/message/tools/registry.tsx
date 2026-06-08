@@ -177,9 +177,13 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
     result.outputLang = detectLanguage(result.filePath)
   }
 
-  // Output
-  if (!result.files && !result.diff && state.output) {
-    result.output = typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)
+  // Output: 分运行状态取不同的字段
+  const stateOutput = 'output' in state ? state.output : undefined
+  const runningOutput = state.status === 'running' && typeof metadata?.output === 'string' ? metadata.output : undefined
+  const interruptedOutput = metadata?.interrupted === true && typeof metadata.output === 'string' ? metadata.output : undefined
+  const output = stateOutput ?? runningOutput ?? interruptedOutput
+  if (!result.files && !result.diff && output) {
+    result.output = typeof output === 'string' ? output : JSON.stringify(output, null, 2)
 
     // 推断语言
     if (!result.outputLang && result.output) {
@@ -200,10 +204,16 @@ export function defaultExtractData(part: ToolPart): ExtractedToolData {
 function bashExtractData(part: ToolPart): ExtractedToolData {
   const base = defaultExtractData(part)
   const inputObj = part.state.input as Record<string, unknown> | undefined
+  const metadata = part.state.metadata as Record<string, unknown> | undefined
 
   if (inputObj?.command) {
     base.input = String(inputObj.command)
     base.inputLang = 'bash'
+  }
+
+  const cwd = inputObj?.workdir ?? inputObj?.cwd ?? metadata?.workdir ?? metadata?.cwd
+  if (typeof cwd === 'string' && cwd.trim()) {
+    base.cwd = cwd.trim()
   }
 
   return base

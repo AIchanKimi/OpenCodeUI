@@ -1,5 +1,104 @@
 # Changelog
 
+## [v0.6.17] - 2026-06-07
+
+- fix: default changes panel to last turn scope (0c341e9)
+- fix: read metadata.output for real-time bash streaming during execution (5da7b1f)
+- fix(settings): apply mobile viewport height to config editor (d442e66)
+- fix(titlebar): preserve decorum window controls (1892621)
+- fix: remove touchAction:none from FileTreeItem button that broke mobile scrolling (a619d72)
+- fix: replace 92vh with calc(var(--app-height) * 0.92) in mobile SettingsDialog to fix address bar hiding issue (f3558fc)
+
+## [v0.6.16] - 2026-06-07
+
+- fix(startup): cancel stale local endpoint requests (9c789e5)
+
+## [v0.6.15] - 2026-06-06
+
+- fix(settings): validate opencode server health (0c19e18)
+- fix(startup): refresh after local service URL changes (991a856)
+
+## [v0.6.14] - 2026-06-06
+
+- fix(pwa): clear stale iOS keyboard inset (f5eba98)
+- fix(chat): lock mobile sidebar swipe direction (7e1df88)
+- fix: apply detected local service URL before boot (e0c00bb)
+- fix(settings): improve config editor schema handling (b5a8978)
+- fix(session): reset missing routed sessions (46a35d0)
+- fix(chat): preserve streaming page height measurements (1c97439)
+- fix: detect local opencode service URL (e628ac7)
+- feat(settings): add visual opencode config editor (7965d06)
+- feat: auto-detect opencode service binary (b3b32bd)
+- refactor: align api types with sdk (ad5fb7b)
+
+## [v0.6.13] - 2026-06-05
+
+- chore: update opencode sdk (4a4fe17)
+- fix: render Windows path markdown links (d895fa6)
+- fix: improve Linux terminal font fallback (7158d87)
+- fix: make markdown code blocks selectable (cd453ad)
+
+## [v0.6.12] - 2026-06-02
+
+- refactor: harden internal drag interactions (ccb0280)
+- feat: support desktop file path drops (aa177a3)
+- fix: keep mermaid touch controls off desktop (346423a)
+- fix: refine markdown touch controls (6dfa4b9)
+
+## [v0.6.11] - 2026-05-31
+
+- fix: clarify auto approval behavior (e16e7aa)
+- fix: preserve whitespace in split word diff (d0b10dd)
+- fix: highlight streaming code blocks (9198a4d)
+- fix: improve markdown rendering (2a75c1b)
+- perf(chat): stabilize virtualized scroll premeasurement (046019d)
+- fix: refine chat page virtualization (5854671)
+- chore: bump version to 0.6.11-canary.1 (bd0ecd8)
+- fix: stabilize chat scrolling with paged virtualization (a7bb14a)
+- fix: terminal reverse video shows black box in light mode (b902645)
+- fix: terminal ANSI white colors invisible in light mode (5a8a386)
+
+## [v0.6.11-canary.1] - 2026-05-25 (Pre-release)
+
+- fix: stabilize chat scrolling with paged virtualization (a7bb14a)
+
+## [v0.6.10] - 2026-05-17
+
+- fix: refresh sidebar child session links (a49908a)
+- ci: deploy pages from dev (bc50843)
+- fix: route permission replies through session (75bd8ac)
+- fix: avoid iOS toolbar bottom gap (d880fac)
+- fix: keep provider enabled for visible models (2462adf)
+- fix: show detailed completion time on hover (9ca1ab6)
+
+## [v0.6.9] - 2026-05-16
+
+- fix(terminal): correct clipboard paste behavior (bf6f902)
+- ci(docker): add image workflow guardrails (da80d45)
+- fix(docker): avoid qemu frontend builds (2d4d00b)
+
+## [v0.6.8] - 2026-05-16
+
+- fix(diff): keep split word diff text themed (53e1d9a)
+- feat(docker): add optional host backend access (279ac15)
+- fix(message): preserve aborted messages with content (86fd11f)
+
+## [v0.6.7] - 2026-05-15
+
+- fix(input): prevent IME confirmation from sending messages (5f4e0bb)
+- feat(terminal): add scoped clipboard keybindings (2f8a933)
+
+## [v0.6.6] - 2026-05-13
+
+- fix(session): 修复 PR #90 的子目录加载竞态并理顺范围刷新语义 (5360b59)
+- fix(session): 目录切换时合并活动会话刷新状态 (4aca25d)
+- feat(file-explorer): 按目录恢复文件树展开状态 (e29498d)
+
+## [v0.6.5] - 2026-05-10
+
+- ui: show bash working directory (48d5b28)
+- fix: skip shiki fallback for unsupported languages (d4ea3be)
+
 ## [v0.6.4] - 2026-05-04
 
 - fix: keep delete change bars continuous (843d861)

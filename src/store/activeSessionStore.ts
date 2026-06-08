@@ -81,7 +81,9 @@ class ActiveSessionStore {
 
   private notify() {
     this.recomputeDerived()
-    this.subscribers.forEach(cb => cb())
+    this.subscribers.forEach(cb => {
+      cb()
+    })
   }
 
   private recomputeDerived() {
@@ -121,12 +123,42 @@ class ActiveSessionStore {
   getBusySessionsSnapshot = (): ActiveSessionEntry[] => this.cachedBusySessions
   getBusyCountSnapshot = (): number => this.cachedBusyCount
 
+  private applyStatusSnapshot(statusMap: SessionStatusMap, baseMap: SessionStatusMap): SessionStatusMap {
+    const nextMap = { ...baseMap }
+
+    for (const [sessionId, status] of Object.entries(statusMap)) {
+      if (status.type === 'idle') {
+        delete nextMap[sessionId]
+        continue
+      }
+
+      nextMap[sessionId] = status.type === 'retry' ? { ...status } : { type: 'busy' }
+    }
+
+    return nextMap
+  }
+
   // ============================================
   // 初始化：从 API 拉取全量状态
   // ============================================
 
   initialize(statusMap: SessionStatusMap) {
-    this.state = { statusMap: { ...statusMap }, initialized: true }
+    this.state = {
+      statusMap: this.applyStatusSnapshot(statusMap, {}),
+      initialized: true,
+    }
+    this.notify()
+  }
+
+  // ============================================
+  // 范围刷新：返回值不是全量状态，只更新这次明确返回的 session
+  // ============================================
+
+  mergeStatusRefresh(statusMap: SessionStatusMap) {
+    this.state = {
+      statusMap: this.applyStatusSnapshot(statusMap, this.state.statusMap),
+      initialized: true,
+    }
     this.notify()
   }
 
@@ -138,15 +170,32 @@ class ActiveSessionStore {
     permissions: Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>,
     questions: Array<{ id: string; sessionID: string; questions?: Array<{ header?: string }> }>,
   ) {
-    this.pendingRequests.clear()
-    this.deferredIdleSessions.clear()
+    this.applyPendingSnapshot(permissions, questions, new Map<string, PendingRequest>(), new Set<string>())
+  }
 
+  // ============================================
+  // 范围刷新：保留这次范围外已知的 pending request
+  // ============================================
+
+  mergePendingRequests(
+    permissions: Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>,
+    questions: Array<{ id: string; sessionID: string; questions?: Array<{ header?: string }> }>,
+  ) {
+    this.applyPendingSnapshot(permissions, questions, new Map(this.pendingRequests), new Set(this.deferredIdleSessions))
+  }
+
+  private applyPendingSnapshot(
+    permissions: Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>,
+    questions: Array<{ id: string; sessionID: string; questions?: Array<{ header?: string }> }>,
+    pendingRequests: Map<string, PendingRequest>,
+    deferredIdleSessions: Set<string>,
+  ) {
     let changed = false
     const newMap = { ...this.state.statusMap }
 
     for (const p of permissions) {
       const desc = p.patterns?.length ? `${p.permission}: ${p.patterns[0]}` : p.permission
-      this.pendingRequests.set(p.id, {
+      pendingRequests.set(p.id, {
         requestId: p.id,
         sessionId: p.sessionID,
         type: 'permission',
@@ -154,14 +203,14 @@ class ActiveSessionStore {
       })
       if (!newMap[p.sessionID] || newMap[p.sessionID].type === 'idle') {
         newMap[p.sessionID] = { type: 'busy' }
-        this.deferredIdleSessions.add(p.sessionID)
+        deferredIdleSessions.add(p.sessionID)
         changed = true
       }
     }
 
     for (const q of questions) {
       const desc = q.questions?.[0]?.header || 'Waiting for input'
-      this.pendingRequests.set(q.id, {
+      pendingRequests.set(q.id, {
         requestId: q.id,
         sessionId: q.sessionID,
         type: 'question',
@@ -169,10 +218,13 @@ class ActiveSessionStore {
       })
       if (!newMap[q.sessionID] || newMap[q.sessionID].type === 'idle') {
         newMap[q.sessionID] = { type: 'busy' }
-        this.deferredIdleSessions.add(q.sessionID)
+        deferredIdleSessions.add(q.sessionID)
         changed = true
       }
     }
+
+    this.pendingRequests = pendingRequests
+    this.deferredIdleSessions = deferredIdleSessions
 
     if (changed) {
       this.state = { ...this.state, statusMap: newMap }
@@ -237,6 +289,30 @@ class ActiveSessionStore {
     }
 
     this.state = { ...this.state, statusMap: newMap }
+    this.notify()
+  }
+
+  removeSession(sessionId: string) {
+    let changed = false
+    let nextMap = this.state.statusMap
+
+    if (nextMap[sessionId]) {
+      nextMap = { ...nextMap }
+      delete nextMap[sessionId]
+      changed = true
+    }
+
+    for (const [requestId, request] of this.pendingRequests) {
+      if (request.sessionId !== sessionId) continue
+      this.pendingRequests.delete(requestId)
+      changed = true
+    }
+
+    if (this.deferredIdleSessions.delete(sessionId)) changed = true
+    if (this.sessionMeta.delete(sessionId)) changed = true
+
+    if (!changed) return
+    this.state = { ...this.state, statusMap: nextMap }
     this.notify()
   }
 

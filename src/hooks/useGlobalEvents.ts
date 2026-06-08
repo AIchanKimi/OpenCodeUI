@@ -14,6 +14,7 @@ import { activeSessionStore } from '../store/activeSessionStore'
 import { notificationStore } from '../store/notificationStore'
 import { soundStore } from '../store/soundStore'
 import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
+import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { subscribeToEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
@@ -262,7 +263,7 @@ function isSessionDirectlyOpen(sessionId: string): boolean {
 
 export function useGlobalEvents(directories?: string[]) {
   const directoriesRef = useRef<string[] | undefined>(directories)
-  const refreshRef = useRef<(() => void) | null>(null)
+  const refreshRef = useRef<((strategy?: 'replace' | 'merge') => void) | null>(null)
   const initializedDirectoriesRef = useRef(false)
 
   useEffect(() => {
@@ -303,14 +304,19 @@ export function useGlobalEvents(directories?: string[]) {
     // 拉取 session 状态 + pending requests（初始化 & 重连共用）
     // ============================================
 
-    const fetchAndInitialize = () => {
+    const fetchAndInitialize = (strategy: 'replace' | 'merge' = 'replace') => {
       const currentVersion = ++fetchVersion
       activeFetchVersion = currentVersion
       void fetchActiveScopeData(directoriesRef.current)
         .then(({ statusMap, permissions, questions, sessionMetaEntries }) => {
           if (disposed || currentVersion !== fetchVersion) return
-          activeSessionStore.initialize(statusMap)
-          activeSessionStore.initializePendingRequests(permissions, questions)
+          if (strategy === 'merge') {
+            activeSessionStore.mergeStatusRefresh(statusMap)
+            activeSessionStore.mergePendingRequests(permissions, questions)
+          } else {
+            activeSessionStore.initialize(statusMap)
+            activeSessionStore.initializePendingRequests(permissions, questions)
+          }
           const currentDirectories = directoriesRef.current
           const currentScopeKey = getScopeKey(directoriesRef.current)
           for (const pending of latePendingRequests.values()) {
@@ -332,7 +338,42 @@ export function useGlobalEvents(directories?: string[]) {
         })
     }
 
+    const refreshActiveServerHealth = () => {
+      const activeServerId = serverStore.getActiveServerId()
+      void serverStore.checkHealth(activeServerId).catch(() => {})
+    }
+
     refreshRef.current = fetchAndInitialize
+
+    const approveGlobalPendingPermissions = () => {
+      if (!autoApproveStore.approvePendingOnFullAuto || autoApproveStore.fullAutoMode !== 'global') return
+
+      const directoriesToFetch = directoriesRef.current && directoriesRef.current.length > 0 ? directoriesRef.current : [undefined]
+
+      void Promise.all(
+        directoriesToFetch.map(async directory => {
+          const permissions = await getPendingPermissions(undefined, directory).catch(() => [])
+
+          await Promise.all(
+            permissions.map(async request => {
+              if (!autoApproveStore.claimAutoReply(request.id)) return
+
+              const dir = directory ?? activeSessionStore.getSessionMeta(request.sessionID)?.directory
+              try {
+                await replyPermission(request.id, 'once', undefined, dir, request.sessionID)
+              } catch {
+                autoApproveStore.releaseAutoReply(request.id)
+              }
+            }),
+          )
+        }),
+      )
+    }
+
+    const unsubscribeAutoApprove = autoApproveStore.subscribe(approveGlobalPendingPermissions)
+    const unsubscribeServerChange = serverStore.onServerChange(serverId => {
+      void serverStore.checkHealth(serverId).catch(() => {})
+    })
 
     const unsubscribe = subscribeToEvents({
       // ============================================
@@ -431,6 +472,12 @@ export function useGlobalEvents(directories?: string[]) {
         }
       },
 
+      onSessionDeleted: sessionId => {
+        const removedSessionIds = childSessionStore.getSessionAndDescendants(sessionId)
+        clearSessionRuntimeState(sessionId)
+        for (const id of removedSessionIds) paneLayoutStore.clearSession(id)
+      },
+
       onServerConnected: data => {
         serverStore.applyServerConnectedTimestamp(serverStore.getActiveServerId(), data.timestamp)
       },
@@ -445,9 +492,11 @@ export function useGlobalEvents(directories?: string[]) {
         // Full Auto 全局模式拦截 — 所有会话的权限请求直接放行
         if (autoApproveStore.fullAutoMode === 'global') {
           const dir = activeSessionStore.getSessionMeta(request.sessionID)?.directory
-          replyPermission(request.id, 'once', undefined, dir).then(() => {
-            activeSessionStore.resolvePendingRequest(request.id)
-          })
+          if (autoApproveStore.claimAutoReply(request.id)) {
+            replyPermission(request.id, 'once', undefined, dir, request.sessionID).catch(() => {
+              autoApproveStore.releaseAutoReply(request.id)
+            })
+          }
           return
         }
 
@@ -582,6 +631,7 @@ export function useGlobalEvents(directories?: string[]) {
         if (import.meta.env.DEV) {
           console.log(`[GlobalEvents] SSE reconnected (reason: ${reason}), notifying for data refresh`)
         }
+        refreshActiveServerHealth()
         // 重连后重新拉取全量状态 + pending requests
         fetchAndInitialize()
         // 通知所有 pub/sub 消费者
@@ -592,12 +642,16 @@ export function useGlobalEvents(directories?: string[]) {
     })
 
     fetchAndInitialize()
+    refreshActiveServerHealth()
+    approveGlobalPendingPermissions()
 
     return () => {
       disposed = true
       if (refreshRef.current === fetchAndInitialize) {
         refreshRef.current = null
       }
+      unsubscribeAutoApprove()
+      unsubscribeServerChange()
       unsubscribe()
     }
   }, [])
@@ -605,7 +659,7 @@ export function useGlobalEvents(directories?: string[]) {
   useLayoutEffect(() => {
     directoriesRef.current = directories
     if (initializedDirectoriesRef.current) {
-      refreshRef.current?.()
+      refreshRef.current?.('merge')
       return
     }
     initializedDirectoriesRef.current = true

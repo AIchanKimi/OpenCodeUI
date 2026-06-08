@@ -47,6 +47,7 @@ export interface ServerHealth {
   latency?: number // 响应延迟 (ms)
   lastCheck?: number // 上次检查时间戳
   error?: string // 错误信息
+  details?: string // 原始诊断信息
   version?: string // 服务器版本
 }
 
@@ -61,9 +62,74 @@ interface ServerClockCalibration {
 }
 
 type Listener = () => void
+export type ServerChangeReason = 'server-switch' | 'local-runtime-url'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeConnectionError(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'AbortError') return 'Connection timed out'
+  if (!(err instanceof Error)) return 'Connection failed'
+
+  const message = err.message || 'Connection failed'
+  if (/certificate|cert|tls|ssl/i.test(message)) {
+    return `TLS/certificate error: ${message}`
+  }
+  return message
+}
+
+function redactHeaderValue(key: string, value: string): string {
+  return /set-cookie|authorization|proxy-authorization/i.test(key) ? '<redacted>' : value
+}
+
+function headersToRecord(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    result[key] = redactHeaderValue(key, value)
+  })
+  return result
+}
+
+function truncateForDiagnostics(value: string, maxLength = 5000): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength)}\n...[truncated ${value.length - maxLength} chars]`
+}
+
+function formatResponseDiagnostics(options: {
+  url: string
+  response: Response
+  latency: number
+  body: string
+}): string {
+  const contentType = options.response.headers.get('content-type') ?? ''
+  return [
+    `Request: GET ${options.url}`,
+    `Status: ${options.response.status}${options.response.statusText ? ` ${options.response.statusText}` : ''}`,
+    `Latency: ${options.latency}ms`,
+    `Content-Type: ${contentType || '(none)'}`,
+    `Headers:\n${JSON.stringify(headersToRecord(options.response.headers), null, 2)}`,
+    `Body (${options.body.length} chars):\n${truncateForDiagnostics(options.body)}`,
+  ].join('\n\n')
+}
+
+function formatExceptionDiagnostics(url: string, err: unknown): string {
+  if (!(err instanceof Error)) return `Request: GET ${url}\n\nError: ${String(err)}`
+
+  const cause = 'cause' in err && err.cause !== undefined ? `\n\nCause:\n${String(err.cause)}` : ''
+  return [
+    `Request: GET ${url}`,
+    `Error name: ${err.name}`,
+    `Message: ${err.message}`,
+    err.stack ? `Stack:\n${err.stack}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n') + cause
+}
 
 const STORAGE_KEY = 'opencode-servers'
 const ACTIVE_SERVER_KEY = 'opencode-active-server'
+export const LOCAL_SERVER_ID = 'local'
 
 /**
  * Server Store
@@ -73,11 +139,13 @@ class ServerStore {
   private servers: ServerConfig[] = []
   private activeServerId: string | null = null
   private healthMap = new Map<string, ServerHealth>()
+  private healthCheckSeqMap = new Map<string, number>()
   private clockCalibrationMap = new Map<string, ServerClockCalibration>()
   private listeners: Set<Listener> = new Set()
+  private localServerUrlOverride: string | null = null
 
   // server 切换监听器（用于触发 SSE 重连等副作用，避免循环依赖）
-  private serverChangeListeners: Set<(newServerId: string) => void> = new Set()
+  private serverChangeListeners: Set<(newServerId: string, reason: ServerChangeReason) => void> = new Set()
 
   // 快照缓存 (用于 useSyncExternalStore)
   private _serversSnapshot: ServerConfig[] = []
@@ -85,7 +153,7 @@ class ServerStore {
   private _healthMapSnapshot: Map<string, ServerHealth> = new Map()
 
   // 默认本地服务器 ID
-  private readonly DEFAULT_SERVER_ID = 'local'
+  private readonly DEFAULT_SERVER_ID = LOCAL_SERVER_ID
 
   constructor() {
     this.loadFromStorage()
@@ -163,12 +231,18 @@ class ServerStore {
   }
 
   /**
-   * 注册 server 切换监听器（用于触发 SSE 重连等副作用）
-   * 返回取消注册函数
+   * 注册 active server 入口变化监听器（server id 切换或 active local runtime URL 变化）。
+   * 返回取消注册函数。
    */
-  onServerChange(fn: (newServerId: string) => void): () => void {
+  onServerChange(fn: (newServerId: string, reason: ServerChangeReason) => void): () => void {
     this.serverChangeListeners.add(fn)
     return () => this.serverChangeListeners.delete(fn)
+  }
+
+  private notifyServerChange(serverId: string, reason: ServerChangeReason): void {
+    this.serverChangeListeners.forEach(fn => {
+      fn(serverId, reason)
+    })
   }
 
   private notify(): void {
@@ -182,9 +256,16 @@ class ServerStore {
    * 更新快照缓存
    */
   private updateSnapshots(): void {
-    this._serversSnapshot = [...this.servers]
-    this._activeServerSnapshot = this.servers.find(s => s.id === this.activeServerId) ?? null
+    this._serversSnapshot = this.servers.map(server => this.withRuntimeServerUrl(server))
+    this._activeServerSnapshot = this._serversSnapshot.find(s => s.id === this.activeServerId) ?? null
     this._healthMapSnapshot = new Map(this.healthMap)
+  }
+
+  private withRuntimeServerUrl(server: ServerConfig): ServerConfig {
+    if (server.id === this.DEFAULT_SERVER_ID && this.localServerUrlOverride) {
+      return { ...server, url: this.localServerUrlOverride }
+    }
+    return server
   }
 
   // ============================================
@@ -198,11 +279,27 @@ class ServerStore {
     return this._serversSnapshot
   }
 
+  getStoredServers(): ServerConfig[] {
+    return [...this.servers]
+  }
+
   /**
    * 获取当前活动服务器 (返回缓存快照)
    */
   getActiveServer(): ServerConfig | null {
     return this._activeServerSnapshot
+  }
+
+  getLocalServer(): ServerConfig | null {
+    return this._serversSnapshot.find(s => s.id === this.DEFAULT_SERVER_ID) ?? null
+  }
+
+  getLocalServerUrl(): string {
+    return this.getLocalServer()?.url ?? API_BASE_URL
+  }
+
+  isActiveLocalServer(): boolean {
+    return this.getActiveServerId() === this.DEFAULT_SERVER_ID
   }
 
   /**
@@ -291,8 +388,25 @@ class ServerStore {
       id: server.id, // 确保 id 不被覆盖
       url: updates.url ? updates.url.replace(/\/+$/, '') : server.url,
     }
+    if (id === this.DEFAULT_SERVER_ID && updates.url) {
+      this.localServerUrlOverride = null
+    }
     this.saveToStorage()
     this.notify()
+    return true
+  }
+
+  setLocalServerRuntimeUrl(url: string): boolean {
+    if (!this.servers.some(s => s.id === this.DEFAULT_SERVER_ID)) return false
+
+    const normalizedUrl = url.replace(/\/+$/, '')
+    if (this.localServerUrlOverride === normalizedUrl) return false
+
+    this.localServerUrlOverride = normalizedUrl
+    this.notify()
+    if (this.isActiveLocalServer()) {
+      this.notifyServerChange(this.DEFAULT_SERVER_ID, 'local-runtime-url')
+    }
     return true
   }
 
@@ -306,6 +420,7 @@ class ServerStore {
 
     this.servers = this.servers.filter(s => s.id !== id)
     this.healthMap.delete(id)
+    this.healthCheckSeqMap.delete(id)
     this.clockCalibrationMap.delete(id)
 
     // 如果删除的是当前选中的，切换到默认
@@ -330,11 +445,8 @@ class ServerStore {
     this.saveToStorage()
     this.notify()
 
-    // 实际切换了服务器，通知外部（SSE 重连等）
     if (changed) {
-      this.serverChangeListeners.forEach(fn => {
-        fn(id)
-      })
+      this.notifyServerChange(id, 'server-switch')
     }
 
     return true
@@ -360,9 +472,21 @@ class ServerStore {
    * 检查服务器健康状态
    */
   async checkHealth(serverId: string): Promise<ServerHealth> {
-    const server = this.servers.find(s => s.id === serverId)
-    if (!server) {
+    const storedServer = this.servers.find(s => s.id === serverId)
+    if (!storedServer) {
       return { status: 'error', error: 'Server not found' }
+    }
+    const server = this.withRuntimeServerUrl(storedServer)
+    const checkSeq = (this.healthCheckSeqMap.get(serverId) ?? 0) + 1
+    this.healthCheckSeqMap.set(serverId, checkSeq)
+    const healthUrl = `${server.url}/global/health`
+
+    const commitHealth = (health: ServerHealth) => {
+      if (this.healthCheckSeqMap.get(serverId) === checkSeq) {
+        this.healthMap.set(serverId, health)
+        this.notify()
+      }
+      return health
     }
 
     // 标记为检查中
@@ -370,46 +494,74 @@ class ServerStore {
     this.notify()
 
     const startTime = Date.now()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
-
       const headers: Record<string, string> = {}
       if (server.auth?.password) {
         headers['Authorization'] = makeBasicAuthHeader(server.auth)
       }
 
       const f = await getUnifiedFetch()
-      const response = await f(`${server.url}/global/health`, {
+      const response = await f(healthUrl, {
         method: 'GET',
         signal: controller.signal,
         headers,
       })
 
-      clearTimeout(timeoutId)
-
       const latency = Date.now() - startTime
+      const responseBody = await response.text().catch(err => `[Failed to read response body: ${normalizeConnectionError(err)}]`)
+      const details = formatResponseDiagnostics({ url: healthUrl, response, latency, body: responseBody })
 
       if (response.ok) {
-        // 解析返回的健康信息
-        let version: string | undefined
+        const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+        if (!contentType.includes('application/json')) {
+          const health: ServerHealth = {
+            status: 'error',
+            latency,
+            lastCheck: Date.now(),
+            error: contentType.includes('text/html')
+              ? 'Server returned HTML instead of OpenCode health JSON. Check the URL path.'
+              : 'Server did not return OpenCode health JSON',
+            details,
+          }
+          return commitHealth(health)
+        }
+
+        let data: unknown
         try {
-          const data = await response.json()
-          version = data.version
+          data = JSON.parse(responseBody)
         } catch {
-          // ignore parse error
+          const health: ServerHealth = {
+            status: 'error',
+            latency,
+            lastCheck: Date.now(),
+            error: 'Invalid OpenCode health JSON',
+            details,
+          }
+          return commitHealth(health)
+        }
+
+        if (!isRecord(data) || data.healthy !== true || typeof data.version !== 'string' || !data.version.trim()) {
+          const health: ServerHealth = {
+            status: 'error',
+            latency,
+            lastCheck: Date.now(),
+            error: 'Not an OpenCode server',
+            details,
+          }
+          return commitHealth(health)
         }
 
         const health: ServerHealth = {
           status: 'online',
           latency,
           lastCheck: Date.now(),
-          version,
+          version: data.version,
+          details,
         }
-        this.healthMap.set(serverId, health)
-        this.notify()
-        return health
+        return commitHealth(health)
       } else if (response.status === 401) {
         // 认证失败
         const health: ServerHealth = {
@@ -417,30 +569,29 @@ class ServerStore {
           latency,
           lastCheck: Date.now(),
           error: 'Invalid credentials',
+          details,
         }
-        this.healthMap.set(serverId, health)
-        this.notify()
-        return health
+        return commitHealth(health)
       } else {
         const health: ServerHealth = {
           status: 'error',
           latency,
           lastCheck: Date.now(),
           error: `HTTP ${response.status}`,
+          details,
         }
-        this.healthMap.set(serverId, health)
-        this.notify()
-        return health
+        return commitHealth(health)
       }
     } catch (err) {
       const health: ServerHealth = {
         status: 'offline',
         lastCheck: Date.now(),
-        error: err instanceof Error ? err.message : 'Connection failed',
+        error: normalizeConnectionError(err),
+        details: formatExceptionDiagnostics(healthUrl, err),
       }
-      this.healthMap.set(serverId, health)
-      this.notify()
-      return health
+      return commitHealth(health)
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -506,7 +657,7 @@ function normalizeServerBackup(raw: unknown): ServerSettingsBackup {
 
 export function exportServerSettingsBackup(): ServerSettingsBackup {
   return {
-    servers: serverStore.getServers().map(server => ({
+    servers: serverStore.getStoredServers().map(server => ({
       ...server,
       auth: server.auth ? { ...server.auth } : undefined,
     })),

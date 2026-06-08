@@ -36,6 +36,7 @@ import {
   updateSession,
   forkSession,
   extractUserMessageContent,
+  type ApiPermissionRequest,
   type ApiSession,
   type ApiAgent,
   type Attachment,
@@ -43,6 +44,7 @@ import {
 } from '../api'
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
+import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { serverStorage } from '../utils/perServerStorage'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import type { ChatAreaHandle } from '../features/chat'
@@ -64,6 +66,7 @@ const EMPTY_SESSION_STATE = {
   messages: [] as import('../types/message').Message[],
   isStreaming: false,
   loadState: 'idle' as const,
+  loadError: undefined,
   revertState: null,
   canUndo: false,
   canRedo: false,
@@ -125,6 +128,21 @@ export function useChatSession({
   const { sendNotification } = useNotification()
 
   const routeStatus = routeSessionId ? statusMap[routeSessionId] : undefined
+  const routeSessionIdRef = useRef(routeSessionId)
+
+  useEffect(() => {
+    routeSessionIdRef.current = routeSessionId
+  }, [routeSessionId])
+
+  const handleMissingRouteSession = useCallback(
+    (missingSessionId: string) => {
+      if (routeSessionIdRef.current !== missingSessionId) return
+      clearSessionRuntimeState(missingSessionId)
+      navigateHome()
+    },
+    [navigateHome],
+  )
+
   const {
     items: queuedFollowups,
     sendingId: queuedFollowupSendingId,
@@ -143,6 +161,7 @@ export function useChatSession({
   const revertedContent = perSessionState.revertedContent
   const hasMoreHistory = perSessionState.hasMoreHistory
   const loadState = routeSessionId ? perSessionState.loadState : ('idle' as const)
+  const loadError = routeSessionId ? perSessionState.loadError : undefined
 
   // OpenAPI SessionStatus.retry: { attempt, message, next }
   const retryStatus = useMemo<LiveRetryStatus | null>(() => {
@@ -182,6 +201,7 @@ export function useChatSession({
   const { loadSession, loadMoreHistory, handleUndo, handleRedo, handleRedoAll, clearRevert } = useSessionManager({
     sessionId: routeSessionId,
     directory: currentDirectory,
+    onSessionMissing: handleMissingRouteSession,
   })
 
   // Permission handling
@@ -203,6 +223,39 @@ export function useChatSession({
 
   // Effective directory (used in multiple places)
   const effectiveDirectory = sessionDirectory || currentDirectory
+
+  const fullAutoMode = useSyncExternalStore(
+    cb => autoApproveStore.onFullAutoChange(cb),
+    () => autoApproveStore.getPaneFullAutoMode(paneId),
+  )
+  const approvePendingOnFullAuto = useSyncExternalStore(
+    autoApproveStore.subscribe,
+    () => autoApproveStore.approvePendingOnFullAuto,
+  )
+
+  const replyPermissionOnceAutomatically = useCallback(
+    (request: ApiPermissionRequest) => {
+      if (!autoApproveStore.claimAutoReply(request.id)) return
+
+      void handlePermissionReply(request.id, 'once', effectiveDirectory, request.sessionID).then(success => {
+        if (!success) autoApproveStore.releaseAutoReply(request.id)
+      })
+    },
+    [effectiveDirectory, handlePermissionReply],
+  )
+
+  useEffect(() => {
+    if (!routeSessionId || !approvePendingOnFullAuto || fullAutoMode !== 'session') return
+    void refreshPendingRequests(sessionFamily, effectiveDirectory)
+  }, [approvePendingOnFullAuto, effectiveDirectory, fullAutoMode, refreshPendingRequests, routeSessionId, sessionFamily])
+
+  useEffect(() => {
+    if (!approvePendingOnFullAuto || fullAutoMode === 'off' || pendingPermissionRequests.length === 0) return
+
+    for (const request of pendingPermissionRequests) {
+      replyPermissionOnceAutomatically(request)
+    }
+  }, [approvePendingOnFullAuto, fullAutoMode, pendingPermissionRequests, replyPermissionOnceAutomatically])
 
   const buildLocalQueuedMessage = useCallback(
     (input: {
@@ -294,7 +347,7 @@ export function useChatSession({
         // Full Auto 会话级：当前 session 的 handler 天然只处理当前 session 的请求
         const effectiveFullAutoMode = autoApproveStore.getPaneFullAutoMode(paneId)
         if (effectiveFullAutoMode === 'session') {
-          handlePermissionReply(request.id, 'once', effectiveDirectory)
+          replyPermissionOnceAutomatically(request)
           return
         }
 
@@ -304,7 +357,7 @@ export function useChatSession({
           autoApproveStore.shouldAutoApprove(request.sessionID, request.permission, request.patterns)
         ) {
           // 匹配规则，自动用 once 批准，不弹框
-          handlePermissionReply(request.id, 'once', effectiveDirectory)
+          replyPermissionOnceAutomatically(request)
           return
         }
 
@@ -399,7 +452,7 @@ export function useChatSession({
       routeSessionId,
       sessionFamily,
       currentDirectory,
-      handlePermissionReply,
+      replyPermissionOnceAutomatically,
       setPendingPermissionRequests,
       setPendingQuestionRequests,
       buildNotificationTitle,
@@ -515,8 +568,18 @@ export function useChatSession({
 
       if (cancelled) return
 
-      // 只保留属于当前 session family 的请求
-      setPendingPermissionRequests(allPerms.filter(p => family.has(p.sessionID)))
+      // 只保留属于当前 session family 的请求。
+      // OMO background subagents may publish permission.asked over SSE before
+      // /permission can list it for this routed instance, so do not drop
+      // SSE-known requests just because the snapshot is missing them.
+      const nextPerms = allPerms.filter(p => family.has(p.sessionID))
+      setPendingPermissionRequests(prev => {
+        const merged = new Map(nextPerms.map(p => [p.id, p]))
+        for (const request of prev) {
+          if (family.has(request.sessionID) && !merged.has(request.id)) merged.set(request.id, request)
+        }
+        return Array.from(merged.values())
+      })
       setPendingQuestionRequests(allQuestions.filter(q => family.has(q.sessionID)))
     }
 
@@ -544,6 +607,15 @@ export function useChatSession({
       allowCreateSession?: boolean
     }) => {
       let sessionId = input.sessionId ?? routeSessionId
+
+      if (sessionId && input.allowCreateSession) {
+        const state = messageStore.getSessionState(sessionId)
+        if (state?.loadState === 'error' && state.messages.length === 0) {
+          clearSessionRuntimeState(sessionId)
+          sessionId = null
+        }
+      }
+
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
 
       try {
@@ -863,6 +935,14 @@ export function useChatSession({
       let sessionId = routeSessionId
 
       try {
+        if (sessionId) {
+          const state = messageStore.getSessionState(sessionId)
+          if (state?.loadState === 'error' && state.messages.length === 0) {
+            clearSessionRuntimeState(sessionId)
+            sessionId = null
+          }
+        }
+
         // Create session if needed (like handleSend does)
         if (!sessionId) {
           const newSession = await createSession()
@@ -1031,6 +1111,7 @@ export function useChatSession({
     revertedContent,
     restoredContent: activeRestoredContent,
     loadState,
+    loadError,
     hasMoreHistory,
     retryStatus,
     agents,

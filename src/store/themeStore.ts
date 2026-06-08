@@ -78,6 +78,8 @@ export type CompletedAtFormat = 'time' | 'dateTime'
 
 export type ReasoningDisplayMode = 'capsule' | 'italic' | 'markdown'
 
+export type ExternalFileDropMode = 'upload-first' | 'mention'
+
 /**
  * 字号偏移范围：-2 ~ +4（相对于基准值的 px 偏移）
  * 0 = 基准值（index.css 中定义的默认值）
@@ -122,6 +124,7 @@ const DEFAULT_COMPACT_INLINE_PERMISSION = false
 const DEFAULT_GLASS_EFFECT = true
 const DEFAULT_QUEUE_FOLLOWUP_MESSAGES = false
 const DEFAULT_MANUAL_TERMINAL_TITLES = false
+const DEFAULT_EXTERNAL_FILE_DROP_MODE: ExternalFileDropMode = 'upload-first'
 
 export interface ThemeState {
   /** 当前选中的主题风格 ID */
@@ -168,6 +171,8 @@ export interface ThemeState {
   queueFollowupMessages: boolean
   /** 终端标签是否改为手动命名模式 */
   manualTerminalTitles: boolean
+  /** 外部文件拖入输入框时的处理方式 */
+  externalFileDropMode: ExternalFileDropMode
 }
 
 export type ThemeBackup = ThemeState
@@ -198,6 +203,7 @@ const STORAGE_KEY_COMPACT_INLINE_PERMISSION = 'compact-inline-permission'
 const STORAGE_KEY_GLASS_EFFECT = 'glass-effect'
 const STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES = 'queue-followup-messages'
 const STORAGE_KEY_MANUAL_TERMINAL_TITLES = 'manual-terminal-titles'
+const STORAGE_KEY_EXTERNAL_FILE_DROP_MODE = 'external-file-drop-mode'
 
 // ============================================
 // DOM Style Element IDs
@@ -314,6 +320,10 @@ class ThemeStore {
     const manualTerminalTitles =
       savedManualTerminalTitles === null ? DEFAULT_MANUAL_TERMINAL_TITLES : savedManualTerminalTitles === 'true'
 
+    const savedExternalFileDropMode = localStorage.getItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE)
+    const externalFileDropMode: ExternalFileDropMode =
+      savedExternalFileDropMode === 'mention' ? 'mention' : DEFAULT_EXTERNAL_FILE_DROP_MODE
+
     this.state = {
       presetId: normalizedPreset,
       colorMode: savedMode,
@@ -337,6 +347,7 @@ class ThemeStore {
       glassEffect,
       queueFollowupMessages,
       manualTerminalTitles,
+      externalFileDropMode,
     }
   }
 
@@ -411,6 +422,9 @@ class ThemeStore {
   }
   get manualTerminalTitles() {
     return this.state.manualTerminalTitles
+  }
+  get externalFileDropMode() {
+    return this.state.externalFileDropMode
   }
 
   /** 获取当前主题预设（内置主题返回对象，自定义返回 undefined） */
@@ -672,6 +686,13 @@ class ThemeStore {
     this.emit()
   }
 
+  setExternalFileDropMode(mode: ExternalFileDropMode) {
+    if (this.state.externalFileDropMode === mode) return
+    this.state = { ...this.state, externalFileDropMode: mode }
+    localStorage.setItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE, mode)
+    this.emit()
+  }
+
   // ---- Theme Application ----
 
   /** 初始化：应用当前主题到 DOM */
@@ -912,6 +933,7 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
       typeof parsed?.manualTerminalTitles === 'boolean'
         ? parsed.manualTerminalTitles
         : DEFAULT_MANUAL_TERMINAL_TITLES,
+    externalFileDropMode: parsed?.externalFileDropMode === 'mention' ? 'mention' : DEFAULT_EXTERNAL_FILE_DROP_MODE,
   }
 }
 
@@ -952,4 +974,5 @@ export function importThemeBackup(raw: unknown): void {
   localStorage.setItem(STORAGE_KEY_GLASS_EFFECT, String(backup.glassEffect))
   localStorage.setItem(STORAGE_KEY_QUEUE_FOLLOWUP_MESSAGES, String(backup.queueFollowupMessages))
   localStorage.setItem(STORAGE_KEY_MANUAL_TERMINAL_TITLES, String(backup.manualTerminalTitles))
+  localStorage.setItem(STORAGE_KEY_EXTERNAL_FILE_DROP_MODE, backup.externalFileDropMode)
 }

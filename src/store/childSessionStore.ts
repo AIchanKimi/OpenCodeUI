@@ -35,6 +35,7 @@ class ChildSessionStore {
   // sessionID -> ChildSessionInfo
   private sessionInfo = new Map<string, ChildSessionInfo>()
   private subscribers = new Set<Subscriber>()
+  private version = 0
 
   // ============================================
   // Subscription
@@ -46,6 +47,7 @@ class ChildSessionStore {
   }
 
   private notify() {
+    this.version++
     this.subscribers.forEach(fn => fn())
   }
 
@@ -131,6 +133,8 @@ class ChildSessionStore {
     return this.sessionInfo.get(sessionId)
   }
 
+  getVersion = (): number => this.version
+
   /**
    * 检查 sessionId 是否是 parentId 的子 session（或子孙 session）
    */
@@ -197,6 +201,27 @@ class ChildSessionStore {
       this.childrenByParent.delete(parentId)
       this.notify()
     }
+  }
+
+  removeSession(sessionId: string) {
+    const idsToRemove = this.getSessionAndDescendants(sessionId)
+    let changed = false
+
+    for (const id of idsToRemove) {
+      const info = this.sessionInfo.get(id)
+      if (info) {
+        const siblings = this.childrenByParent.get(info.parentID)
+        if (siblings?.delete(id)) {
+          if (siblings.size === 0) this.childrenByParent.delete(info.parentID)
+          changed = true
+        }
+      }
+
+      if (this.childrenByParent.delete(id)) changed = true
+      if (this.sessionInfo.delete(id)) changed = true
+    }
+
+    if (changed) this.notify()
   }
 }
 

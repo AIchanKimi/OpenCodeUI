@@ -7,8 +7,8 @@ import { createSseTextParser } from './sse'
 import { normalizeTodoItems } from './todo'
 import { isTauri } from '../utils/tauri'
 import type {
+  ApiMessage,
   EventCallbacks,
-  EventType,
   GlobalEvent,
   ServerConnectedPayload,
   SessionErrorPayload,
@@ -71,8 +71,6 @@ const BACKGROUND_KEEPALIVE_INTERVAL = 30000
 
 // 所有订阅者的 callbacks
 const allSubscribers = new Set<EventCallbacks>()
-
-const EVENT_TYPE_SET = new Set<string>(Object.values(EventTypes))
 
 // 单例连接状态
 let singletonController: AbortController | null = null
@@ -462,16 +460,18 @@ function isGlobalEvent(value: unknown): value is GlobalEvent {
   if (!isRecord(value)) return false
   if (typeof value.directory !== 'string') return false
   if (!isRecord(value.payload)) return false
-  if (!isEventType(value.payload.type)) return false
+  if (typeof value.payload.type !== 'string') return false
   return 'properties' in value.payload
-}
-
-function isEventType(value: unknown): value is EventType {
-  return typeof value === 'string' && EVENT_TYPE_SET.has(value)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object'
+}
+
+function getMessageInfo(properties: unknown): ApiMessage | undefined {
+  if (!isRecord(properties)) return undefined
+  const message = properties.info ?? properties.message
+  return isRecord(message) ? (message as ApiMessage) : undefined
 }
 
 // ============================================
@@ -684,7 +684,8 @@ function broadcastEvent(globalEvent: GlobalEvent) {
 function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: EventCallbacks) {
   switch (payload.type) {
     case EventTypes.MESSAGE_UPDATED: {
-      callbacks.onMessageUpdated?.(payload.properties.info)
+      const message = getMessageInfo(payload.properties)
+      if (message) callbacks.onMessageUpdated?.(message)
       break
     }
     case EventTypes.MESSAGE_PART_UPDATED: {
@@ -844,6 +845,11 @@ export function reconnectSSE() {
 
   // 立即重连（getApiBaseUrl() 会读取新的 activeServer）
   connectSingleton()
+}
+
+export function disconnectSSE(error?: string) {
+  disconnectSingleton()
+  updateConnectionState({ state: error ? 'error' : 'disconnected', error, reconnectAttempt: 0 })
 }
 
 /**

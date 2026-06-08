@@ -98,23 +98,38 @@ export async function ensureLang(lang: string): Promise<boolean> {
 
 export async function codeToHtml(code: string, opts: { lang: string; theme: ShikiThemeInput }): Promise<string> {
   const h = await getHighlighter()
-  await ensureLang(opts.lang)
+  const loaded = await ensureLang(opts.lang)
+  if (!loaded) throw new Error(`Unsupported Shiki language: ${opts.lang}`)
 
-  // 如果语言加载失败，fallback 到 plaintext
-  const loaded = h.getLoadedLanguages()
-  const safeLang = loaded.includes(opts.lang) ? opts.lang : 'text'
+  return h.codeToHtml(code, { lang: opts.lang, theme: opts.theme })
+}
 
-  return h.codeToHtml(code, { lang: safeLang, theme: opts.theme })
+export function codeToHtmlSyncIfLoaded(code: string, opts: { lang: string; theme: ShikiThemeInput }): string | null {
+  if (!highlighter || !highlighter.getLoadedLanguages().includes(opts.lang)) return null
+
+  try {
+    return highlighter.codeToHtml(code, { lang: opts.lang, theme: opts.theme })
+  } catch {
+    return null
+  }
 }
 
 export async function codeToTokens(code: string, opts: { lang: string; theme: ShikiThemeInput }) {
   const h = await getHighlighter()
-  await ensureLang(opts.lang)
+  const loaded = await ensureLang(opts.lang)
+  if (!loaded) throw new Error(`Unsupported Shiki language: ${opts.lang}`)
 
-  const loaded = h.getLoadedLanguages()
-  const safeLang = loaded.includes(opts.lang) ? opts.lang : 'text'
+  return h.codeToTokens(code, { lang: opts.lang, theme: opts.theme })
+}
 
-  return h.codeToTokens(code, { lang: safeLang, theme: opts.theme })
+export function codeToTokensSyncIfLoaded(code: string, opts: { lang: string; theme: ShikiThemeInput }) {
+  if (!highlighter || !highlighter.getLoadedLanguages().includes(opts.lang)) return null
+
+  try {
+    return highlighter.codeToTokens(code, { lang: opts.lang, theme: opts.theme })
+  } catch {
+    return null
+  }
 }
 
 // ── 语言支持检测（纯元数据，不拉 grammar）──────────────────

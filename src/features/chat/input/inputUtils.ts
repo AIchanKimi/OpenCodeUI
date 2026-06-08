@@ -62,6 +62,23 @@ export function ensureFileMime(file: File): File {
   })
 }
 
+export function getMimeFromPath(path: string): string {
+  const fileName = path.split(/[/\\]/).pop() || path
+  const ext = fileName.split('.').pop()?.toLowerCase() || ''
+  return extToMime(ext)
+}
+
+export function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
+  const chunkSize = 0x8000
+  let binary = ''
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+
+  return `data:${mime};base64,${btoa(binary)}`
+}
+
 /** 读取文件为 data URL */
 export function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
